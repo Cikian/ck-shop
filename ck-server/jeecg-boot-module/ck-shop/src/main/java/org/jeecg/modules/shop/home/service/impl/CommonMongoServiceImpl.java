@@ -93,6 +93,39 @@ public class CommonMongoServiceImpl implements CommonMongoService {
     }
 
     @Override
+    public void removeSlideshow(List<String> ids) {
+        if (ids == null || ids.isEmpty()) {
+            return;
+        }
+        // 逐条按 _id 删除：mongoplus 会将字符串主键转换成 ObjectId 参与匹配
+        for (String id : ids) {
+            if (StringUtils.isBlank(id)) {
+                continue;
+            }
+            mongoMapper.remove("slideshow", new UpdateWrapper<>().eq("_id", id));
+        }
+    }
+
+    @Override
+    public void updateSlideshowSort(List<Map<String, Object>> sortList) {
+        if (sortList == null || sortList.isEmpty()) {
+            return;
+        }
+        for (Map<String, Object> item : sortList) {
+            if (item == null) {
+                continue;
+            }
+            Object id = item.get("id");
+            Object sort = item.get("sort");
+            if (id == null || sort == null) {
+                continue;
+            }
+            // 只更新 sort 字段，避免整体覆盖导致图片、标题丢失
+            mongoMapper.update("slideshow", new UpdateWrapper<>().eq("_id", id.toString()).set("sort", sort));
+        }
+    }
+
+    @Override
     public List<Map<String, Object>> listSlideshow(String language) {
         String titleKey = "title_" + language;
         String picUrlKey = "pic_url_" + language;
@@ -159,7 +192,9 @@ public class CommonMongoServiceImpl implements CommonMongoService {
             slideObj.put("desc", item.get("desc"));
             slideObj.put("sort", item.get("sort"));
             slideObj.put("goods", item.get("goods"));
-            slideObj.put("targetUrl", String.valueOf(item.get("targetUrl")).replace("http://", "").replace("https://", ""));
+            // targetUrl 可能为 null，此处回填空字符串，避免前端拿到 "null" 文本
+            Object targetUrl = item.get("targetUrl");
+            slideObj.put("targetUrl", targetUrl == null ? "" : targetUrl.toString().replace("http://", "").replace("https://", ""));
             slideObj.put("enabled", item.get("enabled"));
 
             // 填充各语言属性
