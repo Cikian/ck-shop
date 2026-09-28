@@ -1,0 +1,10 @@
+# pnpm 11 项目级配置（v11 起 pnpm 不再读取 package.json 里的 pnpm 字段，设置统一放这里）
+#
+# 依赖构建脚本白名单：pnpm 默认拒绝执行依赖的 postinstall，未审核的脚本会让安装以
+# ERR_PNPM_IGNORED_BUILDS 退出码 1 结束，进而把 `pnpm dev`（启动前会自动校验依赖）一起卡死。
+allowBuilds:
+  esbuild: true # 需要执行 install.js 校验/链接平台二进制（esno、部分 vite 插件依赖）
+  vue-demi: true # 需要执行 postinstall 把入口切换到 Vue 3
+  '@logicflow/core': false # postinstall 只打印 AI 提示、并可能改写仓库内的规则文件，无需执行
+  '@scarf/scarf': false # 仅做使用统计上报
+  core-js: false # 仅打印赞助横幅

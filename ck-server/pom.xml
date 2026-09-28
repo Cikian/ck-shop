@@ -29,7 +29,7 @@
 
 	<properties>
 		<!-- cikian服务 -->
-		<ck.oss.version>0.2.8</ck.oss.version>
+		<ck.oss.version>0.2.9</ck.oss.version>
 		<ck.log.version>1.5.34</ck.log.version>
 
 		<jeecgboot.version>3.9.5</jeecgboot.version>
@@ -798,17 +798,5 @@
 				<config.password></config.password>
             </properties>
         </profile>
-		<!-- SpringCloud运行环境 -->
-		<profile>
-			<id>SpringCloud</id>
-			<activation>
-				<!--默认激活配置-->
-				<activeByDefault>true</activeByDefault>
-			</activation>
-			<modules>
-				<!-- 微服务模块 -->
-				<module>jeecg-server-cloud</module>
-			</modules>
-		</profile>
     </profiles>
 </project>

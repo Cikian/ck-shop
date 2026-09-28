@@ -58,7 +58,6 @@
 <script lang="ts" setup>
   import { ref, reactive } from 'vue';
   import { BasicModal, useModalInner } from '/@/components/Modal';
-  import { defineEmits } from 'vue';
   import { SvgIcon } from '/@/components/Icon';
   import { useMessage } from '/@/hooks/web/useMessage';
   import { defHttp } from '/@/utils/http/axios';

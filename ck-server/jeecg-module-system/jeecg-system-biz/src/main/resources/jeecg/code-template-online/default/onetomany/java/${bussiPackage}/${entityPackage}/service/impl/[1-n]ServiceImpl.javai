@@ -11,11 +11,17 @@ import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import org.springframework.beans.factory.annotation.Autowired;
 
 /**
- * @Description: ${subTab.ftlDescription}
- * @Author: jeecg-boot
- * @Date:   ${.now?string["yyyy-MM-dd"]}
- * @Version: V1.0
+ * <p>
+ *  ${subTab.ftlDescription}
+ * </p>
+ *
+ * @author Cikian
+ * @version 1.0
+ * @implNote
+ * @see <a href="https://www.cikian.cn">https://www.cikian.cn</a>
+ * @since ${.now?string["yyyy-MM-dd"]}
  */
+
 @Service
 public class ${subTab.entityName}ServiceImpl extends ServiceImpl<${subTab.entityName}Mapper, ${subTab.entityName}> implements I${subTab.entityName}Service {
 	

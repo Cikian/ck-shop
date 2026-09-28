@@ -4,11 +4,17 @@ import ${bussiPackage}.entity.${entityPackage}.${entityName};
 import com.baomidou.mybatisplus.extension.service.IService;
 
 /**
- * @Description: ${tableVo.ftlDescription}
- * @Author: jeecg-boot
- * @Date:   ${.now?string["yyyy-MM-dd"]}
- * @Version: V1.0
+ * <p>
+ *  ${tableVo.ftlDescription}
+ * </p>
+ *
+ * @author Cikian
+ * @version 1.0
+ * @implNote
+ * @see <a href="https://www.cikian.cn">https://www.cikian.cn</a>
+ * @since ${.now?string["yyyy-MM-dd"]}
  */
+
 public interface I${entityName}Service extends IService<${entityName}> {
 
 }

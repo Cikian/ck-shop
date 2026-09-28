@@ -38,12 +38,18 @@ import io.swagger.v3.oas.annotations.Operation;
 import org.jeecg.common.aspect.annotation.AutoLog;
 import org.apache.shiro.authz.annotation.RequiresPermissions;
 
- /**
- * @Description: ${tableVo.ftlDescription}
- * @Author: jeecg-boot
- * @Date:   ${.now?string["yyyy-MM-dd"]}
- * @Version: V1.0
+/**
+ * <p>
+ *  ${tableVo.ftlDescription}
+ * </p>
+ *
+ * @author Cikian
+ * @version 1.0
+ * @implNote
+ * @see <a href="https://www.cikian.cn">https://www.cikian.cn</a>
+ * @since ${.now?string["yyyy-MM-dd"]}
  */
+
 <#assign pidFieldName = "">
 <#list originalColumns as po>
 <#if po.fieldDbName == tableVo.extendParams.pidField>

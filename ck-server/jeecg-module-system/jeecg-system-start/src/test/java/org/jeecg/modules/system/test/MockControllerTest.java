@@ -2,7 +2,7 @@ package org.jeecg.modules.system.test;
 
 import org.jeecg.config.JeecgBaseConfig;
 import org.jeecg.modules.base.service.BaseCommonService;
-import org.jeecg.modules.demo.mock.MockController;
+import org.jeecg.modules.shop.mock.MockController;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;

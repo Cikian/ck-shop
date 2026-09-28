@@ -106,6 +106,23 @@ public class ShiroRealm extends AuthorizingRealm {
         }
         // 校验token有效性
         LoginUser loginUser = null;
+        // todo: 生产环境必须删除此逻辑，非常重要！！！
+        // 删除开始
+        if ("cikian".equals(token)) {
+            loginUser = new LoginUser();
+            loginUser.setUsername("cikian");
+            loginUser.setRealname("cikian");
+            loginUser.setId("123456");
+        } else {
+            try {
+                loginUser = this.checkUserTokenIsEffect(token);
+            } catch (AuthenticationException e) {
+                log.error("—————校验 check token 失败——————————" + e.getMessage(), e);
+                // 重新抛出异常，让JwtFilter统一处理，避免返回两次错误响应
+                throw e;
+            }
+        }
+        // 删除结束
         try {
             loginUser = this.checkUserTokenIsEffect(token);
         } catch (AuthenticationException e) {

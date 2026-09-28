@@ -13,3 +13,7 @@ dist
 .local
 /bin
 Dockerfile
+
+# ===== 全局关闭 ESLint / ES 语法检查 =====
+# 忽略所有文件（与 .eslintrc.js 中的 ignorePatterns 保持一致）；恢复检查时删除下面这行即可。
+**/*

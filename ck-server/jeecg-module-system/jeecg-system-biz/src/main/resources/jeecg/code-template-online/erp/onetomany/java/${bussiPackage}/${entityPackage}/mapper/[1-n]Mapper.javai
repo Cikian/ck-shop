@@ -4,15 +4,23 @@ package ${bussiPackage}.${entityPackage}.mapper;
 
 import java.util.List;
 import ${bussiPackage}.${entityPackage}.entity.${subTab.entityName};
+import org.apache.ibatis.annotations.Mapper;
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
 import org.apache.ibatis.annotations.Param;
 
 /**
- * @Description: ${subTab.ftlDescription}
- * @Author: jeecg-boot
- * @Date:   ${.now?string["yyyy-MM-dd"]}
- * @Version: V1.0
+ * <p>
+ *  ${subTab.ftlDescription}
+ * </p>
+ *
+ * @author Cikian
+ * @version 1.0
+ * @implNote
+ * @see <a href="https://www.cikian.cn">https://www.cikian.cn</a>
+ * @since ${.now?string["yyyy-MM-dd"]}
  */
+
+@Mapper
 public interface ${subTab.entityName}Mapper extends BaseMapper<${subTab.entityName}> {
 
 	/**

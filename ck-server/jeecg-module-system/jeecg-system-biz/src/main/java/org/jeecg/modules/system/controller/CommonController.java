@@ -27,6 +27,7 @@ import org.springframework.web.servlet.ModelAndView;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import java.io.*;
+import java.net.URL;
 
 /**
  * <p>
@@ -78,6 +79,9 @@ public class CommonController {
         String bizPath = request.getParameter("biz");
         MultipartHttpServletRequest multipartRequest = (MultipartHttpServletRequest) request;
         MultipartFile file = multipartRequest.getFile("file");
+        if (oConvertUtils.isEmpty(file)) {
+            throw new JeecgBootException("文件不能为空");
+        }
         
         // 文件安全校验，防止上传漏洞文件
         SsrfFileTypeFilter.checkUploadFileType(file, bizPath);

@@ -18,11 +18,18 @@
             <artifactId>jeecg-system-biz</artifactId>
             <version>${jeecgboot.version}</version>
         </dependency>
-        <!-- DEMO 示例模块 -->
+        <!-- shop 模块 -->
         <dependency>
             <groupId>org.jeecgframework.boot3</groupId>
-            <artifactId>jeecg-module-demo</artifactId>
-            <version>${jeecgboot.version}</version>
+            <artifactId>ck-shop</artifactId>
+            <version>3.9.5</version>
+        </dependency>
+
+        <!-- ck sys 模块 -->
+        <dependency>
+            <groupId>org.jeecgframework.boot3</groupId>
+            <artifactId>ck-system</artifactId>
+            <version>3.9.5</version>
         </dependency>
         
         <!-- flyway 数据库自动升级 -->

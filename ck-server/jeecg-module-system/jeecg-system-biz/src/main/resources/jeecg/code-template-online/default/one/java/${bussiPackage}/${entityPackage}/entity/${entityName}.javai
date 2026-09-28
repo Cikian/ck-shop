@@ -21,11 +21,17 @@ import lombok.EqualsAndHashCode;
 import lombok.experimental.Accessors;
 
 /**
- * @Description: ${tableVo.ftlDescription}
- * @Author: jeecg-boot
- * @Date:   ${.now?string["yyyy-MM-dd"]}
- * @Version: V1.0
+ * <p>
+ *  ${tableVo.ftlDescription}
+ * </p>
+ *
+ * @author Cikian
+ * @version 1.0
+ * @implNote
+ * @see <a href="https://www.cikian.cn">https://www.cikian.cn</a>
+ * @since ${.now?string["yyyy-MM-dd"]}
  */
+
 @Data
 @TableName("${tableName}")
 @Accessors(chain = true)

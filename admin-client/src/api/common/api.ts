@@ -22,6 +22,9 @@ enum Api {
   queryDepartPostUserPageList = '/sys/user/queryDepartPostUserPageList',
   //查询所选部门的所有父节点ID
   queryAllParentId = '/sys/sysDepart/queryAllParentId',
+  //查询语言列表
+  listLang = '/sys/lang',
+
 }
 
 /**
@@ -188,3 +191,8 @@ export const refreshDragCache = () => defHttp.get({ url: Api.refreshDragCache },
  * @param params
  */
 export const refreshHomeCache = () => defHttp.get({ url: Api.refreshDefaultIndexCache }, { isTransformResponse: false });
+
+/**
+ * 查询语言列表
+ */
+export const listLang = () => defHttp.get({ url: Api.listLang });

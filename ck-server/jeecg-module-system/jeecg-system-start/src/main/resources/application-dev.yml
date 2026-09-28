@@ -1,9 +1,9 @@
 server:
-  port: 8080
+  port: 9951
   tomcat:
     max-swallow-size: -1
   servlet:
-    context-path: /jeecg-boot
+    context-path: /api
   compression:
     enabled: true
     min-response-size: 1024
@@ -30,9 +30,9 @@ spring:
   mail:
     # 定时任务发送邮件
     timeJobSend: false
-    host: smtp.163.com
-    username: jeecgos@163.com
-    password: ??
+    host: cikian.cn
+    username: noreply.cikian.cn
+    password: Chen0809
     properties:
       mail.smtp.timeout: 10000  # 连接超时（毫秒）
       mail.smtp.connectiontimeout: 10000  # 连接超时（毫秒）
@@ -144,9 +144,9 @@ spring:
           slow-sql-millis: 5000
       datasource:
         master:
-          url: jdbc:mysql://127.0.0.1:3306/ck-server?characterEncoding=UTF-8&useUnicode=true&useSSL=false&tinyInt1isBit=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Shanghai
+          url: jdbc:mysql://127.0.0.1:3306/ck-shop?characterEncoding=UTF-8&useUnicode=true&useSSL=false&tinyInt1isBit=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Shanghai
           username: root
-          password: 123qwe!@#
+          password: Chen0809@mysql
           driver-class-name: com.mysql.cj.jdbc.Driver
 #        # shardingjdbc数据源
 #        sharding-db:
@@ -247,11 +247,11 @@ jeecg:
     # AI流程敏感节点(stdio=命令行节点, sql=SQL节点, code=代码节点/脚本执行,高危存在RCE风险默认禁用)
     allow-sensitive-nodes: sql,stdio,code
     embed-store:
-      host: 127.0.0.1
+      host: 49.232.252.56
       port: 5432
       database: vector_db
       user: postgres
-      password: postgres
+      password: Chen0809@pgsql
       table: embeddings
     # Brave Search 联网检索（AI Agent 工具）
     brave-search:
@@ -278,8 +278,8 @@ jeecg:
   signatureSecret: dd05f1c54d63749eda95f9fa6d49v442a
   #签名拦截接口
   signUrls: /sys/dict/getDictItems/*,/sys/dict/loadDict/*,/sys/dict/loadDictOrderByValue/*,/sys/dict/loadDictItem/*,/sys/dict/loadTreeData,/sys/api/queryTableDictItemsByCode,/sys/api/queryFilterTableDictInfo,/sys/api/queryTableDictByKeys,/sys/api/translateDictFromTable,/sys/api/translateDictFromTableByKeys,/sys/sendChangePwdSms,/sys/user/sendChangePhoneSms,/sys/sms,/desform/api/sendVerifyCode
-  # 上传类型：local（本地存储）| minio（MinIO对象存储）| alioss（阿里云OSS）
-  uploadType: local
+  # 上传类型：local（本地存储）| minio（MinIO对象存储）| alioss（阿里云OSS）| cikoss 
+  uploadType: cikoss
   # 前端访问地址
   domainUrl:
     pc: http://localhost:3100
@@ -295,10 +295,10 @@ jeecg:
   smsSendType: aliyun
   #阿里云oss存储和大鱼短信秘钥配置
   oss:
-    accessKey: ??
-    secretKey: ??
-    endpoint: oss-cn-beijing.aliyuncs.com
-    bucketName: jeecgdev
+    accessKey: cikian
+    secretKey: Chen0809
+    endpoint: https://oss.cikian.cn
+    bucketName: saas-file
     # 短信模板
     sms-template:
       # 签名
@@ -325,10 +325,10 @@ jeecg:
   file-view-domain: http://fileview.jeecg.com
   # minio文件上传
   minio:
-    minio_url: http://minio.jeecg.com
-    minio_name: ??
-    minio_pass: ??
-    bucketName: otatest
+    minio_url: https://oss.cikian.cn
+    minio_name: cikian
+    minio_pass: Chen0809
+    bucketName: saas-file
   #大屏报表参数设置
   jmreport:
     #多租户模式，默认值为空(created:按照创建人隔离、tenant:按照租户隔离)
@@ -388,6 +388,8 @@ jeecg:
     app-id: ??
     api-key: ??
     secret-key: ??
+
+
 #cas单点登录
 cas:
   prefixUrl: http://cas.example.org:8443/cas
@@ -397,7 +399,7 @@ logging:
     org.springframework.context.support.PostProcessorRegistrationDelegate: error
     org.flywaydb: debug
     org.jeecg.modules.system.mapper: info
-    org.jeecg.modules.demo.test.mapper: info
+    org.jeecg.modules.shop.test.mapper: info
 #swagger
 knife4j:
   #开启增强配置
@@ -413,9 +415,9 @@ justauth:
   enabled: true
   type:
     GITHUB:
-      client-id: ??
-      client-secret: ??
-      redirect-uri: http://sso.test.com:8080/jeecg-boot/sys/thirdLogin/github/callback
+      client-id: Ov23liWUlwaEngctN1Hr
+      client-secret: c22a47aa902c47bc89c30cda3cddc1501eec5063
+      redirect-uri: http://localhost:9950/api/sys/thirdLogin/github/callback
     WECHAT_ENTERPRISE:
       client-id: ??
       client-secret: ??
@@ -437,6 +439,17 @@ justauth:
     type: default
     prefix: 'demo::'
     timeout: 1h
+mongo-plus:
+  data:
+    mongodb:
+      host: 127.0.0.1   #ip
+      port: 27017   #端口
+      database: ck-saas    #数据库名
+      username: ck-saas    #用户名，没有可不填（若账号中出现@,!等等符号，不需要再进行转码！！！）
+      password: Chen0809@saas    #密码，同上（若密码中出现@,!等等符号，不需要再进行转码！！！）
+      authenticationDatabase: ck-saas     #验证数据库
+      connectTimeoutMS: 50000   #在超时之前等待连接打开的最长时间（以毫秒为单位）
+
 ck:
   oss:
     enable: true

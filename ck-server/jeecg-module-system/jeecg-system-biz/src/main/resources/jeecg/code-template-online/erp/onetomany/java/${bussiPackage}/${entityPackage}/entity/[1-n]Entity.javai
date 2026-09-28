@@ -21,11 +21,17 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import java.io.UnsupportedEncodingException;
 
 /**
- * @Description: ${subTab.ftlDescription}
- * @Author: jeecg-boot
- * @Date:   ${.now?string["yyyy-MM-dd"]}
- * @Version: V1.0
+ * <p>
+ *  ${subTab.ftlDescription}
+ * </p>
+ *
+ * @author Cikian
+ * @version 1.0
+ * @implNote
+ * @see <a href="https://www.cikian.cn">https://www.cikian.cn</a>
+ * @since ${.now?string["yyyy-MM-dd"]}
  */
+
 @Data
 @TableName("${subTab.tableName}")
 @Schema(description="${subTab.ftlDescription}")

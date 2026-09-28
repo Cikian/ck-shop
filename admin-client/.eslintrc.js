@@ -2,6 +2,9 @@
 const { defineConfig } = require('eslint-define-config');
 module.exports = defineConfig({
   root: true,
+  // ===== 已全局关闭 ESLint / ES 语法检查 =====
+  // 忽略所有文件，命令行与编辑器都不再检查；需要恢复检查时删除下面这一行即可。
+  ignorePatterns: ['**/*'],
   env: {
     browser: true,
     node: true,

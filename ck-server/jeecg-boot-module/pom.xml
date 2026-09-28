@@ -13,8 +13,9 @@
     <packaging>pom</packaging>
 
     <modules>
-        <module>jeecg-module-demo</module>
+        <module>ck-shop</module>
         <module>jeecg-boot-module-airag</module>
+        <module>ck-system</module>
     </modules>
 
 
