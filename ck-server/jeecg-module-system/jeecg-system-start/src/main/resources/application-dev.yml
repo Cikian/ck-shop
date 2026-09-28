@@ -461,3 +461,18 @@ ck:
     expire: 3600
     object-dir-prefix: dir
     api-domain: TELECOM
+  crydis:
+    enable: true                    # 必须为 true 才会初始化
+    host: 127.0.0.1                 # Redis 服务器地址
+    port: 6379                      # Redis 端口，默认 6379
+    password:                       # Redis 密码，没有则留空
+    database: 0                     # 数据库索引，默认 0
+    timeout: 3000                   # 连接超时时间（毫秒）
+    max-active: 50                  # 最大连接数
+    max-idle: 10                    # 最大空闲连接
+    min-idle: 5                     # 最小空闲连接
+    max-wait: 3000                  # 最大等待时间（毫秒）
+    allowed-packages:
+      - com.dji.
+      - cn.cikian.
+      - java.util.ArrayList
