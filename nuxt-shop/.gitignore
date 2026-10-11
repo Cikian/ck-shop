@@ -22,3 +22,6 @@ logs
 .env
 .env.*
 !.env.example
+
+# 临时验证脚本（文件头已注明"不参与构建"），不入库
+temp

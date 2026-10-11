@@ -1,4 +1,9 @@
 {
+  "categories": {
+    "title": "All categories",
+    "description": "Browse this store by category",
+    "empty": "This store has no categories to show yet"
+  },
   "nav": {
     "home": "Home",
     "products": "Products",
@@ -59,7 +64,11 @@
     "shopNow": "Shop Now",
     "testimonials": "Testimonials",
     "whatCustomersSay": "What Our Customers Say",
-    "noSpam": "No spam, unsubscribe anytime"
+    "noSpam": "No spam, unsubscribe anytime",
+    "recommended": "Recommended",
+    "recommendedDesc": "Handpicked products worth a look",
+    "moreProducts": "More Products",
+    "moreProductsDesc": "Browse more products in stock"
   },
   "products": {
     "title": "All Products",
@@ -78,7 +87,33 @@
     "noProducts": "No products found",
     "noProductsDesc": "Try adjusting your filters or search terms to find what you're looking for.",
     "resetFilters": "Reset Filters",
-    "showingResults": "Showing {count} products"
+    "showingResults": "Showing {count} products",
+    "totalProducts": "{count} products",
+    "pageInfo": "Page {current} of {total}",
+    "pagination": "Product pagination",
+    "prev": "Previous",
+    "next": "Next",
+    "search": "Search",
+    "searchPlaceholder": "Search product name",
+    "clearSearch": "Clear",
+    "recommended": "Recommended",
+    "priceRangeHint": "Price varies by option",
+    "loadError": "Failed to load products",
+    "loadErrorDesc": "Please check your connection and try again",
+    "stock": {
+      "inStock": "In Stock",
+      "outOfStock": "Out of Stock",
+      "remaining": "{count} left"
+    },
+    "spec": {
+      "title": "Choose Options",
+      "tapToClear": "Tap a selected option to clear it, then switch to another",
+      "optional": "Optional",
+      "unavailable": "This option is unavailable",
+      "choose": "Please select all options",
+      "notSaleable": "This combination is not for sale",
+      "outOfStock": "This combination is out of stock"
+    }
   },
   "product": {
     "addToCart": "Add to Cart",
@@ -101,7 +136,19 @@
     "returnPolicy": "Return Policy",
     "freeShipping": "Free shipping on orders over $99",
     "securePayment": "Secure payment",
-    "easyReturns": "30-day easy returns"
+    "easyReturns": "30-day easy returns",
+    "noDescription": "No description available",
+    "spuCode": "Product Code",
+    "unavailable": "Unavailable",
+    "totalItems": "Total ({count} items)",
+    "decreaseQuantity": "Decrease quantity",
+    "increaseQuantity": "Increase quantity",
+    "galleryItem": "View image {index}",
+    "notFoundDesc": "The product you are looking for doesn't exist or has been removed.",
+    "loadError": "Failed to load product",
+    "loadErrorDesc": "Please check your connection and try again",
+    "relatedSubtitle": "You might also like",
+    "relatedTitle": "Related Products"
   },
   "login": {
     "title": "Sign In",

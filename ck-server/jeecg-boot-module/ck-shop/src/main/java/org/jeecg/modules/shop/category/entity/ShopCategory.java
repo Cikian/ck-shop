@@ -2,6 +2,7 @@ package org.jeecg.modules.shop.category.entity;
 
 import com.baomidou.mybatisplus.annotation.IdType;
 import com.baomidou.mybatisplus.annotation.TableId;
+import com.baomidou.mybatisplus.annotation.TableLogic;
 import com.baomidou.mybatisplus.annotation.TableName;
 import com.fasterxml.jackson.annotation.JsonFormat;
 import io.swagger.v3.oas.annotations.media.Schema;
@@ -82,6 +83,20 @@ public class ShopCategory implements Serializable {
     @Excel(name = "是否显示: N-隐藏, Y-显示", width = 15, replace = {"是_Y", "否_N"})
     @Schema(description = "是否显示: N-隐藏, Y-显示")
     private String isShow;
+    /**
+     * 所属店铺：**为空表示全局共享节点**（所有店铺可见），非空表示该店专属。
+     * 分类按店独立——不同店铺的经营品类往往完全不同，共享一棵混合大树会让运营难以维护；
+     * 同时约定"子节点可见域必须是父节点可见域的子集"，避免跨店父子关系。
+     */
+    @Schema(description = "所属店铺(空=全局共享)")
+    private String storeId;
+    /**
+     * 删除标记：分类同样走逻辑删除，与商品/品牌/标签保持一致（业务数据不物理删除）。
+     * 此前该表没有 del_flag，删除是物理删除，无法追溯。
+     */
+    @TableLogic
+    @Schema(description = "删除标记: 0-正常, 1-已删除")
+    private Integer delFlag;
     /**
      * 创建人
      */

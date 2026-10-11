@@ -1,4 +1,4 @@
-﻿
+
 <template>
   <div class="p-2">
     <!--查询区域-->
@@ -9,6 +9,19 @@
             <a-form-item name="isShow">
               <template #label><span title="启用">仅查看已启用</span></template>
               <a-switch checkedValue="Y" unCheckedValue="N" placeholder="仅查看已启用" v-model:checked="queryParam.isShow" @click="isShowChange" />
+            </a-form-item>
+          </a-col>
+          <a-col :lg="6">
+            <a-form-item name="storeId">
+              <template #label><span title="所属店铺">店铺</span></template>
+              <a-select
+                v-model:value="queryParam.storeId"
+                placeholder="全部（含全局共享）"
+                allow-clear
+                show-search
+                optionFilterProp="label"
+                :options="storeOptions"
+              />
             </a-form-item>
           </a-col>
           <a-col :xl="6" :lg="7" :md="8" :sm="24">
@@ -62,15 +75,16 @@
 </template>
 
 <script lang="ts" name="ck.shop-shopCategory" setup>
-  import { ref, reactive } from 'vue';
+  import { ref, reactive, onMounted } from 'vue';
   import { BasicTable, useTable, TableAction } from '/@/components/Table';
   import { useListPage } from '/@/hooks/system/useListPage';
-  import { columns, superQuerySchema } from './ShopCategory.data';
+  import { columns, superQuerySchema, setStoreNameMap } from './ShopCategory.data';
   import { list, deleteOne, batchDelete, getImportUrl, getExportUrl } from './ShopCategory.api';
   import { downloadFile } from '/@/utils/common/renderUtils';
   import ShopCategoryModal from './components/ShopCategoryModal.vue'
   import { useUserStore } from '/@/store/modules/user';
   import { useMessage } from '/@/hooks/web/useMessage';
+  import { storeAll } from '../product/ShopProduct.api';
    import {useModal} from '/@/components/Modal';
   import JDictSelectTag from '/@/components/Form/src/jeecg/components/JDictSelectTag.vue';
   import JSwitch from '/@/components/Form/src/jeecg/components/JSwitch.vue';
@@ -86,6 +100,24 @@
   const registerModal = ref();
   const userStore = useUserStore();
   const { createMessage } = useMessage();
+
+  /** 店铺下拉（分类按店独立：store_id 为空 = 全局共享） */
+  const storeOptions = ref<any[]>([]);
+
+  async function loadStores() {
+    try {
+      const res = await storeAll();
+      const records = res || [];
+      storeOptions.value = records.map((item: any) => ({
+        label: `${item.name}（${item.code}）`,
+        value: item.id,
+      }));
+      // 列表列渲染需要 storeId -> 店铺名 的映射
+      setStoreNameMap(records);
+    } catch (e) {
+      console.warn('店铺列表加载失败', e);
+    }
+  }
   //注册table数据
   const { prefixCls, tableContext, onExportXls, onImportXls } = useListPage({
     tableProps: {
@@ -253,6 +285,10 @@
 
 
 
+  onMounted(() => {
+    // 店铺下拉 + 列表列渲染所需的 storeId -> 店铺名 映射
+    loadStores();
+  });
 </script>
 
 <style lang="less" scoped>

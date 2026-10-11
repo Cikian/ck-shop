@@ -12,10 +12,10 @@
             {{ t('home.featured') }}
           </span>
           <h2 class="mt-3 text-3xl font-bold text-[var(--color-primary)] sm:text-4xl">
-            {{ t('home.bestsellers') }}
+            {{ t('home.recommended') }}
           </h2>
           <p class="mt-2 text-[var(--color-text-muted)]">
-            {{ t('home.bestsellersDesc') }}
+            {{ t('home.recommendedDesc') }}
           </p>
         </div>
         <NuxtLinkLocale
@@ -28,8 +28,8 @@
       </div>
 
       <div class="grid grid-cols-2 gap-4 sm:gap-6 lg:grid-cols-3 xl:grid-cols-4">
-        <ProductCard
-          v-for="(product, idx) in featuredProducts"
+        <StoreProductCard
+          v-for="(product, idx) in recommendedProducts"
           :key="product.id"
           :product="product"
           :style="{ animationDelay: `${idx * 80}ms` }"
@@ -86,21 +86,21 @@
       <div class="mb-12 flex flex-col items-start justify-between gap-4 sm:flex-row sm:items-end">
         <div>
           <span class="inline-flex items-center gap-2 text-sm font-semibold uppercase tracking-widest text-[var(--color-accent)]">
-            <UIcon name="lucide:zap" class="h-4 w-4" />
-            {{ t('home.newArrivals') }}
+            <UIcon name="lucide:package" class="h-4 w-4" />
+            {{ t('home.featured') }}
           </span>
           <h2 class="mt-3 text-3xl font-bold text-[var(--color-primary)] sm:text-4xl">
-            {{ t('home.justDropped') }}
+            {{ t('home.moreProducts') }}
           </h2>
           <p class="mt-2 text-[var(--color-text-muted)]">
-            {{ t('home.newArrivalsDesc') }}
+            {{ t('home.moreProductsDesc') }}
           </p>
         </div>
       </div>
 
       <div class="grid grid-cols-2 gap-4 sm:gap-6 lg:grid-cols-3 xl:grid-cols-4">
-        <ProductCard
-          v-for="(product, idx) in newProducts"
+        <StoreProductCard
+          v-for="(product, idx) in moreProducts"
           :key="product.id"
           :product="product"
           :style="{ animationDelay: `${idx * 80}ms` }"
@@ -283,36 +283,28 @@
 </template>
 
 <script setup lang="ts">
-interface Product {
-  id: number
-  slug: string
-  name: string
-  description: string
-  price: number
-  originalPrice?: number
-  image: string
-  rating: number
-  reviewCount: number
-  isNew?: boolean
-  isBestseller?: boolean
-  discount?: number
-  category: string
-  stock: number
-}
+import { useStoreProductList } from '~~/composables/useProducts'
 
-const { t, locale } = useI18n()
+const { t } = useI18n()
 const email = ref('')
 
-const { data: products } = await useFetch<Product[]>('/api/products', {
-  query: { lang: locale.value },
-})
+// 首页商品区块：真实数据来自后端 /shop/product/store/list（恒返回 { records, total, ... }）。
+// 后端没有 rating / reviewCount / isNew / isBestseller 概念，这里不伪造：
+//   - "推荐商品" 用真实字段 isRecommend === 'Y'
+//   - "更多商品" 用后端默认排序（is_recommend DESC, sort_order ASC, create_time DESC）里的其它商品
+const homePageNo = ref(1)
+const { data: homeProductPage } = await useStoreProductList({ pageNo: homePageNo, pageSize: 12 })
 
-const featuredProducts = computed(() => {
-  return products.value?.filter(p => p.isBestseller).slice(0, 4) || []
-})
+const homeRecords = computed(() => homeProductPage.value?.records ?? [])
 
-const newProducts = computed(() => {
-  return products.value?.filter(p => p.isNew).slice(0, 4) || []
+const recommendedProducts = computed(() =>
+  homeRecords.value.filter(product => product.isRecommend === 'Y').slice(0, 4),
+)
+
+const moreProducts = computed(() => {
+  const shown = new Set(recommendedProducts.value.map(product => product.id))
+  const rest = homeRecords.value.filter(product => !shown.has(product.id))
+  return (rest.length ? rest : homeRecords.value).slice(0, 4)
 })
 
 const categories = [

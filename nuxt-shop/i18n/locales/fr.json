@@ -1,4 +1,9 @@
 {
+  "categories": {
+    "title": "Toutes les catégories",
+    "description": "Parcourir cette boutique par catégorie",
+    "empty": "Cette boutique n'a pas encore de catégories à afficher"
+  },
   "nav": {
     "home": "Accueil",
     "products": "Produits",
@@ -59,7 +64,11 @@
     "shopNow": "Acheter maintenant",
     "testimonials": "Témoignages",
     "whatCustomersSay": "Ce que disent nos clients",
-    "noSpam": "Pas de spam, désinscription à tout moment"
+    "noSpam": "Pas de spam, désinscription à tout moment",
+    "recommended": "Produits recommandés",
+    "recommendedDesc": "Une sélection de produits à découvrir",
+    "moreProducts": "Plus de produits",
+    "moreProductsDesc": "Parcourez plus de produits disponibles"
   },
   "products": {
     "title": "Tous les produits",
@@ -78,7 +87,34 @@
     "noProducts": "Aucun produit",
     "noProductsDesc": "Essayez d'ajuster vos filtres ou vos termes de recherche pour trouver ce que vous cherchez.",
     "resetFilters": "Réinitialiser les filtres",
-    "showingResults": "{count} produits affichés"
+    "showingResults": "{count} produits affichés",
+    "totalProducts": "{count} produits",
+    "pageInfo": "Page {current} sur {total}",
+    "pagination": "Pagination des produits",
+    "prev": "Précédent",
+    "previous": "Précédent",
+    "next": "Suivant",
+    "search": "Rechercher",
+    "searchPlaceholder": "Rechercher un produit",
+    "clearSearch": "Effacer",
+    "recommended": "Recommandé",
+    "priceRangeHint": "Le prix varie selon l'option",
+    "loadError": "Échec du chargement des produits",
+    "loadErrorDesc": "Vérifiez votre connexion et réessayez",
+    "stock": {
+      "inStock": "En stock",
+      "outOfStock": "Rupture de stock",
+      "remaining": "{count} restant(s)"
+    },
+    "spec": {
+      "title": "Choisir les options",
+      "tapToClear": "Touchez une option sélectionnée pour l'annuler, puis changez d'option",
+      "optional": "Facultatif",
+      "unavailable": "Cette option n'est pas disponible",
+      "choose": "Veuillez sélectionner toutes les options",
+      "notSaleable": "Cette combinaison n'est pas en vente",
+      "outOfStock": "Cette combinaison est en rupture de stock"
+    }
   },
   "product": {
     "addToCart": "Ajouter au panier",
@@ -101,7 +137,19 @@
     "returnPolicy": "Retours",
     "freeShipping": "Livraison gratuite dès 99€",
     "securePayment": "Paiement sécurisé",
-    "easyReturns": "Retours faciles sous 30 jours"
+    "easyReturns": "Retours faciles sous 30 jours",
+    "noDescription": "Aucune description disponible",
+    "spuCode": "Code produit",
+    "unavailable": "Indisponible",
+    "totalItems": "Total ({count} articles)",
+    "decreaseQuantity": "Diminuer la quantité",
+    "increaseQuantity": "Augmenter la quantité",
+    "galleryItem": "Voir l'image {index}",
+    "notFoundDesc": "Le produit que vous recherchez n'existe pas ou a été retiré.",
+    "loadError": "Échec du chargement du produit",
+    "loadErrorDesc": "Vérifiez votre connexion et réessayez",
+    "relatedSubtitle": "Vous aimerez aussi",
+    "relatedTitle": "Produits similaires"
   },
   "login": {
     "title": "Connexion",

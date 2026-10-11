@@ -12,6 +12,14 @@
                             </a-form-item>
                         </a-col>
                         <a-col :span="24">
+                            <a-form-item label="所属店铺" v-bind="validateInfos.storeId" id="ShopCategoryForm-storeId"
+                                name="storeId">
+                                <a-select v-model:value="formData.storeId" placeholder="全局共享（所有店铺可见）"
+                                    allow-clear show-search optionFilterProp="label" :options="storeOptions" />
+                                <span class="store-hint">留空表示全局共享；选择店铺后该分类只在本店可见</span>
+                            </a-form-item>
+                        </a-col>
+                        <a-col :span="24">
                             <a-form-item label="排序" v-bind="validateInfos.sortOrder" id="ShopCategoryForm-sortOrder"
                                 name="sortOrder">
                                 <a-input-number v-model:value="formData.sortOrder" placeholder="请输入排序"
@@ -74,6 +82,7 @@
 import { Form } from 'ant-design-vue';
 import { computed, nextTick, reactive, ref } from 'vue';
 import { queryById, saveOrUpdate } from '../ShopCategory.api';
+import { storeAll } from '../../product/ShopProduct.api';
 import JFormContainer from '/@/components/Form/src/container/JFormContainer.vue';
 import JImageUpload from '/@/components/Form/src/jeecg/components/JImageUpload.vue';
 import JSwitch from '/@/components/Form/src/jeecg/components/JSwitch.vue';
@@ -95,9 +104,26 @@ const formData = reactive<Record<string, any>>({
     sortOrder: undefined,
     coverUrl: '',
     isShow: 'Y',
+    // 所属店铺：为空表示"全局共享"（所有店铺都可见）
+    storeId: undefined,
     translations: []
 });
 const { createMessage } = useMessage();
+
+/** 店铺下拉：分类按店独立，store_id 为空 = 全局共享节点 */
+const storeOptions = ref<any[]>([]);
+async function loadStores() {
+    try {
+        const res = await storeAll();
+        const records = res || [];
+        storeOptions.value = [
+            { label: '全局共享（所有店铺可见）', value: '' },
+            ...records.map((item: any) => ({ label: `${item.name}（${item.code}）`, value: item.id }))
+        ];
+    } catch (e) {
+        console.warn('店铺列表加载失败', e);
+    }
+}
 const labelCol = ref<any>({ xs: { span: 24 }, sm: { span: 5 } });
 const wrapperCol = ref<any>({ xs: { span: 24 }, sm: { span: 16 } });
 const confirmLoading = ref<boolean>(false);
@@ -136,6 +162,8 @@ function add() {
 async function edit(record) {
     await nextTick();
     resetFields();
+    // 店铺下拉（分类按店独立）
+    loadStores();
     // 先刷新组件，清空之前的翻译数据
     await langTabsRef.value?.refresh();
 
@@ -171,6 +199,8 @@ async function submitForm() {
     // 组装提交数据：从 LangTabs 获取清理过的 translations
     let model = JSON.parse(JSON.stringify(formData));
     model.translations = langTabsRef.value?.clean() ?? [];
+    // "全局共享"选项的值是空串，统一转成 null，避免库里存一堆 ''
+    model.storeId = model.storeId || null;
     if (model.id) {
         isUpdate.value = true;
     }
@@ -217,5 +247,12 @@ defineExpose({
 <style lang="less" scoped>
 .antd-modal-form {
     padding: 14px 20px;
+}
+.store-hint {
+    display: block;
+    margin-top: 4px;
+    color: rgba(0, 0, 0, 0.45);
+    font-size: 12px;
+    line-height: 1.6;
 }
 </style>

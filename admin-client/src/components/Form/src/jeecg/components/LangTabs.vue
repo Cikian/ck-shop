@@ -46,6 +46,11 @@ const activeKey = ref('');
 const localTranslations = reactive<any[]>([]);
 // 跳过由自身 emit 触发的 props watch，防止循环
 let skipPropsWatch = false;
+/**
+ * 抑制 props watch 的剩余 tick 数（setAll 期间使用）。
+ * 与 skipPropsWatch 的区别：这个覆盖整个"重置+回填"窗口，而不是单次 emit。
+ */
+let suppressPropsWatchFor = 0;
 // pending 队列：语言列表加载前到达的 translations 先暂存
 let pendingMerge: any[] | null = null;
 
@@ -198,11 +203,42 @@ async function refresh() {
   await loadLanguages();
 }
 
+/**
+ * 原子地"重置 + 回填"。
+ *
+ * 为什么需要它：refresh() 清空与 mergeFrom() 回填原本是两条异步路径，
+ * 中间会经过若干 tick，期间父组件 props 的深层 watch 可能把本地数据清掉，
+ * 表现为"编辑时多语言明明传进来了却显示为空、保存后内容丢失"。
+ * 这里把清空与回填放在同一个去重窗口内完成，中间不容外部干扰。
+ */
+async function setAll(translations: any) {
+  const list = normalizeTranslations(translations);
+  suppressPropsWatchFor = 3;
+  try {
+    localTranslations.length = 0;
+    activeKey.value = '';
+    pendingMerge = list.length ? list : null;
+    await loadLanguages();
+    // 语言加载过程中外部数据可能在 watcher 里被清掉，这里再合并一次兜底
+    if (list.length) {
+      doMerge(list);
+      emitUp();
+    }
+  } finally {
+    nextTick(() => {
+      suppressPropsWatchFor = 0;
+    });
+  }
+}
+
 // 父组件 v-model:translations 回传同步（只处理外部发起的改动）
 watch(
   () => props.translations,
   (val) => {
-    if (skipPropsWatch) return;
+    if (skipPropsWatch || suppressPropsWatchFor > 0) {
+      if (suppressPropsWatchFor > 0) suppressPropsWatchFor--;
+      return;
+    }
     const list = normalizeTranslations(val);
     if (list.length === 0) return;
     if (languageList.value.length === 0) {
@@ -245,6 +281,7 @@ defineExpose({
   refresh,
   clean,
   mergeFrom,
+  setAll,
 });
 </script>
 

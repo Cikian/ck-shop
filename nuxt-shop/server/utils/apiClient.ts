@@ -51,6 +51,14 @@ export function createApiClient(
   headers['Accept-Language'] = lang === 'zh' ? 'zh-CN' : 'en-US'
   headers['x-language'] = lang
 
+  // 店铺标识：由本站在服务端配置，通过请求头传给后端。
+  // 刻意**不放进 URL**——商品链接要分享到社交平台，必须短；
+  // 而且请求头由服务端注入，浏览器拿不到也改不了，后端据此过滤即可保证不串店。
+  const storeCode = (config.storeCode as string | undefined) || ''
+  if (storeCode) {
+    headers['X-Store-Code'] = storeCode
+  }
+
   return $fetch.create({
     baseURL: config.apiBaseUrl,
 

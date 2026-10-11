@@ -40,6 +40,18 @@ export default defineNuxtConfig({
   runtimeConfig: {
     apiBaseUrl: process.env.API_BASE_URL || 'http://127.0.0.1:9951/api',
 
+    /**
+     * 当前站点的店铺编码。
+     *
+     * 一个管理端、多个前台：每个前台站点在**服务端**配置自己的店铺编码，
+     * BFF 调后端时通过 X-Store-Code 请求头带上它。这样：
+     *   1) 商品链接分享到社交平台时**不带任何店铺参数**（域名本身就是店铺标识，链接更短）；
+     *   2) 浏览器拿不到也改不了这个值，不存在前端传参被篡改的问题；
+     *   3) 后端按编码过滤，A 店的商品不可能出现在 B 店。
+     * 未配置时后端会按域名兜底，最后回退到默认店铺（仅便于本地开发）。
+     */
+    storeCode: process.env.STORE_CODE || '',
+
     aesKey: process.env.AES_KEY || '1234567890adbcde',
     aesIv: process.env.AES_IV || '1234567890hjlkew',
 
