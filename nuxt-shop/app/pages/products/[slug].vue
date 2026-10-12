@@ -182,10 +182,6 @@
               <UIcon name="lucide:bookmark" class="h-3.5 w-3.5" />
               {{ product.categoryName }}
             </span>
-            <span v-if="product.brandName" class="inline-flex items-center gap-1 text-[var(--color-text-muted)]">
-              <UIcon name="lucide:badge-check" class="h-3.5 w-3.5" />
-              {{ product.brandName }}
-            </span>
             <span v-if="product.spuCode" class="text-[var(--color-text-muted)]">
               {{ t('product.spuCode') }}: {{ product.spuCode }}
             </span>
@@ -274,16 +270,21 @@
                 </button>
               </div>
 
+              <!-- 购物车/结算还没有实现：按钮保持禁用并如实说明，不再假装加购成功 -->
               <button
                 type="button"
-                class="flex flex-1 items-center justify-center gap-2 rounded-[var(--radius-button)] bg-[var(--color-accent)] px-8 py-3.5 text-sm font-bold text-white transition-all duration-300 hover:-translate-y-0.5 hover:bg-[var(--color-accent-700)] hover:shadow-xl hover:shadow-[var(--color-accent)]/30 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:translate-y-0 motion-reduce:transition-none motion-reduce:hover:translate-y-0 btn-shine"
-                :disabled="!buyable"
-                @click="handleAddToCart"
+                disabled
+                aria-disabled="true"
+                class="flex flex-1 items-center justify-center gap-2 rounded-[var(--radius-button)] bg-[var(--color-accent)] px-8 py-3.5 text-sm font-bold text-white transition-all duration-300 disabled:cursor-not-allowed disabled:opacity-50 motion-reduce:transition-none"
               >
                 <UIcon name="lucide:shopping-bag" class="h-5 w-5" />
-                {{ buyable ? t('product.addToCart') : t('product.unavailable') }}
+                {{ t('product.cartComingSoon') }}
               </button>
             </div>
+
+            <p class="mt-3 text-xs text-[var(--color-text-muted)]">
+              {{ t('product.cartComingSoonHint') }}
+            </p>
 
             <div v-if="buyable" class="mt-4 flex items-center justify-between rounded-[var(--radius-button)] bg-[var(--color-surface-secondary)] px-4 py-3">
               <span class="text-sm text-[var(--color-text-muted)]">{{ t('product.totalItems', { count: quantity }) }}</span>
@@ -305,27 +306,8 @@
             <p v-else class="mt-3 text-sm text-[var(--color-text-muted)]">{{ t('product.noDescription') }}</p>
           </div>
 
-          <!-- 服务承诺 -->
-          <div class="mt-8 grid grid-cols-3 gap-3">
-            <div class="glass rounded-[var(--radius-button)] border border-[var(--color-border)] p-4 text-center transition-all duration-300 hover:-translate-y-0.5 hover:shadow-md motion-reduce:transition-none motion-reduce:hover:translate-y-0">
-              <div class="mx-auto flex h-10 w-10 items-center justify-center rounded-xl bg-[var(--color-success)]/10 text-[var(--color-success)]">
-                <UIcon name="lucide:truck" class="h-5 w-5" />
-              </div>
-              <p class="mt-2 text-xs font-semibold text-[var(--color-primary)]">{{ t('product.freeShipping') }}</p>
-            </div>
-            <div class="glass rounded-[var(--radius-button)] border border-[var(--color-border)] p-4 text-center transition-all duration-300 hover:-translate-y-0.5 hover:shadow-md motion-reduce:transition-none motion-reduce:hover:translate-y-0">
-              <div class="mx-auto flex h-10 w-10 items-center justify-center rounded-xl bg-[var(--color-info)]/10 text-[var(--color-info)]">
-                <UIcon name="lucide:shield-check" class="h-5 w-5" />
-              </div>
-              <p class="mt-2 text-xs font-semibold text-[var(--color-primary)]">{{ t('product.securePayment') }}</p>
-            </div>
-            <div class="glass rounded-[var(--radius-button)] border border-[var(--color-border)] p-4 text-center transition-all duration-300 hover:-translate-y-0.5 hover:shadow-md motion-reduce:transition-none motion-reduce:hover:translate-y-0">
-              <div class="mx-auto flex h-10 w-10 items-center justify-center rounded-xl bg-[var(--color-warning)]/10 text-[var(--color-warning)]">
-                <UIcon name="lucide:rotate-ccw" class="h-5 w-5" />
-              </div>
-              <p class="mt-2 text-xs font-semibold text-[var(--color-primary)]">{{ t('product.easyReturns') }}</p>
-            </div>
-          </div>
+          <!-- 原「服务承诺」三卡（满 $99 免运费 / 安全支付 / 30 天无忧退换）已删除：
+               后台没有运费、支付、退换货这些概念，属于没有数据支撑的承诺。 -->
         </div>
       </div>
 
@@ -481,17 +463,6 @@ watch(
     activeImageIndex.value = 0
   },
 )
-
-function handleAddToCart() {
-  if (!buyable.value) return
-  console.log('Add to cart:', {
-    productId: product.value?.id,
-    spuCode: product.value?.spuCode,
-    skuId: combination.value?.id ?? null,
-    skuCode: combination.value?.skuCode ?? null,
-    quantity: quantity.value,
-  })
-}
 
 async function handleShare() {
   if (!import.meta.client) return

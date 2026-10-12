@@ -23,12 +23,6 @@
             </a-form-item>
           </a-col>
           <a-col :lg="6">
-            <a-form-item name="brandId">
-              <template #label><span title="品牌">品牌</span></template>
-              <a-select v-model:value="queryParam.brandId" placeholder="全部品牌" allow-clear show-search optionFilterProp="label" :options="brandOptions" />
-            </a-form-item>
-          </a-col>
-          <a-col :lg="6">
             <a-form-item name="status">
               <template #label><span title="状态">状态</span></template>
               <a-select v-model:value="queryParam.status" placeholder="全部状态" allow-clear :options="statusOptions" />
@@ -40,9 +34,11 @@
               <a-select v-model:value="queryParam.tagId" placeholder="全部标签" allow-clear show-search optionFilterProp="label" :options="tagOptions" />
             </a-form-item>
           </a-col>
-          <a-col :lg="6">
+          <!-- 按店铺筛选只对"能跨店看数据"的账号有意义：运营选了别的店铺也只会得到空结果
+               （后端可见域取交集，不会放大范围），因此用按钮权限把它收起来 -->
+          <a-col v-auth="'shop-product:filter-store'" :lg="6">
             <a-form-item name="storeId">
-              <template #label><span title="销售渠道">店铺</span></template>
+              <template #label><span title="所属店铺">所属店铺</span></template>
               <a-select v-model:value="queryParam.storeId" placeholder="全部店铺" allow-clear show-search optionFilterProp="label" :options="storeOptions" />
             </a-form-item>
           </a-col>
@@ -99,7 +95,7 @@
   import { ref, reactive } from 'vue';
   import { BasicTable, TableAction } from '/@/components/Table';
   import { useListPage } from '/@/hooks/system/useListPage';
-  import { columns, superQuerySchema } from './ShopProduct.data';
+  import { columns, superQuerySchema, setOrgStoreNameMap } from './ShopProduct.data';
   import {
     list,
     deleteOne,
@@ -107,7 +103,6 @@
     getImportUrl,
     getExportUrl,
     updateProductStatus,
-    brandList,
     tagAll,
     categoryList,
     storeAll,
@@ -123,7 +118,6 @@
 
   // 下拉选项
   const categoryOptions = ref<any[]>([]);
-  const brandOptions = ref<any[]>([]);
   const tagOptions = ref<any[]>([]);
   const storeOptions = ref<any[]>([]);
   const statusOptions = [
@@ -179,9 +173,8 @@
   /** 加载下拉选项 */
   async function loadOptions() {
     try {
-      const [categoryRes, brandRes, tagRes, storeRes] = await Promise.all([
+      const [categoryRes, tagRes, storeRes] = await Promise.all([
         categoryList({ pageNo: 1, pageSize: 200, isShow: 'Y' }),
-        brandList({ pageNo: 1, pageSize: 200, isShow: 'Y' }),
         tagAll(),
         // 店铺筛选：启用中的店铺
         storeAll().catch(() => []),
@@ -191,20 +184,19 @@
         label: item.name || item.id,
         value: item.id,
       }));
-      const brandRecords = brandRes?.records || brandRes || [];
-      brandOptions.value = brandRecords.map((item: any) => ({
-        label: pickTranslationName(item) || item.code,
-        value: item.id,
-      }));
       const tagRecords = tagRes || [];
       tagOptions.value = tagRecords.map((item: any) => ({
         label: pickTranslationName(item) || item.code,
         value: item.id,
       }));
-      storeOptions.value = (storeRes || []).map((item: any) => ({
+      const storeRecords = storeRes || [];
+      // 筛选仍传 storeId；后端会把 storeId 解析为部门 org_code 可见域
+      storeOptions.value = storeRecords.map((item: any) => ({
         label: `${item.name}（${item.code}）`,
         value: item.id,
       }));
+      // 「所属店铺」列按商品 sysOrgCode（= 店铺 departOrgCode）反查店铺名
+      setOrgStoreNameMap(storeRecords);
     } catch (e) {
       // 下拉加载失败不阻塞列表
       console.warn('加载商品筛选项失败', e);

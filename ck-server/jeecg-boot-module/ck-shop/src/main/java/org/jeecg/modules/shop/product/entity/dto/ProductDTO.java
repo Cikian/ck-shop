@@ -43,9 +43,4 @@ public class ProductDTO extends ShopProduct {
      * SKU 规格组合（笛卡尔积的每一行）
      */
     private List<SkuCombinationDTO> combinations;
-    /**
-     * 销售渠道：本商品上架到哪些店铺，以及每店的分类归属与售价。
-     * 为空表示不改变现有的上架关系（用于只改商品主体的场景）。
-     */
-    private List<StoreListingDTO> stores;
 }

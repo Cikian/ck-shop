@@ -9,6 +9,7 @@ import org.jeecg.config.shiro.IgnoreAuth;
 import org.jeecg.modules.shop.category.entity.ShopCategory;
 import org.jeecg.modules.shop.category.entity.vo.StoreCategoryVO;
 import org.jeecg.modules.shop.category.service.IShopCategoryService;
+import org.jeecg.modules.shop.store.ShopOrgScopeResolver;
 import org.jeecg.modules.shop.store.StoreResolver;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -16,6 +17,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.util.ArrayList;
 import java.util.List;
 
 /**
@@ -46,8 +48,14 @@ public class ShopStoreCategoryController {
     @Autowired
     private StoreResolver storeResolver;
 
+    @Autowired
+    private ShopOrgScopeResolver orgScopeResolver;
+
     /**
      * 分类树（仅当前店铺可见的分类，含每个分类下本店的已上架商品数）
+     *
+     * 店铺 → 店铺绑定部门的 org_code → 分类归属列 sys_org_code，
+     * 与商品接口完全同一套规则；解析不到店铺/部门一律报错，不返回全量。
      */
     @IgnoreAuth
     @Operation(summary = "店铺端-分类树")
@@ -55,8 +63,12 @@ public class ShopStoreCategoryController {
     public Result<List<StoreCategoryVO>> tree(@RequestParam(name = "lang", required = false) String lang,
                                               HttpServletRequest req) {
         String language = lang != null && !lang.isEmpty() ? lang : resolveLanguage(req);
-        String storeId = storeResolver.resolveStoreId(req);
-        return Result.OK(shopCategoryService.buildStoreTree(storeId, language));
+        String orgCode = orgScopeResolver.resolveStoreOrgCodeOrNull(storeResolver.resolve(req));
+        if (orgCode == null) {
+            // 店铺归属缺失 → 返回空树而不是 500（日志里已 warn），页面仍可访问
+            return Result.OK(new ArrayList<StoreCategoryVO>());
+        }
+        return Result.OK(shopCategoryService.buildStoreTree(orgCode, language));
     }
 
     private String resolveLanguage(HttpServletRequest request) {

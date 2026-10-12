@@ -45,9 +45,6 @@ public class StoreProductDetailVO extends ShopProduct {
     @Schema(description = "分类名称（按当前语言）")
     private String categoryName;
 
-    @Schema(description = "品牌名称（按当前语言）")
-    private String brandName;
-
     @Schema(description = "图集（按 sortOrder 升序）")
     private List<ShopProductImage> images;
 

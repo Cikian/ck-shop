@@ -1,6 +1,25 @@
-import { h } from 'vue';
+import { h, reactive } from 'vue';
 import { Tag, Tooltip } from 'ant-design-vue';
 import { BasicColumn } from '/@/components/Table';
+
+/**
+ * departOrgCode（= 商品 sysOrgCode，即所属店铺绑定的部门 org_code）-> 店铺名 的映射。
+ *
+ * 商品列表接口返回的是 ProductListVO，只有 sysOrgCode 没有店铺名；
+ * 店铺数量很少，由列表页加载 /shop/store/all 后写进这个模块级响应式映射，
+ * 列渲染直接查表，避免为了显示一个名字再往后端加一次连表查询。
+ */
+export const orgStoreNameMap = reactive<Record<string, string>>({});
+
+/** 由列表页在加载店铺后调用：key = 店铺绑定的部门 org_code，value = 店铺名 */
+export function setOrgStoreNameMap(list: any[]) {
+  Object.keys(orgStoreNameMap).forEach((key) => delete orgStoreNameMap[key]);
+  (list || []).forEach((item: any) => {
+    if (item?.departOrgCode) {
+      orgStoreNameMap[item.departOrgCode] = item.name || item.code || item.departOrgCode;
+    }
+  });
+}
 
 /** 价格展示：区间用 ~ 连接，单值直接展示 */
 function formatPriceRange(min?: number | string | null, max?: number | string | null): string {
@@ -46,14 +65,11 @@ export const columns: BasicColumn[] = [
     },
   },
   {
-    title: '分类 / 品牌',
+    title: '分类',
     align: 'left',
     dataIndex: 'categoryName',
     width: 180,
-    customRender: ({ record }) => {
-      const text = [record.categoryName, record.brandName].filter(Boolean).join(' / ');
-      return h('span', text || '-');
-    },
+    customRender: ({ record }) => h('span', record.categoryName || '-'),
   },
   {
     title: '标签',
@@ -71,26 +87,30 @@ export const columns: BasicColumn[] = [
     },
   },
   {
-    title: '销售渠道',
+    /*
+     * 注意：本列的 dataIndex 是商品自身的 sysOrgCode（= 店铺绑定的部门 org_code），
+     * 而筛选区「所属店铺」传的是 storeId（店铺主键）。两者不是同一个值，
+     * 后端对这两种入参都支持，不要"为了一致"把它们改成同一个字段。
+     */
+    title: '所属店铺',
     align: 'left',
-    dataIndex: 'stores',
+    dataIndex: 'sysOrgCode',
     width: 170,
     customRender: ({ record }) => {
-      const stores = record.stores || [];
-      if (!stores.length) {
-        return h('span', { style: 'color:rgba(0,0,0,.35)' }, '未上架');
+      const orgCode = record.sysOrgCode;
+      if (!orgCode) {
+        return h('span', { style: 'color:rgba(0,0,0,.35)' }, '-');
       }
+      const storeName = orgStoreNameMap[orgCode];
+      if (storeName) {
+        return h('span', storeName);
+      }
+      // 映射查不到：店铺可能已删除，或该部门还没绑定店铺。
+      // 不要直接把裸 org_code 当正常店铺名展示，否则看起来像是有效值。
       return h(
-        'div',
-        { style: 'display:flex;flex-wrap:wrap;gap:4px' },
-        stores.map((item: any) =>
-          h(
-            Tag,
-            // 本店下架用灰色，上架用蓝色：一眼能看出"上架到几个店、其中哪些是下架的"
-            { color: item.status === 'N' ? 'default' : 'blue', key: item.storeId },
-            () => item.storeName || item.storeCode || item.storeId
-          )
-        )
+        Tooltip,
+        { title: '该店铺可能已被删除，或该部门尚未绑定店铺' },
+        () => h('span', { style: 'color:#d46b08' }, `未知店铺（${orgCode}）`)
       );
     },
   },
@@ -123,6 +143,8 @@ export const columns: BasicColumn[] = [
     align: 'center',
     dataIndex: 'sortOrder',
     width: 80,
+    // 表头问号提示：排序方向与前台一致，避免误解成"越大越靠前"
+    helpMessage: '数字越小越靠前（与前台一致）',
   },
   {
     title: '状态',
@@ -159,7 +181,6 @@ export const superQuerySchema = {
   spuCode: { title: 'SPU编码', order: 0, view: 'text', type: 'string' },
   status: { title: '状态: N-下架, Y-上架', order: 1, view: 'text', type: 'string' },
   categoryId: { title: '分类ID', order: 2, view: 'text', type: 'string' },
-  brandId: { title: '品牌ID', order: 3, view: 'text', type: 'string' },
   isRecommend: { title: '是否推荐: N-否, Y-是', order: 4, view: 'text', type: 'string' },
   sortOrder: { title: '排序', order: 5, view: 'number', type: 'number' },
 };

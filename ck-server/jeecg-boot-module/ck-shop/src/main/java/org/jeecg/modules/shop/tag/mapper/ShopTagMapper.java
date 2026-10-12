@@ -73,10 +73,17 @@ public interface ShopTagMapper extends BaseMapper<ShopTag> {
                                  @Param("username") String username,
                                  @Param("now") java.util.Date now);
 
-    @Select("SELECT tag_id FROM sk_shop_product_tag_relation WHERE product_id = #{productId}")
+    /**
+     * 商品当前有效的标签 id。
+     * 必须带 {@code del_flag = 0}：关联是**软删除**的，漏了这个条件会读到已解除的关联——
+     * 表现为"取消了标签但列表/详情还带着它"，并且回写时把软删行当成"已存在"从而跳过重新插入，
+     * 于是重新勾选也回不来（评审发现的确定 bug）。
+     */
+    @Select("SELECT tag_id FROM sk_shop_product_tag_relation WHERE del_flag = 0 AND product_id = #{productId}")
     List<String> selectTagIdsByProductId(@Param("productId") String productId);
 
-    @Select("<script>SELECT product_id, tag_id FROM sk_shop_product_tag_relation WHERE product_id IN "
+    /** 同上，批量版本（同样必须过滤 del_flag） */
+    @Select("<script>SELECT product_id, tag_id FROM sk_shop_product_tag_relation WHERE del_flag = 0 AND product_id IN "
             + "<foreach collection='productIds' item='pid' open='(' separator=',' close=')'>#{pid}</foreach>"
             + "</script>")
     List<java.util.Map<String, Object>> selectProductTagRelations(@Param("productIds") Collection<String> productIds);

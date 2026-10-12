@@ -40,16 +40,26 @@
                   </a-form-item>
                 </a-col>
                 <a-col :xs="24" :xl="12">
-                  <a-form-item label="品牌" name="brandId">
-                    <a-select
-                      v-model:value="formData.brandId"
-                      placeholder="请选择品牌"
-                      allow-clear
-                      show-search
-                      option-filter-prop="label"
-                      :options="brandOptions"
-                      :disabled="disabled"
-                    />
+                  <a-form-item label="所属店铺" name="sysOrgCode">
+                    <!--
+                      运营（无 shop-store:manage-all）：归属由后端按操作人部门强制决定，
+                      这里只读展示；查不到店铺映射时 Select 会直接显示 org_code 原文。
+                    -->
+                    <template v-if="!canManageStoreOrg">
+                      <a-select :value="formData.sysOrgCode" :options="orgStoreOptions" :disabled="true" placeholder="未设置" />
+                      <span class="field-hint">归属由账号所在部门决定，如需调整请联系管理员</span>
+                    </template>
+                    <template v-else>
+                      <a-select
+                        v-model:value="formData.sysOrgCode"
+                        placeholder="请选择所属店铺"
+                        show-search
+                        option-filter-prop="label"
+                        :options="orgStoreOptions"
+                        :disabled="disabled"
+                      />
+                      <span class="field-hint">商品必须属于一个店铺（归属不可置空）；切换后它只在新店铺的前台可见</span>
+                    </template>
                   </a-form-item>
                 </a-col>
                 <a-col :xs="24" :xl="12">
@@ -140,62 +150,6 @@
                       :options="tagOptions"
                       :disabled="disabled"
                     />
-                  </a-form-item>
-                </a-col>
-                <a-col :span="24">
-                  <a-form-item label="销售渠道" name="storeIds">
-                    <a-select
-                      v-model:value="selectedStoreIds"
-                      mode="multiple"
-                      placeholder="选择要上架该商品的店铺（可多选）"
-                      allow-clear
-                      show-search
-                      option-filter-prop="label"
-                      :options="storeOptions"
-                      :disabled="disabled"
-                    />
-                    <span v-if="!storeOptions.length" class="field-hint">还没有店铺，请先到「店铺管理」创建</span>
-                    <span v-else class="field-hint">商品主体全局只有一份，此处只决定上架到哪些店铺</span>
-                  </a-form-item>
-                </a-col>
-
-                <a-col v-if="formData.stores.length" :span="24">
-                  <a-form-item label="本店设置">
-                    <div class="store-listings">
-                      <div class="store-listings__row store-listings__row--head">
-                        <span>店铺</span>
-                        <span>本店分类</span>
-                        <span>本店售价</span>
-                        <span>状态</span>
-                      </div>
-                      <div v-for="item in formData.stores" :key="item.storeId" class="store-listings__row">
-                        <span class="store-listings__name">{{ storeName(item.storeId) }}</span>
-                        <a-select
-                          v-model:value="item.categoryId"
-                          placeholder="留空则用主分类"
-                          allow-clear
-                          show-search
-                          option-filter-prop="label"
-                          :options="categoryOptions"
-                          :disabled="disabled"
-                        />
-                        <a-input-number
-                          v-model:value="item.priceOverride"
-                          placeholder="留空则用基准价"
-                          :min="0"
-                          :precision="2"
-                          :disabled="disabled"
-                        />
-                        <a-switch
-                          :checked="item.status !== 'N'"
-                          checked-children="上架"
-                          un-checked-children="下架"
-                          :disabled="disabled"
-                          @change="(checked) => toggleListingStatus(item, checked)"
-                        />
-                      </div>
-                    </div>
-                    <span class="field-hint">分类按店独立：本店分类留空时回退商品主分类；售价只影响未单独定价的 SKU</span>
                   </a-form-item>
                 </a-col>
               </a-row>
@@ -365,7 +319,7 @@
 
               <!--
                 这里刻意不再使用 LangTabs：
-                该组件同时服务分类/品牌/标签，内部有一套"外部 props 与本地副本互相同步"的机制，
+                该组件同时服务分类/标签，内部有一套"外部 props 与本地副本互相同步"的机制，
                 在商品这种"编辑时一次性整表回填"的场景下反复出现回填不显示、保存后丢失的问题。
                 商品表单本来就只维护一个商品的文案，直接自己持有语言状态最稳。
               -->
@@ -508,9 +462,10 @@
   import ProductSpecEditor from './ProductSpecEditor.vue';
   import ProductSkuEditor from './ProductSkuEditor.vue';
   import { useMessage } from '/@/hooks/web/useMessage';
+  import { usePermission } from '/@/hooks/web/usePermission';
   import { listLang } from '/@/api/common/api';
   import { initDictOptions } from '/@/utils/dict';
-  import { brandList, categoryList, queryById, saveOrUpdate, tagAll } from '../ShopProduct.api';
+  import { categoryList, queryById, saveOrUpdate, tagAll } from '../ShopProduct.api';
   import { all as storeAll } from '../../store/ShopStore.api';
 
   const props = withDefaults(defineProps<{ formDisabled?: boolean }>(), { formDisabled: false });
@@ -519,6 +474,7 @@
 
   const simpleImage = Empty.PRESENTED_IMAGE_SIMPLE;
   const { createMessage } = useMessage();
+  const { hasPermission } = usePermission();
 
   const visible = ref(false);
   /** 只读详情模式：由 ProductModal 通过 setReadonly 控制 */
@@ -530,42 +486,14 @@
   const drawerWidth = '86%';
 
   const categoryOptions = ref<any[]>([]);
-  const brandOptions = ref<any[]>([]);
   const tagOptions = ref<any[]>([]);
   /** 上游来源选项（来自系统字典 shop_upstream_source） */
   const upstreamOptions = ref<any[]>([]);
-  /** 店铺选项（销售渠道；来自 /shop/store/all） */
-  const storeOptions = ref<any[]>([]);
+  /** 所属店铺选项：value = 店铺绑定的部门 org_code（/shop/store/all 的 departOrgCode） */
+  const orgStoreOptions = ref<any[]>([]);
 
-  /**
-   * 销售渠道：多选决定"上架到哪些店铺"。
-   * 用 computed 的 get/set 让多选框直接驱动 formData.stores 这份明细数据，
-   * 已配置过的店铺在取消/重新勾选时能保留它自己的分类与售价。
-   */
-  const selectedStoreIds = computed({
-    get: () => (formData.stores || []).map((item: any) => item.storeId),
-    set: (ids: string[]) => {
-      const previous = new Map<string, any>((formData.stores || []).map((item: any) => [item.storeId, item]));
-      formData.stores = (ids || []).map(
-        (storeId) =>
-          previous.get(storeId) || {
-            storeId,
-            categoryId: undefined,
-            priceOverride: null,
-            status: 'Y',
-          }
-      );
-    },
-  });
-
-  function storeName(storeId: string) {
-    return storeOptions.value.find((item: any) => item.value === storeId)?.label || storeId;
-  }
-
-  /** 本店上架状态：只认 'Y' / 'N'，避免把布尔值塞进 payload */
-  function toggleListingStatus(item: any, checked: boolean) {
-    item.status = checked ? 'Y' : 'N';
-  }
+  /** 只有管理员/总部角色有 shop-store:manage-all，能改商品归属；运营只能看 */
+  const canManageStoreOrg = computed(() => hasPermission('shop-store:manage-all'));
 
   /** 启用的语言列表（来自 /sys/lang，只返回 enabled='Y' 的） */
   const languages = ref<any[]>([]);
@@ -627,7 +555,8 @@
     id: '',
     spuCode: '',
     categoryId: undefined,
-    brandId: undefined,
+    // 所属店铺：值 = 店铺绑定的部门 org_code；留空则由后端按操作人部门自动归属
+    sysOrgCode: undefined,
     upstreamSource: undefined,
     upstreamUrl: '',
     price: null,
@@ -637,7 +566,6 @@
     isRecommend: 'N',
     mainImage: '',
     tagIds: [],
-    stores: [],
     translations: [],
     images: [],
     specs: [],
@@ -803,29 +731,29 @@
   /** 加载下拉选项 */
   async function loadOptions() {
     try {
-      const [categoryRes, brandRes, tagRes, upstreamRes, storeRes] = await Promise.all([
+      const [categoryRes, tagRes, upstreamRes, storeRes] = await Promise.all([
         categoryList({ pageNo: 1, pageSize: 500, isShow: 'Y' }),
-        brandList({ pageNo: 1, pageSize: 500, isShow: 'Y' }),
         tagAll(),
         // 上游来源取自系统字典：系统管理 → 数据字典 → shop_upstream_source
         initDictOptions('shop_upstream_source').catch(() => []),
-        // 销售渠道：启用中的店铺
+        // 所属店铺：启用中的店铺
         storeAll().catch(() => []),
       ]);
       const categoryRecords = categoryRes?.records || categoryRes || [];
       categoryOptions.value = categoryRecords.map((item: any) => ({ label: item.name || item.id, value: item.id }));
-      const brandRecords = brandRes?.records || brandRes || [];
-      brandOptions.value = brandRecords.map((item: any) => ({ label: pickTranslationName(item) || item.code, value: item.id }));
       const tagRecords = tagRes || [];
       tagOptions.value = tagRecords.map((item: any) => ({ label: pickTranslationName(item) || item.code, value: item.id }));
       upstreamOptions.value = (upstreamRes || []).map((item: any) => ({
         label: item?.text ?? item?.label ?? item?.value,
         value: item?.value,
       }));
-      storeOptions.value = (storeRes || []).map((item: any) => ({
-        label: `${item.name}（${item.code}）`,
-        value: item.id,
-      }));
+      // 只列绑定了部门的店铺：商品归属提交的是部门 org_code，没绑部门的店铺无法承载归属
+      orgStoreOptions.value = (storeRes || [])
+        .filter((item: any) => !!item?.departOrgCode)
+        .map((item: any) => ({
+          label: `${item.name}（${item.code}）`,
+          value: item.departOrgCode,
+        }));
     } catch (e) {
       console.warn('加载下拉选项失败', e);
     }
@@ -861,7 +789,7 @@
       id: '',
       spuCode: '',
       categoryId: undefined,
-      brandId: undefined,
+      sysOrgCode: undefined,
       upstreamSource: undefined,
       upstreamUrl: '',
       price: null,
@@ -871,7 +799,6 @@
       isRecommend: 'N',
       mainImage: '',
       tagIds: [],
-      stores: [],
       translations: [],
       images: [],
       specs: [],
@@ -919,7 +846,8 @@
         id: detail.id,
         spuCode: detail.spuCode || '',
         categoryId: detail.categoryId || undefined,
-        brandId: detail.brandId || undefined,
+        // 所属店铺：后端 join 出来的归属列，直接落在 ProductDetailVO 上
+        sysOrgCode: detail.sysOrgCode || undefined,
         upstreamSource: detail.upstreamSource || undefined,
         upstreamUrl: detail.upstreamUrl || '',
         price: detail.price ?? null,
@@ -929,13 +857,6 @@
         isRecommend: detail.isRecommend || 'N',
         mainImage: detail.mainImage || '',
         tagIds: detail.tagIds || [],
-        // 销售渠道：本商品上架到哪些店铺，以及每店的分类/售价/上架状态
-        stores: (detail.stores || []).map((item: any) => ({
-          storeId: item.storeId,
-          categoryId: item.categoryId || undefined,
-          priceOverride: item.priceOverride ?? null,
-          status: item.status || 'Y',
-        })),
         translations: [],
         images: (detail.images || []).map((image: any) => ({
           url: image.url,
@@ -1134,7 +1055,8 @@
       id: formData.id || undefined,
       spuCode: formData.spuCode || undefined,
       categoryId: formData.categoryId || null,
-      brandId: formData.brandId || null,
+      // 所属店铺：不传时由后端按操作人部门自动归属（运营只能如此）；商品归属不可为空
+      sysOrgCode: formData.sysOrgCode || undefined,
       upstreamSource: formData.upstreamSource || null,
       upstreamUrl: normalizeUpstreamUrl(formData.upstreamUrl) || null,
       price: formData.price,
@@ -1144,17 +1066,6 @@
       isRecommend: formData.isRecommend,
       mainImage: formData.mainImage || null,
       tagIds: formData.tagIds || [],
-      // 销售渠道：始终提交数组（后端约定 null=不改，数组=按数组同步）
-      stores: (formData.stores || [])
-        .filter((item: any) => item && item.storeId)
-        .map((item: any, index: number) => ({
-          storeId: item.storeId,
-          categoryId: item.categoryId || null,
-          priceOverride: item.priceOverride === '' || item.priceOverride === undefined ? null : item.priceOverride,
-          status: item.status || 'Y',
-          sortOrder: index,
-          isRecommend: 'N',
-        })),
       translations,
       images: (formData.images || [])
         .filter((image: any) => (image.url || '').trim() !== '')
@@ -1689,40 +1600,6 @@
 
   .lang-form {
     padding: 2px 0 0;
-  }
-
-  /* 销售渠道：每个店铺一行，四列对齐 */
-  .store-listings {
-    max-width: 900px;
-    border: 1px solid #f0f0f0;
-    border-radius: 10px;
-    overflow: hidden;
-
-    &__row {
-      display: grid;
-      grid-template-columns: 200px minmax(0, 1fr) 160px 90px;
-      align-items: center;
-      gap: 12px;
-      padding: 8px 12px;
-
-      & + & {
-        border-top: 1px solid #f5f5f5;
-      }
-
-      &--head {
-        background: #fafafa;
-        font-size: 12px;
-        color: rgba(0, 0, 0, 0.45);
-      }
-    }
-
-    &__name {
-      font-size: 13px;
-      color: rgba(0, 0, 0, 0.85);
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
-    }
   }
 
   /* 尊重"减少动态效果"偏好 */

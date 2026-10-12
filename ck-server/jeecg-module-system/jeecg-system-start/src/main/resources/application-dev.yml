@@ -1,3 +1,11 @@
+# =============================================================================
+# dev 环境配置
+#
+# 密码 / 密钥 / 账号等**敏感值不再写在本文件里**，全部通过 ${VAR} 从 .env 读取
+# （加载方式见同目录 application.yml 的 spring.config.import）。
+# 首次启动前：cp ../../.env.example ../../.env 然后填上真实值，否则启动会报
+# "Could not resolve placeholder 'XXX'"。
+# =============================================================================
 server:
   port: 9951
   tomcat:
@@ -30,9 +38,9 @@ spring:
   mail:
     # 定时任务发送邮件
     timeJobSend: false
-    host: cikian.cn
-    username: noreply.cikian.cn
-    password: Chen0809
+    host: ${MAIL_HOST}
+    username: ${MAIL_USERNAME}
+    password: ${MAIL_PASSWORD}
     properties:
       mail.smtp.timeout: 10000  # 连接超时（毫秒）
       mail.smtp.connectiontimeout: 10000  # 连接超时（毫秒）
@@ -107,9 +115,9 @@ spring:
     druid:
       stat-view-servlet:
         enabled: true
-        loginUsername: admin
-        # 默认弱口令，部署前务必修改
-        loginPassword: 123456
+        loginUsername: ${DRUID_STAT_USERNAME:admin}
+        # 默认弱口令，部署前务必修改（真实值在 .env 的 DRUID_STAT_PASSWORD）
+        loginPassword: ${DRUID_STAT_PASSWORD}
         allow:
       web-stat-filter:
         enabled: true
@@ -144,9 +152,9 @@ spring:
           slow-sql-millis: 5000
       datasource:
         master:
-          url: jdbc:mysql://127.0.0.1:3306/ck-shop?characterEncoding=UTF-8&useUnicode=true&useSSL=false&tinyInt1isBit=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Shanghai
-          username: root
-          password: Chen0809@mysql
+          url: jdbc:mysql://${MYSQL_HOST}:${MYSQL_PORT}/${MYSQL_DATABASE}?characterEncoding=UTF-8&useUnicode=true&useSSL=false&tinyInt1isBit=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Shanghai
+          username: ${MYSQL_USERNAME}
+          password: ${MYSQL_PASSWORD}
           driver-class-name: com.mysql.cj.jdbc.Driver
 #        # shardingjdbc数据源
 #        sharding-db:
@@ -155,10 +163,10 @@ spring:
   #redis 配置
   data:
     redis:
-      database: 0
-      host: 127.0.0.1
-      port: 6379
-      password:
+      database: ${REDIS_DATABASE:0}
+      host: ${REDIS_HOST}
+      port: ${REDIS_PORT}
+      password: ${REDIS_PASSWORD:}
 #mybatis plus 设置
 mybatis-plus:
   mapper-locations: classpath*:org/jeecg/**/xml/*Mapper.xml
@@ -185,7 +193,7 @@ jeecg:
   ai-chat:
     enabled: true
     model: deepseek-v4-pro
-    apiKey: ??
+    apiKey: ${AI_CHAT_API_KEY:}
     apiHost: https://api.deepseek.com/v1
     timeout: 60
     skills-dir:
@@ -203,7 +211,7 @@ jeecg:
       # 提供商 OPENAI/ZHIPU/QWEN
       provider: QWEN
       model: wan2.2-t2i-flash
-      apiKey: sk-??
+      apiKey: ${AI_DRAW_API_KEY:}
       apiHost: https://dashscope.aliyuncs.com/api/v1/
       timeout: 60
     # AI图生图绘画
@@ -212,14 +220,14 @@ jeecg:
       provider: QWEN
       # 目前只支持 wan2.5-i2i-preview和wanx2.1-imageedit模型
       model: wan2.5-i2i-preview
-      apiKey: sk-??
+      apiKey: ${AI_PIC_DRAW_API_KEY:}
       apiHost: https://dashscope.aliyuncs.com/api/v1/
       timeout: 60
     # AI语音 目前只支持智普 glm-tts
     ai-model-voice:
       provider: ZHIPU
       model: glm-tts
-      apiKey: sk-??
+      apiKey: ${AI_VOICE_API_KEY:}
       apiHost: https://open.bigmodel.cn/api/paas/v4
       timeout: 60
       # tongtong、chuichui、xiaochen、jam、kazi、douji、luodo
@@ -230,7 +238,7 @@ jeecg:
     ai-model-video:
       provider: ZHIPU
       model: cogvideox-3
-      apiKey: sk-??
+      apiKey: ${AI_VIDEO_API_KEY:}
       apiHost: https://open.bigmodel.cn/api/paas/v4
       timeout: 60
       ffmpeg-path:
@@ -239,7 +247,7 @@ jeecg:
     ai-model-embed:
       provider: QWEN
       model: text-embedding-v1
-      apiKey: sk-??
+      apiKey: ${AI_EMBED_API_KEY:}
       apiHost: https://dashscope.aliyuncs.com/api/v1/services/
       timeout: 60
   # AIRag向量库
@@ -247,15 +255,15 @@ jeecg:
     # AI流程敏感节点(stdio=命令行节点, sql=SQL节点, code=代码节点/脚本执行,高危存在RCE风险默认禁用)
     allow-sensitive-nodes: sql,stdio,code
     embed-store:
-      host: 49.232.252.56
-      port: 5432
-      database: vector_db
-      user: postgres
-      password: Chen0809@pgsql
+      host: ${PGVECTOR_HOST}
+      port: ${PGVECTOR_PORT}
+      database: ${PGVECTOR_DATABASE}
+      user: ${PGVECTOR_USER}
+      password: ${PGVECTOR_PASSWORD}
       table: embeddings
     # Brave Search 联网检索（AI Agent 工具）
     brave-search:
-      api-key: ??
+      api-key: ${BRAVE_SEARCH_API_KEY:}
       endpoint: https://api.search.brave.com/res/v1/web/search
       count: 10
       timeout: 15
@@ -274,8 +282,8 @@ jeecg:
     enableLoginCaptcha: false
     # 是否开启三级等保强密码校验（true 开启强密码模式，false 使用简单密码规则）
     enableStrongPwd: false
-  # 签名密钥串(前后端要一致，正式发布请自行修改)
-  signatureSecret: dd05f1c54d63749eda95f9fa6d49v442a
+  # 签名密钥串(前后端要一致，正式发布请自行修改；真实值在 .env)
+  signatureSecret: ${JEECG_SIGNATURE_SECRET}
   #签名拦截接口
   signUrls: /sys/dict/getDictItems/*,/sys/dict/loadDict/*,/sys/dict/loadDictOrderByValue/*,/sys/dict/loadDictItem/*,/sys/dict/loadTreeData,/sys/api/queryTableDictItemsByCode,/sys/api/queryFilterTableDictInfo,/sys/api/queryTableDictByKeys,/sys/api/translateDictFromTable,/sys/api/translateDictFromTableByKeys,/sys/sendChangePwdSms,/sys/user/sendChangePhoneSms,/sys/sms,/desform/api/sendVerifyCode
   # 上传类型：local（本地存储）| minio（MinIO对象存储）| alioss（阿里云OSS）| cikoss 
@@ -295,10 +303,10 @@ jeecg:
   smsSendType: aliyun
   #阿里云oss存储和大鱼短信秘钥配置
   oss:
-    accessKey: cikian
-    secretKey: Chen0809
-    endpoint: https://oss.cikian.cn
-    bucketName: saas-file
+    accessKey: ${ALIYUN_OSS_ACCESS_KEY}
+    secretKey: ${ALIYUN_OSS_SECRET_KEY}
+    endpoint: ${ALIYUN_OSS_ENDPOINT}
+    bucketName: ${ALIYUN_OSS_BUCKET}
     # 短信模板
     sms-template:
       # 签名
@@ -325,21 +333,21 @@ jeecg:
   file-view-domain: http://fileview.jeecg.com
   # minio文件上传
   minio:
-    minio_url: https://oss.cikian.cn
-    minio_name: cikian
-    minio_pass: Chen0809
-    bucketName: saas-file
+    minio_url: ${MINIO_URL}
+    minio_name: ${MINIO_NAME}
+    minio_pass: ${MINIO_PASS}
+    bucketName: ${MINIO_BUCKET}
   #大屏报表参数设置
   jmreport:
     #多租户模式，默认值为空(created:按照创建人隔离、tenant:按照租户隔离)
     saasMode: 
-    # 签名密钥串(前后端要一致，正式发布请自行修改)
-    signatureSecret: dd05f1c54d63749eda95f9fa6d49v442a
+    # 签名密钥串(前后端要一致，正式发布请自行修改；真实值在 .env)
+    signatureSecret: ${JMREPORT_SIGNATURE_SECRET}
     ai:
       # OpenAI 兼容 base 地址（必填）
       base-url: https://api.deepseek.com
       # API Key（必填，留空则 AI 不可用）
-      api-key: 
+      api-key: ${JMREPORT_AI_API_KEY:}
       # 模型名
       model: deepseek-v4-pro
       #确定性输出，默认temperature=0
@@ -379,8 +387,8 @@ jeecg:
     logRetentionDays: 30
   #分布式锁配置
   redisson:
-    address: 127.0.0.1:6379
-    password:
+    address: ${REDIS_HOST}:${REDIS_PORT}
+    password: ${REDIS_PASSWORD:}
     type: STANDALONE
     enabled: true
   # 百度开放API配置
@@ -408,15 +416,15 @@ knife4j:
   production: false
   basic:
     enable: false
-    username: jeecg
-    password: jeecg1314
+    username: ${KNIFE4J_USERNAME}
+    password: ${KNIFE4J_PASSWORD}
 #第三方登录
 justauth:
   enabled: true
   type:
     GITHUB:
-      client-id: Ov23liWUlwaEngctN1Hr
-      client-secret: c22a47aa902c47bc89c30cda3cddc1501eec5063
+      client-id: ${GITHUB_CLIENT_ID}
+      client-secret: ${GITHUB_CLIENT_SECRET}
       redirect-uri: http://localhost:9950/api/sys/thirdLogin/github/callback
     WECHAT_ENTERPRISE:
       client-id: ??
@@ -442,30 +450,39 @@ justauth:
 mongo-plus:
   data:
     mongodb:
-      host: 127.0.0.1   #ip
-      port: 27017   #端口
-      database: ck-saas    #数据库名
-      username: ck-saas    #用户名，没有可不填（若账号中出现@,!等等符号，不需要再进行转码！！！）
-      password: Chen0809@saas    #密码，同上（若密码中出现@,!等等符号，不需要再进行转码！！！）
+      host: ${MONGO_HOST}   #ip
+      port: ${MONGO_PORT}   #端口
+      database: ${MONGO_DATABASE}    #数据库名
+      username: ${MONGO_USERNAME}    #用户名，没有可不填（若账号中出现@,!等等符号，不需要再进行转码！！！）
+      password: ${MONGO_PASSWORD}    #密码，同上（若密码中出现@,!等等符号，不需要再进行转码！！！）
       authenticationDatabase: ck-saas     #验证数据库
       connectTimeoutMS: 50000   #在超时之前等待连接打开的最长时间（以毫秒为单位）
 
 ck:
+  # 多店铺：店铺解析不到时的行为
+  shop:
+    # 兜底店铺编码（仅本地开发/直连调试用）
+    default-store-code: default
+    # 是否允许"解析不到店铺就回退到默认店铺"。
+    # 【生产环境务必设为 false】：某个前台站点漏配 STORE_CODE、或域名没登记到
+    # ck_shop_store.domain 时，回退会让它静默展示默认店铺的商品（页面一切正常、无法察觉）。
+    # 关掉后这种配置错误会直接报错，属"宁可吵也不要错"。
+    allow-default-store-fallback: true
   oss:
     enable: true
     provider: upyun
-    endpoint: https://oss.example.cn/
-    access-key: xxx
-    secret-key: 2i-xxxxx
-    bucket: your-bucket
+    endpoint: ${CK_OSS_ENDPOINT}
+    access-key: ${CK_OSS_ACCESS_KEY}
+    secret-key: ${CK_OSS_SECRET_KEY}
+    bucket: ${CK_OSS_BUCKET}
     expire: 3600
-    object-dir-prefix: dir
+    object-dir-prefix: ${CK_OSS_OBJECT_DIR_PREFIX:ck-saas}
     api-domain: TELECOM
   crydis:
     enable: true                    # 必须为 true 才会初始化
-    host: 127.0.0.1                 # Redis 服务器地址
-    port: 6379                      # Redis 端口，默认 6379
-    password:                       # Redis 密码，没有则留空
+    host: ${REDIS_HOST}                 # Redis 服务器地址
+    port: ${REDIS_PORT}                 # Redis 端口，默认 6379
+    password: ${REDIS_PASSWORD:}        # Redis 密码，没有则留空
     database: 0                     # 数据库索引，默认 0
     timeout: 3000                   # 连接超时时间（毫秒）
     max-active: 50                  # 最大连接数
@@ -473,6 +490,5 @@ ck:
     min-idle: 5                     # 最小空闲连接
     max-wait: 3000                  # 最大等待时间（毫秒）
     allowed-packages:
-      - com.dji.
       - cn.cikian.
       - java.util.ArrayList

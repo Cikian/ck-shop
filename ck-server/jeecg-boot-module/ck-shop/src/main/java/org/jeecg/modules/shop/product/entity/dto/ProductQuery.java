@@ -31,9 +31,6 @@ public class ProductQuery implements Serializable {
     @Schema(description = "分类ID")
     private String categoryId;
 
-    @Schema(description = "品牌ID")
-    private String brandId;
-
     @Schema(description = "是否推荐: N-否, Y-是")
     private String isRecommend;
 
@@ -43,8 +40,11 @@ public class ProductQuery implements Serializable {
     @Schema(description = "标签ID")
     private String tagId;
     /**
-     * 销售渠道筛选：只查"上架到该店铺"的商品。
-     * 传了就按店铺维度分页（走 ck_shop_product_store 的连接查询），不传则是全量商品视角。
+     * 店铺筛选：只查"归属到该店铺所绑定部门"的商品。
+     *
+     * 注意语义变化——多店铺改造后商品只属于一个店铺（归属列 sys_org_code），
+     * 这里传的是店铺 id，服务层会解析成店铺绑定部门的 org_code 再做可见域过滤；
+     * 解析失败一律报错，不会退化成"不过滤"。
      */
     private String storeId;
 }

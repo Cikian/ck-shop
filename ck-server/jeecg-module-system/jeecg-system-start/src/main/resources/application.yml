@@ -9,6 +9,26 @@ spring:
   application:
     name: jeecg-system
   config:
-    import: optional:classpath:config/application-liteflow.yml
+    import:
+      # liteflow 流程配置
+      - optional:classpath:config/application-liteflow.yml
+      # ---------------------------------------------------------------------
+      # 敏感配置（数据库/Redis/Mongo 密码、OSS 密钥、签名密钥…）统一放 .env，
+      # 由 Spring Boot 原生的 spring.config.import 加载。
+      #
+      # 为什么要写 [.properties]：.env 这种文件名没有内置的 PropertySourceLoader，
+      # 加"扩展名提示"后 Spring 才知道按 properties 语法解析它（否则启动即报
+      # "Unable to load config data"）。文件名本身不必叫 .env，但这是通用约定。
+      #
+      # file: 路径是相对**启动时的工作目录**解析的，所以这里列了几个常见位置；
+      # 推荐把 .env 放在 ck-server/ 下（与后端根 pom 同级），并且**只放一处**，
+      # 多份同时存在时后面的会覆盖前面的，排查起来很费劲。
+      # ---------------------------------------------------------------------
+      - optional:file:./.env[.properties]              # 工作目录 = ck-server/
+      - optional:file:../.env[.properties]             # 工作目录 = jeecg-module-system/
+      - optional:file:../../.env[.properties]          # 工作目录 = jeecg-module-system/jeecg-system-start（IDE/mvn 默认）
+      - optional:file:../../../.env[.properties]       # 工作目录 = jeecg-system-start/target
+      - optional:file:./ck-server/.env[.properties]    # 工作目录 = 仓库根目录
+      - optional:classpath:.env[.properties]           # 特殊情况：.env 放进了 resources（会被打进 jar，不推荐）
   profiles:
     active: '@profile.name@'

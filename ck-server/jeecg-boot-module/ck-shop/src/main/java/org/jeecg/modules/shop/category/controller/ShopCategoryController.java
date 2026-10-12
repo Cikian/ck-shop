@@ -16,11 +16,14 @@ import org.jeecg.common.system.query.QueryGenerator;
 import org.jeecg.modules.shop.category.entity.ShopCategory;
 import org.jeecg.modules.shop.category.entity.dto.CategoryDTO;
 import org.jeecg.modules.shop.category.service.IShopCategoryService;
+import org.jeecg.modules.shop.common.util.ShopExportSupport;
+import org.jeecg.modules.shop.store.ShopOrgScopeResolver;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.servlet.ModelAndView;
 
 import java.util.Arrays;
+import java.util.List;
 
 /**
  * <p>
@@ -42,6 +45,12 @@ public class ShopCategoryController extends JeecgController<ShopCategory, IShopC
     @Autowired
     private IShopCategoryService shopCategoryService;
 
+    @Autowired
+    private ShopOrgScopeResolver orgScopeResolver;
+
+    @Autowired
+    private ShopExportSupport exportSupport;
+
     /**
      * 分页列表查询
      *
@@ -61,6 +70,14 @@ public class ShopCategoryController extends JeecgController<ShopCategory, IShopC
 
 
         QueryWrapper<ShopCategory> queryWrapper = QueryGenerator.initQueryWrapper(shopCategory, req.getParameterMap());
+        /*
+         * 数据可见域：分类按店独立，运营只看得到本部门（及其下级）的分类；总部/管理员不限。
+         * 与商品列表口径统一：也接受 storeId（店铺 id → 绑定部门），再与账号可见域取交集，
+         * 前端两个页面的"所属店铺"筛选因此提交同一种值。
+         */
+        String storeOrgCode = orgScopeResolver.resolveStoreOrgCode(req.getParameter("storeId"));
+        List<String> scope = orgScopeResolver.mergeScope(storeOrgCode, orgScopeResolver.resolveVisibleOrgCodes());
+        orgScopeResolver.applyScope(queryWrapper, scope);
         Page<ShopCategory> page = new Page<ShopCategory>(pageNo, pageSize);
         IPage<ShopCategory> pageList = shopCategoryService.page(page, queryWrapper);
         return Result.OK(pageList);
@@ -149,10 +166,16 @@ public class ShopCategoryController extends JeecgController<ShopCategory, IShopC
      * @param request
      * @param shopCategory
      */
+    /**
+     * 导出excel（带数据可见域，与列表同一套；不能直接用 super.exportXls，它没有归属过滤）
+     */
     @RequiresPermissions("shop-category:exportXls")
     @RequestMapping(value = "/exportXls")
     public ModelAndView exportXls(HttpServletRequest request, ShopCategory shopCategory) {
-        return super.exportXls(request, shopCategory, ShopCategory.class, "商品分类");
+        String storeOrgCode = orgScopeResolver.resolveStoreOrgCode(request.getParameter("storeId"));
+        List<String> scope = orgScopeResolver.mergeScope(storeOrgCode, orgScopeResolver.resolveVisibleOrgCodes());
+        return exportSupport.export(request, shopCategory, ShopCategory.class, "商品分类", shopCategoryService,
+                w -> orgScopeResolver.applyScope(w, scope));
     }
 
     /**

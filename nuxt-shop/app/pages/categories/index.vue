@@ -6,10 +6,17 @@
 // 浏览器不感知也改不了，因此 A 店的分类不可能出现在 B 店。
 //
 // 每个节点带的 productCount 是"含子分类的本店已上架商品数"（后端汇总，前端不再二次计算）。
-const { t } = useI18n()
+//
+// 语言：query 带 lang，key 带 locale —— 切语言时必须重新请求，否则分类名会是旧语言的缓存。
+import type { StoreCategoryNode } from '~~/types/store-category'
 
-const { data: categories } = await useFetch<any[]>('/api/categories', {
+const { t, locale } = useI18n()
+
+const { data: categories } = await useFetch<StoreCategoryNode[]>('/api/categories', {
+  query: computed(() => ({ lang: locale.value })),
+  key: computed(() => `store-categories-${locale.value}`),
   default: () => [],
+  watch: [locale],
 })
 
 useSeoMeta({
@@ -41,12 +48,12 @@ useSeoMeta({
         <section v-for="top in categories" :key="top.id">
           <!-- 一级分类：可点击进入该分类的商品列表 -->
           <div class="mb-4 flex flex-wrap items-baseline gap-3">
-            <NuxtLink
+            <NuxtLinkLocale
               :to="`/categories/${top.id}`"
               class="text-xl font-semibold text-[var(--color-primary)] transition-colors hover:text-[var(--color-accent)]"
             >
               {{ top.name }}
-            </NuxtLink>
+            </NuxtLinkLocale>
             <span class="text-sm text-[var(--color-text-muted)]">
               {{ top.productCount || 0 }}
             </span>
@@ -54,7 +61,7 @@ useSeoMeta({
 
           <!-- 二级分类 -->
           <div v-if="top.children?.length" class="flex flex-wrap gap-2">
-            <NuxtLink
+            <NuxtLinkLocale
               v-for="child in top.children"
               :key="child.id"
               :to="`/categories/${child.id}`"
@@ -62,7 +69,7 @@ useSeoMeta({
             >
               <span>{{ child.name }}</span>
               <span class="text-xs text-[var(--color-text-muted)]">{{ child.productCount || 0 }}</span>
-            </NuxtLink>
+            </NuxtLinkLocale>
           </div>
         </section>
       </div>

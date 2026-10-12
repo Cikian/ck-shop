@@ -65,6 +65,7 @@
     "testimonials": "用户评价",
     "whatCustomersSay": "客户怎么说",
     "noSpam": "无垃圾邮件，随时退订",
+    "unsubscribeAnytime": "随时可退订",
     "recommended": "推荐商品",
     "recommendedDesc": "精选推荐，值得入手的好物",
     "moreProducts": "更多商品",
@@ -118,6 +119,8 @@
   },
   "product": {
     "addToCart": "加入购物车",
+    "cartComingSoon": "购物车即将上线",
+    "cartComingSoonHint": "本店暂未开通购物车与下单功能，目前只支持浏览商品。",
     "notFound": "商品不存在",
     "backToProducts": "返回商品列表",
     "new": "新品",

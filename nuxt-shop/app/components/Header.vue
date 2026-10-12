@@ -31,23 +31,17 @@
           <!-- Search Button -->
           <button
             class="flex h-10 w-10 items-center justify-center rounded-xl text-[var(--color-text-secondary)] transition-all duration-200 hover:bg-[var(--color-surface-secondary)] hover:text-[var(--color-primary)] cursor-pointer"
-            aria-label="Search"
+            :aria-label="t('nav.search')"
           >
             <UIcon name="lucide:search" class="h-5 w-5" />
           </button>
 
-          <!-- Cart Button -->
+          <!-- Cart Button：本项目还没有购物车/结算，因此不再伪造角标数字（原先写死 3） -->
           <button
             class="relative flex h-10 w-10 items-center justify-center rounded-xl text-[var(--color-text-secondary)] transition-all duration-200 hover:bg-[var(--color-surface-secondary)] hover:text-[var(--color-primary)] cursor-pointer"
-            aria-label="Cart"
+            :aria-label="t('nav.cart')"
           >
             <UIcon name="lucide:shopping-bag" class="h-5 w-5" />
-            <span
-              v-if="cartCount > 0"
-              class="absolute -top-1 -right-1 flex h-5 w-5 items-center justify-center rounded-full bg-[var(--color-accent)] text-xs font-bold text-white animate-scale-in"
-            >
-              {{ cartCount }}
-            </span>
           </button>
 
           <!-- Language Switcher (Desktop) -->
@@ -203,7 +197,6 @@ const { userInfo, isLoggedIn, logout } = useAuth()
 
 const mobileMenuOpen = ref(false)
 const scrolled = ref(false)
-const cartCount = ref(3)
 
 const navItems = [
   { to: '/products', label: 'nav.products' },

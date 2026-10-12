@@ -1,18 +1,23 @@
 package org.jeecg.modules.shop.store.controller;
 
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.lang3.StringUtils;
 import org.apache.shiro.authz.annotation.RequiresPermissions;
 import org.jeecg.common.api.vo.Result;
 import org.jeecg.common.aspect.annotation.AutoLog;
+import org.jeecg.common.exception.JeecgBootException;
 import org.jeecg.common.system.base.controller.JeecgController;
 import org.jeecg.common.system.query.QueryGenerator;
 import org.jeecg.modules.shop.store.entity.ShopStore;
 import org.jeecg.modules.shop.store.service.IShopStoreService;
+import org.jeecgframework.poi.excel.ExcelImportUtil;
+import org.jeecgframework.poi.excel.entity.ImportParams;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -22,12 +27,16 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestMethod;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.multipart.MultipartFile;
+import org.springframework.web.multipart.MultipartHttpServletRequest;
 import org.springframework.web.servlet.ModelAndView;
 
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import java.io.InputStream;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Map;
 
 /**
  * <p>
@@ -139,18 +148,80 @@ public class ShopStoreController extends JeecgController<ShopStore, IShopStoreSe
     }
 
     /**
-     * 导出
+     * 导出（**必须有 shop-store:exportXls 权限**）
+     *
+     * 注：以前这里没有权限注解，而 JeecgBoot 并没有 URL 级的权限过滤器
+     * （ResourceCheckFilter 定义了但从未注册），等于任何登录用户都能导出全部店铺。
      */
+    @AutoLog(value = "店铺-导出")
+    @RequiresPermissions("shop-store:exportXls")
     @RequestMapping(value = "/exportXls")
     public ModelAndView exportXls(HttpServletRequest request, ShopStore shopStore) {
         return super.exportXls(request, shopStore, ShopStore.class, "店铺");
     }
 
     /**
-     * 导入
+     * 导入（**必须有 shop-store:importExcel 权限**）
+     *
+     * <p>刻意不用框架的 {@code super.importExcel}：它直接走 {@code service.saveBatch}，
+     * 会绕过 {@code checkCode}/{@code checkDepart}——可能造出"两个店铺绑同一个部门"或
+     * "把店铺绑到公司节点"，从而把整套数据隔离搞坏。这里逐行走 service 的校验：
+     * 编码已存在则更新，否则新增。
      */
+    @AutoLog(value = "店铺-导入")
+    @RequiresPermissions("shop-store:importExcel")
     @RequestMapping(value = "/importExcel", method = RequestMethod.POST)
     public Result<?> importExcel(HttpServletRequest request, HttpServletResponse response) {
-        return super.importExcel(request, response, ShopStore.class);
+        if (!(request instanceof MultipartHttpServletRequest)) {
+            return Result.error("导入失败：请使用 multipart/form-data 上传 Excel");
+        }
+        Map<String, MultipartFile> fileMap = ((MultipartHttpServletRequest) request).getFileMap();
+        if (fileMap.isEmpty()) {
+            return Result.error("导入失败：未获取到上传文件");
+        }
+        int insertCount = 0;
+        int updateCount = 0;
+        for (Map.Entry<String, MultipartFile> entity : fileMap.entrySet()) {
+            MultipartFile file = entity.getValue();
+            ImportParams params = new ImportParams();
+            params.setTitleRows(2);
+            params.setHeadRows(1);
+            try (InputStream in = file.getInputStream()) {
+                List<ShopStore> list = ExcelImportUtil.importExcel(in, ShopStore.class, params);
+                for (ShopStore item : list) {
+                    if (item == null || StringUtils.isBlank(item.getCode())) {
+                        continue;
+                    }
+                    // 主键交给 service 生成；导入只负责"按编码新增或更新"
+                    item.setId(null);
+                    item.setDelFlag(null);
+                    if (StringUtils.isBlank(item.getStatus())) {
+                        item.setStatus("Y");
+                    }
+                    ShopStore exist = shopStoreService.getOne(new LambdaQueryWrapper<ShopStore>()
+                            .eq(ShopStore::getCode, item.getCode()).last("LIMIT 1"), false);
+                    if (exist == null) {
+                        shopStoreService.saveStore(item);
+                        insertCount++;
+                    } else {
+                        item.setId(exist.getId());
+                        shopStoreService.updateStore(item);
+                        updateCount++;
+                    }
+                }
+            } catch (JeecgBootException e) {
+                // 校验失败（部门不存在/不是部门节点/部门被别的店铺占用等）直接回给用户
+                return Result.error("导入失败：" + e.getMessage());
+            } catch (Exception e) {
+                log.error("店铺导入失败", e);
+                String msg = e.getMessage();
+                if (msg != null && msg.contains("Duplicate entry")) {
+                    return Result.error("导入失败：有重复数据（店铺编码重复）");
+                }
+                return Result.error("导入失败：" + msg);
+            }
+        }
+        return Result.OK("文件导入成功！新增 " + insertCount + " 条，更新 " + updateCount + " 条");
     }
 }
+

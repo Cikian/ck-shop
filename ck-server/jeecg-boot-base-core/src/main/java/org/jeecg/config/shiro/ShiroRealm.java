@@ -105,28 +105,16 @@ public class ShiroRealm extends AuthorizingRealm {
             throw new AuthenticationException("token为空!");
         }
         // 校验token有效性
-        LoginUser loginUser = null;
-        // todo: 生产环境必须删除此逻辑，非常重要！！！
-        // 删除开始
-        if ("cikian".equals(token)) {
-            loginUser = new LoginUser();
-            loginUser.setUsername("cikian");
-            loginUser.setRealname("cikian");
-            loginUser.setId("123456");
-        } else {
-            try {
-                loginUser = this.checkUserTokenIsEffect(token);
-            } catch (AuthenticationException e) {
-                log.error("—————校验 check token 失败——————————" + e.getMessage(), e);
-                // 重新抛出异常，让JwtFilter统一处理，避免返回两次错误响应
-                throw e;
-            }
-        }
-        // 删除结束
+        /*
+         * 这里原来有一段 if ("cikian".equals(token)) 的**免认证后门**（手工构造 LoginUser，id=123456），
+         * 注释还写着"生产环境必须删除此逻辑"。它当时被下面那段无条件校验覆盖，所以不可利用，
+         * 但只要有人调整一下代码顺序就会变成真实后门——这类"看起来无害"的遗留最危险，已删除。
+         */
+        LoginUser loginUser;
         try {
             loginUser = this.checkUserTokenIsEffect(token);
         } catch (AuthenticationException e) {
-            log.error("—————校验 check token 失败——————————"+ e.getMessage(), e);
+            log.error("—————校验 check token 失败——————————" + e.getMessage(), e);
             // 重新抛出异常，让JwtFilter统一处理，避免返回两次错误响应
             throw e;
         }

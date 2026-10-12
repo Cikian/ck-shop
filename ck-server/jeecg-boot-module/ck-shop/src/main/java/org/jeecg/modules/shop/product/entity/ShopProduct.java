@@ -102,11 +102,14 @@ public class ShopProduct implements Serializable {
     @Schema(description = "分类ID")
     private String categoryId;
     /**
-     * 品牌ID
+     * 归属部门编码（JeecgBoot 数据隔离维度，对应 ck_shop_store.depart_id → sys_depart.org_code）。
+     *
+     * <p>新增时由 {@code MybatisInterceptor} 自动填充为当前登录人的部门编码；
+     * 编辑时**不允许运营修改归属**（后端硬校验），只有 {@code shop-store:manage-all}
+     * 权限的账号可以跨部门调整。前缀式编码使其天然支持"本部门及下级部门"的可见域。
      */
-    @Excel(name = "品牌ID", width = 25)
-    @Schema(description = "品牌ID")
-    private String brandId;
+    @Schema(description = "归属部门编码(sys_org_code)")
+    private String sysOrgCode;
     /**
      * 上游来源：取自系统字典 shop_upstream_source（暂定：淘宝/京东/1688/闲鱼）
      */

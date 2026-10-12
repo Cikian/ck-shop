@@ -10,6 +10,7 @@ import org.apache.shiro.authz.annotation.RequiresPermissions;
 import org.jeecg.common.api.vo.Result;
 import org.jeecg.common.aspect.annotation.AutoLog;
 import org.jeecg.common.system.base.controller.JeecgController;
+import org.jeecg.modules.shop.common.util.ShopExportSupport;
 import org.jeecg.modules.shop.product.entity.ShopProduct;
 import org.jeecg.modules.shop.product.entity.dto.ProductDTO;
 import org.jeecg.modules.shop.product.entity.dto.ProductQuery;
@@ -17,6 +18,7 @@ import org.jeecg.modules.shop.product.entity.vo.ProductDetailVO;
 import org.jeecg.modules.shop.product.entity.vo.ProductListVO;
 import org.jeecg.modules.shop.product.entity.vo.ProductSkuVO;
 import org.jeecg.modules.shop.product.service.IShopProductService;
+import org.jeecg.modules.shop.store.ShopOrgScopeResolver;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -49,6 +51,12 @@ public class ShopProductController extends JeecgController<ShopProduct, IShopPro
 
     @Autowired
     private IShopProductService shopProductService;
+
+    @Autowired
+    private ShopOrgScopeResolver orgScopeResolver;
+
+    @Autowired
+    private ShopExportSupport exportSupport;
 
     /**
      * 分页列表查询
@@ -145,12 +153,19 @@ public class ShopProductController extends JeecgController<ShopProduct, IShopPro
     }
 
     /**
-     * 导出excel
+     * 导出excel（带数据可见域）
+     *
+     * 注：不能直接用 {@code super.exportXls} —— 它只用 QueryGenerator 拼条件，
+     * 没有 sys_org_code 过滤，会把所有部门的商品导出去（列表有可见域、导出却没有）。
      */
     @RequiresPermissions("shop-product:exportXls")
     @RequestMapping(value = "/exportXls")
     public ModelAndView exportXls(HttpServletRequest request, ShopProduct shopProduct) {
-        return super.exportXls(request, shopProduct, ShopProduct.class, "商品");
+        // 与列表同一套可见域：店铺筛选（storeId）先解析成部门，再与账号可见域取交集
+        String storeOrgCode = orgScopeResolver.resolveStoreOrgCode(request.getParameter("storeId"));
+        List<String> scope = orgScopeResolver.mergeScope(storeOrgCode, orgScopeResolver.resolveVisibleOrgCodes());
+        return exportSupport.export(request, shopProduct, ShopProduct.class, "商品", shopProductService,
+                w -> orgScopeResolver.applyScope(w, scope));
     }
 
     /**

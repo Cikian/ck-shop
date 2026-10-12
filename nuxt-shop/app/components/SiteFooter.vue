@@ -3,7 +3,7 @@
     <!-- Main Footer -->
     <div class="mx-auto max-w-7xl px-4 py-16 sm:px-6 lg:px-8">
       <div class="grid grid-cols-2 gap-8 md:grid-cols-4 lg:gap-12">
-        <!-- Brand Column -->
+        <!-- Site Info Column -->
         <div class="col-span-2 md:col-span-1">
           <div class="flex items-center gap-2">
             <div

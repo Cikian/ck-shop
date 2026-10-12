@@ -1,11 +1,19 @@
 // https://nuxt.com/docs/api/configuration/nuxt-config
 // nuxt.config.ts
 import tailwindcss from '@tailwindcss/vite'
+// 语言清单的唯一来源：i18n.locales 由它生成，不再与 types/shop-product.ts 手工同步。
+// 该文件零依赖，可以在配置加载阶段（jiti）安全 import。
+import { STORE_DEFAULT_LANG, STORE_LOCALES } from './types/store-locale'
 
 export default defineNuxtConfig({
   compatibilityDate: '2025-07-15',
 
   vite: {
+    server: {
+      allowedHosts: [
+        'nuxt.frp.cikian.cn'
+      ],
+    },
     plugins: [tailwindcss()],
   },
 
@@ -14,12 +22,9 @@ export default defineNuxtConfig({
   modules: ['@nuxtjs/i18n', '@nuxtjs/seo', '@nuxt/ui', '@nuxt/image'],
   i18n: {
     strategy: 'prefix', // 硬性要求:所有语言(包括默认语言)都带前缀,如 /en/, /zh/
-    defaultLocale: 'en',
-    locales: [
-      { code: 'en', language: 'en-US', name: 'English', file: 'en.json', icon: '🇺️🇸️' },
-      { code: 'zh', language: 'zh-CN', name: '中文', file: 'zh.json', icon: '🇨️🇳️' },
-      { code: 'fr', language: 'fr-FR', name: 'Français', file: 'fr.json', icon: '🇫️🇷️' }
-    ],
+    defaultLocale: STORE_DEFAULT_LANG,
+    // 由 types/store-locale.ts 的 STORE_LOCALES 派生（唯一的语言清单来源）
+    locales: STORE_LOCALES.map(locale => ({ ...locale })),
     langDir: 'locales/',
     lazy: true, // 按需加载语言包,减小首屏体积
     detectBrowserLanguage: {

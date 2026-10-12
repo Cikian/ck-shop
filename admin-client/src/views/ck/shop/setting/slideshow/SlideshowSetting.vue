@@ -1,10 +1,42 @@
 <template>
-  <div class="ws">
-    <!-- 左：轮播图列表 -->
+  <div class="ws-page">
+    <!-- 店铺维度：轮播图按店铺独立，切换店铺 = 切换正在编辑的那一份 -->
+    <div class="ws-scope">
+      <span class="ws-scope__label">所属店铺</span>
+      <a-select
+        v-model:value="orgCode"
+        class="ws-scope__select"
+        placeholder="请选择店铺"
+        show-search
+        option-filter-prop="label"
+        :options="storeOptions"
+        :disabled="!canManageStoreOrg || !storeOptions.length"
+        @change="handleStoreChange"
+      />
+      <span v-if="!canManageStoreOrg" class="ws-scope__hint">归属由账号所在部门决定，如需切换店铺请联系管理员</span>
+      <span v-else-if="!storeOptions.length" class="ws-scope__hint">还没有店铺绑定部门，请先到「店铺管理」为店铺绑定部门</span>
+      <span v-else class="ws-scope__hint">轮播图按店铺独立：切换店铺即编辑该店铺的轮播图</span>
+    </div>
+
+    <div class="ws">
+      <!-- 左：轮播图列表 -->
     <aside class="ws-list">
       <header class="ws-list__head">
         <span class="ws-list__title">轮播图</span>
         <span class="ws-list__count">{{ listData.length }} 张</span>
+        <!-- 批量删除：勾选左侧条目后可用（未保存的草稿没有 id，不能勾选） -->
+        <a-button
+          type="link"
+          size="small"
+          danger
+          class="ws-list__batch"
+          v-auth="'ck:shop:slideshow:deleteBatch'"
+          :disabled="!selectedIds.length"
+          @click="handleBatchDelete"
+        >
+          <template #icon><Icon icon="ant-design:delete-outlined" /></template>
+          批量删除{{ selectedIds.length ? `（${selectedIds.length}）` : '' }}
+        </a-button>
         <a-button type="link" size="small" class="ws-list__add" v-auth="'ck:shop:slideshow:add'" @click="handleAdd">
           <template #icon><Icon icon="ant-design:plus-outlined" /></template>
           新增
@@ -37,6 +69,14 @@
               :data-slide-id="item.id || ''"
               @click="selectItem(item)"
             >
+              <a-checkbox
+                v-if="item.id"
+                class="ws-item__check"
+                :checked="selectedIds.includes(item.id)"
+                :aria-label="`选择 ${item.desc || '该轮播图'}`"
+                @click.stop
+                @change="(e) => toggleSelect(item, e)"
+              />
               <span class="ws-item__handle" :class="{ 'ws-item__handle--draft': !item.id }" title="拖动排序">
                 <Icon icon="ant-design:holder-outlined" />
               </span>
@@ -70,27 +110,33 @@
     <!-- 右：编辑区 -->
     <SlideEditor
       v-if="active"
+      ref="editorRef"
       :key="active.id || DRAFT_KEY"
       :record="active"
       :languages="languages"
       :sort-hint="listData.length + 1"
+      :sys-org-code="orgCode"
       @saved="handleSaved"
       @remove="handleDelete"
     />
     <div v-else class="ws-blank">
       <a-empty :image="simpleImage" description="从左侧选择一条轮播图，或新增一条" />
     </div>
+    </div>
   </div>
 </template>
 
 <script lang="ts" name="ck.shop-SlideshowSetting" setup>
   import { computed, onMounted, ref } from 'vue';
-  import { Empty } from 'ant-design-vue';
+  import { Empty, Modal } from 'ant-design-vue';
   import VueDraggable from 'vuedraggable';
   import { useMessage } from '/@/hooks/web/useMessage';
+  import { usePermission } from '/@/hooks/web/usePermission';
+  import { useUserStore } from '/@/store/modules/user';
   import { listLang } from '/@/api/common/api';
   import { getFileAccessHttpUrl } from '/@/utils/common/compUtils';
-  import { deleteOne, list, saveSort, type LanguageItem, type SlideRecord } from './SlideshowSetting.api';
+  import { deleteBatch, deleteOne, list, saveSort, type LanguageItem, type SlideRecord } from './SlideshowSetting.api';
+  import { all as storeAll } from '../../store/ShopStore.api';
   import SlideEditor from './components/SlideEditor.vue';
 
   /** 新增占位草稿的固定 key */
@@ -98,6 +144,8 @@
   const simpleImage = Empty.PRESENTED_IMAGE_SIMPLE;
 
   const { createMessage } = useMessage();
+  const { hasPermission } = usePermission();
+  const userStore = useUserStore();
 
   const listData = ref<SlideRecord[]>([]);
   const languages = ref<LanguageItem[]>([]);
@@ -109,6 +157,108 @@
   let justDragged = false;
   /** 当前选中的记录，id 为空表示尚未保存的草稿 */
   const active = ref<SlideRecord | null>(null);
+  /** 右侧编辑器的暴露方法（判断草稿是否有内容） */
+  const editorRef = ref();
+  /** 勾选的轮播图 id（仅已保存的记录可勾选），供批量删除使用 */
+  const selectedIds = ref<string[]>([]);
+
+  /** 当前正在编辑的店铺（值 = 店铺绑定的部门 org_code） */
+  const orgCode = ref<string>('');
+  /** 上一次确认生效的店铺：用户取消切换时用它把下拉值回滚回去 */
+  let confirmedOrgCode = '';
+  /** 可选店铺：只列已绑定部门的店铺 */
+  const storeOptions = ref<any[]>([]);
+  /** 只有总部/管理员能切换店铺；运营固定为本部门 */
+  const canManageStoreOrg = computed(() => hasPermission('shop-store:manage-all'));
+
+  /** 加载店铺下拉：value 用 departOrgCode（与后端归属列同口径） */
+  async function loadStores() {
+    try {
+      const res = await storeAll();
+      const records = Array.isArray(res) ? res : [];
+      storeOptions.value = records
+        .filter((item: any) => !!item?.departOrgCode)
+        .map((item: any) => ({ label: `${item.name}（${item.code}）`, value: item.departOrgCode }));
+    } catch (error) {
+      storeOptions.value = [];
+    }
+    // 默认选中"当前账号所在部门对应的店铺"，找不到则取第一个
+    const mine = userStore.getUserInfo?.orgCode;
+    const matched = storeOptions.value.find((item: any) => item.value === mine);
+    orgCode.value = matched?.value || storeOptions.value[0]?.value || '';
+    confirmedOrgCode = orgCode.value;
+  }
+
+  /** 当前选中项是否为"有内容的未保存草稿"（内容在编辑器内部，需问它） */
+  function hasUnsavedDraft(): boolean {
+    if (!active.value || active.value.id) {
+      return false;
+    }
+    return !!editorRef.value?.hasDraftContent?.();
+  }
+
+  /** 真正执行切换：清掉上一条的选中、筛选与勾选，再按新店铺重新加载 */
+  async function applyStoreChange() {
+    confirmedOrgCode = orgCode.value;
+    active.value = null;
+    keyword.value = '';
+    selectedIds.value = [];
+    await loadData();
+  }
+
+  /**
+   * 切换店铺。
+   * 轮播图按店铺独立，切换会丢掉未保存的新增草稿，因此先二次确认；
+   * 用户取消时把下拉值回滚到原店铺（v-model 已经把值改掉了）。
+   */
+  function handleStoreChange() {
+    const previous = confirmedOrgCode;
+    if (!hasUnsavedDraft()) {
+      applyStoreChange();
+      return;
+    }
+    Modal.confirm({
+      title: '放弃未保存的轮播图？',
+      content: '当前新增的轮播图还没有保存，切换店铺会丢失已填写的内容。',
+      okText: '放弃并切换',
+      cancelText: '继续编辑',
+      onOk: () => applyStoreChange(),
+      onCancel: () => {
+        orgCode.value = previous;
+      },
+    });
+  }
+
+  /** 勾选 / 取消勾选一条轮播图（未保存的草稿没有 id，不参与） */
+  function toggleSelect(item: SlideRecord, event: any) {
+    if (!item.id) {
+      return;
+    }
+    selectedIds.value = event?.target?.checked
+      ? [...selectedIds.value, item.id]
+      : selectedIds.value.filter((id) => id !== item.id);
+  }
+
+  /** 批量删除：删除前二次确认，失败时保留勾选状态以便重试 */
+  function handleBatchDelete() {
+    const ids = [...selectedIds.value];
+    if (!ids.length) {
+      return;
+    }
+    Modal.confirm({
+      title: '确认批量删除',
+      content: `已选中 ${ids.length} 张轮播图，删除后不可恢复，是否继续？`,
+      okText: '删除',
+      okType: 'danger',
+      cancelText: '取消',
+      onOk: async () => {
+        await deleteBatch(ids);
+        createMessage.success('删除成功');
+        selectedIds.value = [];
+        await loadData();
+      },
+    });
+  }
 
   const filteredData = computed(() => {
     const kw = keyword.value.trim().toLowerCase();
@@ -299,9 +449,11 @@
   async function loadData(selectId?: string) {
     loading.value = true;
     try {
-      const res = await list();
+      const res = await list(orgCode.value || undefined);
       const result = Array.isArray(res) ? res : (res as any)?.result || [];
       listData.value = (result as SlideRecord[]).filter((item) => item && item.id).sort((a, b) => toSortValue(a.sort) - toSortValue(b.sort));
+      // 已被删除 / 已不在当前店铺的记录要从勾选里剔掉，避免批量删除发出无效 id
+      selectedIds.value = selectedIds.value.filter((id) => listData.value.some((item) => item.id === id));
 
       const nextId = selectId || active.value?.id;
       const matched = listData.value.find((item) => item.id === nextId);
@@ -317,6 +469,7 @@
 
   onMounted(async () => {
     await loadLanguages();
+    await loadStores();
     await loadData();
   });
 </script>
@@ -328,12 +481,43 @@
   @ws-text: rgba(0, 0, 0, 0.88);
   @ws-sub: rgba(0, 0, 0, 0.45);
 
+  .ws-page {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  /* 店铺维度工具条：轮播图按店铺独立，这里决定在编辑哪个店铺的那一份 */
+  .ws-scope {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-items: center;
+    padding: 10px 12px;
+    background: #fff;
+    border-radius: 8px;
+
+    &__label {
+      font-size: 13px;
+      color: rgba(0, 0, 0, 0.65);
+    }
+
+    &__select {
+      min-width: 220px;
+    }
+
+    &__hint {
+      color: rgba(0, 0, 0, 0.45);
+      font-size: 12px;
+    }
+  }
+
   .ws {
     display: grid;
     grid-template-columns: 300px minmax(0, 1fr);
     gap: 12px;
-    /* 让工作台自适应主内容区高度，避免被多语言区域顶出屏幕 */
-    height: calc(100dvh - 200px);
+    /* 让工作台自适应主内容区高度，避免被多语言区域顶出屏幕（减掉的 200px 已含上方店铺工具条） */
+    height: calc(100dvh - 252px);
     min-height: 460px;
   }
 
@@ -364,10 +548,15 @@
     color: @ws-sub;
   }
 
-  .ws-list__add {
+  .ws-list__batch {
     height: 22px;
     padding: 0 4px;
     margin-left: auto;
+  }
+
+  .ws-list__add {
+    height: 22px;
+    padding: 0 4px;
   }
 
   .ws-list__search {
@@ -420,6 +609,11 @@
     &.is-off .ws-item__title {
       color: @ws-sub;
     }
+  }
+
+  /* 勾选框：只有已保存的记录才有 */
+  .ws-item__check {
+    flex: none;
   }
 
   /* 拖动把手：hover 才显现，避免视觉噪音 */

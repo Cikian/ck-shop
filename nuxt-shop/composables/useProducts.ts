@@ -25,7 +25,6 @@ export interface StoreProductListQuery {
   pageNo: Ref<number>
   pageSize?: number
   categoryId?: Ref<string | null | undefined>
-  brandId?: Ref<string | null | undefined>
   keyword?: Ref<string | null | undefined>
 }
 
@@ -45,7 +44,6 @@ export function useStoreProductList(options: StoreProductListQuery) {
       options.pageNo.value,
       pageSize,
       options.categoryId?.value ?? '',
-      options.brandId?.value ?? '',
       options.keyword?.value ?? '',
     ].join(':'),
   )
@@ -59,7 +57,6 @@ export function useStoreProductList(options: StoreProductListQuery) {
           pageNo: options.pageNo.value,
           pageSize,
           categoryId: options.categoryId?.value ?? undefined,
-          brandId: options.brandId?.value ?? undefined,
           keyword: options.keyword?.value || undefined,
         },
       }),

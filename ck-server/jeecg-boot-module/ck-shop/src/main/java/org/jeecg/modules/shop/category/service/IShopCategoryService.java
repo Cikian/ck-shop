@@ -34,14 +34,14 @@ public interface IShopCategoryService extends IService<ShopCategory> {
     CategoryDTO getDtoById(String id);
 
     /**
-     * 店铺端分类树：只返回"该店可见"的节点。
+     * 店铺端分类树：只返回"该店（= 该部门）可见"的节点。
      *
      * 可见域规则写在 SQL 里，不靠调用方自觉：
-     * {@code store_id IS NULL}（全局共享）或 {@code store_id = 当前店铺}，
+     * {@code sys_org_code LIKE 'orgCode%'}（前缀式编码 = 本部门及下级部门）
      * 且 {@code is_show = 'Y'}、未删除。
      *
      * 若某节点的父节点不在可见范围内，该节点会被**丢弃**而不是提升为顶级——
      * 否则会出现"某个分类从别的店铺的父分类下冒出来"这种跨店串扰。
      */
-    List<StoreCategoryVO> buildStoreTree(String storeId, String lang);
+    List<StoreCategoryVO> buildStoreTree(String orgCode, String lang);
 }

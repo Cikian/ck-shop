@@ -4,15 +4,21 @@
 // 注意：这里查询的是**本店**的商品。店铺身份由 BFF 注入 X-Store-Code，
 // 页面 URL 里不含任何店铺参数（商品链接要分享到社交平台，必须短）。
 import { STORE_PRODUCT_PAGE_SIZE, useStoreProductList } from '~~/composables/useProducts'
+import type { StoreCategoryNode } from '~~/types/store-category'
 
-const { t } = useI18n()
+const { t, locale } = useI18n()
 const route = useRoute()
 
 const categoryId = computed(() => String(route.params.id || ''))
 
-// 分类名从分类树里取（一次请求，用于标题与面包屑）
-const { data: categories } = await useFetch<any[]>('/api/categories', {
+// 分类名从分类树里取（一次请求，用于标题与面包屑）。
+// 语言：query 带 lang，key 带 locale + 当前分类 id —— 切语言/切分类都要重新请求，
+// 否则标题与面包屑会停留在上一个语言/上一个分类的缓存。
+const { data: categories } = await useFetch<StoreCategoryNode[]>('/api/categories', {
+  query: computed(() => ({ lang: locale.value })),
+  key: computed(() => `store-categories-${categoryId.value}-${locale.value}`),
   default: () => [],
+  watch: [locale],
 })
 
 /** 在整棵树里找到当前分类节点（分类最多 3 级，遍历成本可忽略） */
@@ -70,9 +76,9 @@ useSeoMeta({
       <header class="mb-8 pt-8 sm:pt-10">
         <!-- 面包屑：分类总览 → 当前分类 -->
         <nav class="mb-3 flex items-center gap-2 text-sm text-[var(--color-text-muted)]">
-          <NuxtLink to="/categories" class="transition-colors hover:text-[var(--color-accent)]">
+          <NuxtLinkLocale to="/categories" class="transition-colors hover:text-[var(--color-accent)]">
             {{ t('categories.title') }}
-          </NuxtLink>
+          </NuxtLinkLocale>
           <span>/</span>
           <span class="text-[var(--color-text)]">{{ currentCategory?.name || categoryId }}</span>
         </nav>

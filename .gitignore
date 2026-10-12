@@ -6,6 +6,11 @@ rebel.xml
 ## backend
 **/target
 **/logs
+## 后端敏感配置：真实值放 .env（从 yml 抽出来的密码/密钥），只提交 .env.example
+ck-server/.env
+ck-server/**/.env
+## JeecgBoot 启动时会把「在线代码生成」模板解压到运行目录的 config/ 下（运行时产物，不入库）
+**/config/jeecg/code-template-online
 
 ## front
 **/*.lock

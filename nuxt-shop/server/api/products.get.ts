@@ -8,12 +8,13 @@
 //
 // 数据来源：Java 后端（经 createApiClient，自动签名/语言透传/解包 result）
 //   GET /shop/product/store/list
-//   query: lang, pageNo, pageSize, categoryId?, brandId?, keyword?
+//   query: lang, pageNo, pageSize, categoryId?, keyword?
 //
 // 页面用法见 nuxt-shop/composables/useProducts.ts 的 useStoreProductList()。
 
 import type { StoreProductPage } from '~~/types/shop-product'
-import { clampInt, normalizePage, resolveStoreLang, toOptionalQueryString, toPositiveInt } from '~~/types/shop-product'
+import { clampInt, normalizePage, toOptionalQueryString, toPositiveInt } from '~~/types/shop-product'
+import { resolveStoreLang } from '~~/types/store-locale'
 
 const DEFAULT_PAGE_NO = 1
 const DEFAULT_PAGE_SIZE = 12
@@ -27,7 +28,6 @@ export default defineEventHandler(async (event): Promise<StoreProductPage> => {
   const pageNo = toPositiveInt(query.pageNo, DEFAULT_PAGE_NO)
   const pageSize = clampInt(toPositiveInt(query.pageSize, DEFAULT_PAGE_SIZE), 1, MAX_PAGE_SIZE)
   const categoryId = toOptionalQueryString(query.categoryId)
-  const brandId = toOptionalQueryString(query.brandId)
   const keyword = toOptionalQueryString(query.keyword)
 
   const api = createApiClient(event, { withAuth: false })
@@ -40,7 +40,6 @@ export default defineEventHandler(async (event): Promise<StoreProductPage> => {
         pageNo,
         pageSize,
         ...(categoryId ? { categoryId } : {}),
-        ...(brandId ? { brandId } : {}),
         ...(keyword ? { keyword } : {}),
       },
     })

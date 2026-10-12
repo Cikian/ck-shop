@@ -3,20 +3,23 @@
   <div class="p-2">
     <!--查询区域-->
     <div class="jeecg-basic-table-form-container">
-      <a-form ref="formRef" @keyup.enter.native="searchQuery" :model="queryParam" :label-col="labelCol" :wrapper-col="wrapperCol">
+      <a-form ref="formRef" @keyup.enter="searchQuery" :model="queryParam" :label-col="labelCol" :wrapper-col="wrapperCol">
         <a-row :gutter="24">
           <a-col :lg="6">
             <a-form-item name="isShow">
               <template #label><span title="启用">仅查看已启用</span></template>
-              <a-switch checkedValue="Y" unCheckedValue="N" placeholder="仅查看已启用" v-model:checked="queryParam.isShow" @click="isShowChange" />
+              <!-- 三态：默认只看已启用（'Y'）；关掉 = 不筛选（undefined，显示全部） -->
+              <a-switch :checked="queryParam.isShow === 'Y'" @change="isShowChange" />
             </a-form-item>
           </a-col>
-          <a-col :lg="6">
+          <!-- 与商品列表同源：按店铺筛选用按钮权限控制，运营账号不显示 -->
+          <a-col v-auth="'shop-category:filter-store'" :lg="6">
             <a-form-item name="storeId">
-              <template #label><span title="所属店铺">店铺</span></template>
+              <template #label><span title="所属店铺">所属店铺</span></template>
+              <!-- 筛选传店铺主键 storeId（后端自己解析成部门），与商品列表口径一致 -->
               <a-select
                 v-model:value="queryParam.storeId"
-                placeholder="全部（含全局共享）"
+                placeholder="全部店铺"
                 allow-clear
                 show-search
                 optionFilterProp="label"
@@ -29,10 +32,6 @@
               <a-col :lg="6">
                 <a-button type="primary" preIcon="ant-design:search-outlined" @click="searchQuery">查询</a-button>
                 <a-button type="primary" preIcon="ant-design:reload-outlined" @click="searchReset" style="margin-left: 8px">重置</a-button>
-                <a @click="toggleSearchStatus = !toggleSearchStatus" style="margin-left: 8px">
-                  {{ toggleSearchStatus ? '收起' : '展开' }}
-                  <Icon :icon="toggleSearchStatus ? 'ant-design:up-outlined' : 'ant-design:down-outlined'" />
-                </a>
               </a-col>
             </span>
           </a-col>
@@ -66,8 +65,6 @@
       <template #action="{ record }">
         <TableAction :actions="getTableAction(record)" :dropDownActions="getDropDownAction(record)"/>
       </template>
-      <template v-slot:bodyCell="{ column, record, index, text }">
-      </template>
     </BasicTable>
     <!-- 表单区域 -->
     <ShopCategoryModal ref="registerModal" @success="handleSuccess"></ShopCategoryModal>
@@ -76,32 +73,23 @@
 
 <script lang="ts" name="ck.shop-shopCategory" setup>
   import { ref, reactive, onMounted } from 'vue';
-  import { BasicTable, useTable, TableAction } from '/@/components/Table';
+  import { BasicTable, TableAction } from '/@/components/Table';
   import { useListPage } from '/@/hooks/system/useListPage';
-  import { columns, superQuerySchema, setStoreNameMap } from './ShopCategory.data';
+  import { columns, superQuerySchema, setOrgStoreNameMap } from './ShopCategory.data';
   import { list, deleteOne, batchDelete, getImportUrl, getExportUrl } from './ShopCategory.api';
-  import { downloadFile } from '/@/utils/common/renderUtils';
   import ShopCategoryModal from './components/ShopCategoryModal.vue'
-  import { useUserStore } from '/@/store/modules/user';
-  import { useMessage } from '/@/hooks/web/useMessage';
   import { storeAll } from '../product/ShopProduct.api';
-   import {useModal} from '/@/components/Modal';
-  import JDictSelectTag from '/@/components/Form/src/jeecg/components/JDictSelectTag.vue';
-  import JSwitch from '/@/components/Form/src/jeecg/components/JSwitch.vue';
-  import JSelectMultiple from '/@/components/Form/src/jeecg/components/JSelectMultiple.vue';
   import { getDateByPicker } from '/@/utils';
 
   const fieldPickers = reactive({
   });
 
   const formRef = ref();
-  const queryParam = reactive<any>({});
-  const toggleSearchStatus = ref<boolean>(false);
+  // 默认「仅查看已启用」：与列表首屏看到的口径一致
+  const queryParam = reactive<any>({ isShow: 'Y' });
   const registerModal = ref();
-  const userStore = useUserStore();
-  const { createMessage } = useMessage();
 
-  /** 店铺下拉（分类按店独立：store_id 为空 = 全局共享） */
+  /** 店铺下拉：筛选按店铺 id（storeId），后端自己解析成部门；列表列仍按 sysOrgCode 反查店铺名 */
   const storeOptions = ref<any[]>([]);
 
   async function loadStores() {
@@ -112,14 +100,14 @@
         label: `${item.name}（${item.code}）`,
         value: item.id,
       }));
-      // 列表列渲染需要 storeId -> 店铺名 的映射
-      setStoreNameMap(records);
+      // 列表列渲染需要 sysOrgCode -> 店铺名 的映射
+      setOrgStoreNameMap(records);
     } catch (e) {
       console.warn('店铺列表加载失败', e);
     }
   }
   //注册table数据
-  const { prefixCls, tableContext, onExportXls, onImportXls } = useListPage({
+  const { tableContext, onExportXls, onImportXls } = useListPage({
     tableProps: {
       title: '商品分类',
       api: list,
@@ -149,7 +137,7 @@
 	    success: handleSuccess
 	  },
   });
-  const [registerTable, { reload, collapseAll, updateTableDataRecord, findTableDataRecord, getDataSource }, { rowSelection, selectedRowKeys }] = tableContext;
+  const [registerTable, { reload }, { rowSelection, selectedRowKeys }] = tableContext;
   const labelCol = reactive({
     xs:24,
     sm:4,
@@ -260,13 +248,12 @@
   }
 
   /**
-   * 启用状态改变
+   * 「仅查看已启用」开关。
+   * 三态口径：打开 = isShow='Y'（只看启用）；关闭 = undefined（不传该参数，显示全部）。
+   * 不要再把 'N' 改写成 ''，空串会被后端当成一个真实的筛选值。
    */
-  function isShowChange() {
-    console.log(queryParam.isShow);
-    if (queryParam.isShow == 'N') {
-      queryParam.isShow = '';
-    }
+  function isShowChange(checked: boolean) {
+    queryParam.isShow = checked ? 'Y' : undefined;
     searchQuery();
   }
   
@@ -275,6 +262,9 @@
    */
   function searchReset() {
     formRef.value.resetFields();
+    // 重置回默认口径：仅查看已启用，且不带店铺筛选
+    queryParam.isShow = 'Y';
+    queryParam.storeId = undefined;
     selectedRowKeys.value = [];
     //刷新数据
     reload();
@@ -286,7 +276,7 @@
 
 
   onMounted(() => {
-    // 店铺下拉 + 列表列渲染所需的 storeId -> 店铺名 映射
+    // 店铺下拉 + 列表列渲染所需的 sysOrgCode -> 店铺名 映射
     loadStores();
   });
 </script>

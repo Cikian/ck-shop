@@ -1,3 +1,12 @@
+// server/api/home/slide.get.ts
+// 店铺端首页轮播图（Nuxt BFF）：GET /api/home/slide
+// 数据来源：Java 后端 GET /home/slide/store（方法级 @IgnoreAuth，按店铺隔离）
+//
+// 语言：显式 ?lang= 优先（HomeHeroBanner.vue 会带当前 locale），
+//       其次 server/middleware/locale.ts 解析出的 event.context.locale，最后 en。
+
+import { resolveStoreLang } from '~~/types/store-locale'
+
 // 定义 Java 后端返回的轮播图项类型
 export interface SlideItem {
   goods: string | null
@@ -14,12 +23,21 @@ function cleanUrl(url: string | null | undefined): string {
 }
 
 export default defineEventHandler(async (event): Promise<SlideItem[]> => {
+  const query = getQuery(event)
+  const contextLocale = (event.context as Record<string, unknown>).locale
+
+  // 与 server/api/products.get.ts 一致：显式 ?lang= 优先，其次中间件解析出的语言，最后 en。
+  // 前端 HomeHeroBanner.vue 会带着当前 locale 请求，语言切换必须真的打到后端。
+  const lang = resolveStoreLang(query.lang ?? contextLocale, 'en')
+
   const api = createApiClient(event, { withAuth: false })
 
   try {
-    // 显式为 api<T> 传入泛型类型 SlideItem[]
-    const data = await api<SlideItem[]>('/home/slide', {
+    // 后端路径带 /store 后缀：/home/slide 是管理端写接口（需登录），
+    // 店铺端免登录读走 /home/slide/store（方法级 @IgnoreAuth）。
+    const data = await api<SlideItem[]>('/home/slide/store', {
       method: 'GET',
+      query: { lang },
     })
 
     // 清理 URL 字段

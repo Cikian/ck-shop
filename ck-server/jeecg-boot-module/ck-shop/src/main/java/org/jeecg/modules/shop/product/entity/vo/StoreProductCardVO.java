@@ -70,12 +70,6 @@ public class StoreProductCardVO implements Serializable {
     @Schema(description = "分类名称（按当前语言）")
     private String categoryName;
 
-    @Schema(description = "品牌ID")
-    private String brandId;
-
-    @Schema(description = "品牌名称（按当前语言）")
-    private String brandName;
-
     @Schema(description = "标签")
     private List<TagRefVO> tags;
 }

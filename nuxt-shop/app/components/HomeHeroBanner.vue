@@ -45,44 +45,18 @@
               {{ t('hero.shopNow') }}
               <UIcon name="lucide:arrow-right" class="h-5 w-5 transition-transform duration-300 group-hover:translate-x-1" />
             </NuxtLinkLocale>
-            <button
+            <!-- 原先是无 @click 的死按钮；这里指向真实的分类总览页 -->
+            <NuxtLinkLocale
+              to="/categories"
               class="group inline-flex h-14 items-center justify-center gap-2 rounded-2xl border border-[var(--color-border)] bg-white/60 px-8 text-base font-semibold text-[var(--color-primary)] backdrop-blur-sm transition-all duration-300 hover:border-[var(--color-primary)]/30 hover:bg-white cursor-pointer"
             >
-              <UIcon name="lucide:play-circle" class="h-5 w-5 text-[var(--color-accent)]" />
+              <UIcon name="lucide:list" class="h-5 w-5 text-[var(--color-accent)]" />
               {{ t('hero.learnMore') }}
-            </button>
-          </div>
-
-          <!-- Stats -->
-          <div class="mt-12 grid grid-cols-3 gap-6 animate-fade-in-up animation-delay-400">
-            <div>
-              <div class="text-2xl font-bold text-[var(--color-primary)] sm:text-3xl">
-                10K+
-              </div>
-              <div class="mt-1 text-sm text-[var(--color-text-muted)]">
-                {{ t('hero.products') }}
-              </div>
-            </div>
-            <div>
-              <div class="text-2xl font-bold text-[var(--color-primary)] sm:text-3xl">
-                50K+
-              </div>
-              <div class="mt-1 text-sm text-[var(--color-text-muted)]">
-                {{ t('hero.customers') }}
-              </div>
-            </div>
-            <div>
-              <div class="text-2xl font-bold text-[var(--color-primary)] sm:text-3xl">
-                4.9★
-              </div>
-              <div class="mt-1 text-sm text-[var(--color-text-muted)]">
-                {{ t('hero.rating') }}
-              </div>
-            </div>
+            </NuxtLinkLocale>
           </div>
         </div>
 
-        <!-- Visual -->
+        <!-- Visual：轮播图内容全部来自后端 /home/slide/store，没有数据时展示中性占位 -->
         <div class="relative order-1 lg:order-2">
           <div class="relative animate-float">
             <!-- Main Product Card -->
@@ -98,42 +72,14 @@
                   :alt="currentSlide.title || ''"
                   class="h-full w-full object-cover transition-all duration-700"
                 />
+                <div
+                  v-else
+                  class="flex h-full w-full items-center justify-center bg-[var(--color-surface-secondary)] text-[var(--color-text-muted)]"
+                >
+                  <UIcon name="lucide:image-off" class="h-16 w-16" />
+                </div>
                 <!-- Overlay Gradient -->
                 <div class="absolute inset-0 bg-gradient-to-t from-[var(--color-primary)]/40 via-transparent to-transparent"></div>
-
-                <!-- Floating Badge -->
-                <div class="absolute left-4 top-4 glass rounded-full px-4 py-2 text-sm font-semibold text-[var(--color-primary)] shadow-lg">
-                  {{ t('home.bestseller') }}
-                </div>
-              </div>
-            </div>
-
-            <!-- Floating Card 1 -->
-            <div class="absolute -left-4 top-1/4 glass hidden rounded-2xl p-3 shadow-xl animate-float-slow sm:block">
-              <div class="flex items-center gap-3">
-                <div class="flex h-10 w-10 items-center justify-center rounded-xl bg-[var(--color-success)]/10 text-[var(--color-success)]">
-                  <UIcon name="lucide:truck" class="h-5 w-5" />
-                </div>
-                <div>
-                  <div class="text-sm font-semibold text-[var(--color-primary)]">Free Shipping</div>
-                  <div class="text-xs text-[var(--color-text-muted)]">On orders over $99</div>
-                </div>
-              </div>
-            </div>
-
-            <!-- Floating Card 2 -->
-            <div class="absolute -right-2 bottom-1/4 glass hidden rounded-2xl p-3 shadow-xl animate-float animation-delay-300 sm:block">
-              <div class="flex items-center gap-3">
-                <div class="flex h-10 w-10 items-center justify-center rounded-xl bg-[var(--color-accent)]/10 text-[var(--color-accent)]">
-                  <UIcon name="lucide:star" class="h-5 w-5 fill-current" />
-                </div>
-                <div>
-                  <div class="text-sm font-semibold text-[var(--color-primary)]">4.9 Rating</div>
-                  <div class="flex gap-0.5 text-xs text-[var(--color-warning)]">
-                    ★★★★★
-                    <span class="text-[var(--color-text-muted)]">(2.3k)</span>
-                  </div>
-                </div>
               </div>
             </div>
           </div>
@@ -151,31 +97,6 @@
               :aria-label="`Go to slide ${index + 1}`"
             ></button>
           </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- Feature Highlights -->
-    <div class="relative mx-auto mt-16 max-w-7xl px-4 sm:px-6 lg:mt-20 lg:px-8">
-      <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <div
-          v-for="(feature, idx) in features"
-          :key="feature.title"
-          class="glass group rounded-2xl p-5 transition-all duration-500 hover:-translate-y-1 hover:shadow-xl cursor-pointer animate-fade-in-up"
-          :style="{ animationDelay: `${(idx + 1) * 100}ms` }"
-        >
-          <div
-            class="mb-4 flex h-12 w-12 items-center justify-center rounded-xl transition-all duration-300 group-hover:scale-110"
-            :style="{ backgroundColor: feature.color + '15', color: feature.color }"
-          >
-            <UIcon :name="feature.icon" class="h-6 w-6" />
-          </div>
-          <h3 class="text-base font-semibold text-[var(--color-primary)]">
-            {{ t(feature.titleKey) }}
-          </h3>
-          <p class="mt-1 text-sm text-[var(--color-text-muted)]">
-            {{ t(feature.descKey) }}
-          </p>
         </div>
       </div>
     </div>
@@ -200,33 +121,6 @@ const { data: slidesData } = await useFetch<SlideItem[]>('/api/home/slide', {
 const slides = computed(() => slidesData.value || [])
 
 const currentSlide = computed(() => slides.value[currentSlideIndex.value] || null)
-
-const features = [
-  {
-    icon: 'lucide:truck',
-    titleKey: 'home.freeShipping',
-    descKey: 'home.freeShippingDesc',
-    color: 'var(--color-accent)',
-  },
-  {
-    icon: 'lucide:shield-check',
-    titleKey: 'home.securePayment',
-    descKey: 'home.securePaymentDesc',
-    color: 'var(--color-success)',
-  },
-  {
-    icon: 'lucide:headphones',
-    titleKey: 'home.support247',
-    descKey: 'home.support247Desc',
-    color: 'var(--color-info)',
-  },
-  {
-    icon: 'lucide:rotate-ccw',
-    titleKey: 'home.easyReturns',
-    descKey: 'home.easyReturnsDesc',
-    color: 'var(--color-error)',
-  },
-]
 
 function handleSlideClick() {
   const url = currentSlide.value?.targetUrl

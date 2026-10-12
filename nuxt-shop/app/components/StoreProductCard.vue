@@ -78,7 +78,7 @@ import { useStorePrice } from '~~/composables/useProducts'
 
 /**
  * 店铺端商品卡片：只展示后端真实字段（title / subTitle / coverUrl / mainImage /
- * minPrice / maxPrice / price / stock / tags / brandName / categoryName / isRecommend）。
+ * minPrice / maxPrice / price / stock / tags / categoryName / isRecommend）。
  * 后端没有 rating / reviewCount / 折扣 等概念，这里不做任何伪造。
  */
 const props = defineProps<{
@@ -92,7 +92,7 @@ const coverUrl = computed(() => resolveCoverUrl(props.product))
 const inStock = computed(() => props.product.stock > 0)
 const priceText = computed(() => formatRange(props.product.minPrice, props.product.maxPrice, props.product.price))
 const categoryLine = computed(() =>
-  [props.product.brandName, props.product.categoryName].filter(Boolean).join(' · '),
+  [props.product.categoryName].filter(Boolean).join(' · '),
 )
 const visibleTags = computed(() => {
   const max = props.product.isRecommend === 'Y' ? 2 : 3

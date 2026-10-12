@@ -5,7 +5,12 @@
 import crypto from 'node:crypto';
 
 const BASE = 'http://127.0.0.1:9951/api';
-const SIGN_SECRET = 'dd05f1c54d63749eda95f9fa6d49v442a';
+// 接口签名密钥（后端 jeecg.signatureSecret）：从环境变量读取，不写进仓库
+const SIGN_SECRET = process.env.CK_SIGN_SECRET;
+if (!SIGN_SECRET) {
+  console.error('缺少 CK_SIGN_SECRET：设为后端 jeecg.signatureSecret 的值（见 ck-server/.env）');
+  process.exit(2);
+}
 const TOKEN = process.env.CK_TOKEN;
 
 function sign(query = {}) {

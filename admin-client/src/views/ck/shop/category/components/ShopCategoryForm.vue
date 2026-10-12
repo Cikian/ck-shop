@@ -12,11 +12,30 @@
                             </a-form-item>
                         </a-col>
                         <a-col :span="24">
-                            <a-form-item label="所属店铺" v-bind="validateInfos.storeId" id="ShopCategoryForm-storeId"
-                                name="storeId">
-                                <a-select v-model:value="formData.storeId" placeholder="全局共享（所有店铺可见）"
-                                    allow-clear show-search optionFilterProp="label" :options="storeOptions" />
-                                <span class="store-hint">留空表示全局共享；选择店铺后该分类只在本店可见</span>
+                            <a-form-item
+                                label="父级分类"
+                                v-bind="validateInfos.parentId"
+                                id="ShopCategoryForm-parentId"
+                                name="parentId"
+                            >
+                                <a-select
+                                    v-model:value="formData.parentId"
+                                    placeholder="顶级分类"
+                                    show-search
+                                    optionFilterProp="label"
+                                    :options="parentOptions"
+                                />
+                                <span class="store-hint">选「顶级分类」即为一级分类；后端会校验父分类必须存在、同店铺且不能是自己，并自动计算层级</span>
+                            </a-form-item>
+                        </a-col>
+                        <a-col :span="24">
+                            <a-form-item label="所属店铺" v-bind="validateInfos.sysOrgCode" id="ShopCategoryForm-sysOrgCode"
+                                name="sysOrgCode">
+                                <a-select v-model:value="formData.sysOrgCode" placeholder="请选择店铺（归属到店铺绑定的部门）"
+                                    allow-clear show-search optionFilterProp="label" :options="storeOptions"
+                                    :disabled="!canManageStoreOrg" />
+                                <span v-if="!canManageStoreOrg" class="store-hint">归属由账号所在部门决定</span>
+                                <span v-else class="store-hint">分类只能属于一个店铺；留空则由后端按操作人部门自动归属</span>
                             </a-form-item>
                         </a-col>
                         <a-col :span="24">
@@ -81,17 +100,19 @@
 <script lang="ts" setup>
 import { Form } from 'ant-design-vue';
 import { computed, nextTick, reactive, ref } from 'vue';
-import { queryById, saveOrUpdate } from '../ShopCategory.api';
+import { list as categoryList, queryById, saveOrUpdate } from '../ShopCategory.api';
 import { storeAll } from '../../product/ShopProduct.api';
 import JFormContainer from '/@/components/Form/src/container/JFormContainer.vue';
 import JImageUpload from '/@/components/Form/src/jeecg/components/JImageUpload.vue';
 import JSwitch from '/@/components/Form/src/jeecg/components/JSwitch.vue';
 import LangTabs from '/@/components/Form/src/jeecg/components/LangTabs.vue';
 import { useMessage } from '/@/hooks/web/useMessage';
+import { usePermission } from '/@/hooks/web/usePermission';
 import { getDateByPicker, getValueType } from '/@/utils';
 const props = defineProps({
     formDisabled: { type: Boolean, default: false },
-    formData: { type: Object, default: () => ({}) },
+    // 兼容旧用法：父级可通过它额外关闭表单（当前无调用方传入）
+    formDataProp: { type: Object, default: () => ({}) },
     formBpm: { type: Boolean, default: true }
 });
 const formRef = ref();
@@ -101,29 +122,62 @@ const emit = defineEmits(['register', 'ok']);
 const formData = reactive<Record<string, any>>({
     id: '',
     name: '',
+    // 父级分类：'0' = 顶级分类（后端会校验父分类必须存在、同部门、不是自己，并自动算 level）
+    parentId: '0',
     sortOrder: undefined,
     coverUrl: '',
     isShow: 'Y',
-    // 所属店铺：为空表示"全局共享"（所有店铺都可见）
-    storeId: undefined,
+    // 所属店铺：值 = 店铺绑定的部门 org_code（departOrgCode），为空则由后端按操作人部门归属
+    sysOrgCode: undefined,
     translations: []
 });
 const { createMessage } = useMessage();
+const { hasPermission } = usePermission();
 
-/** 店铺下拉：分类按店独立，store_id 为空 = 全局共享节点 */
+/** 只有管理员/总部角色有 shop-store:manage-all，能改分类归属 */
+const canManageStoreOrg = computed(() => hasPermission('shop-store:manage-all'));
+
+/** 店铺下拉：只列绑定了部门的店铺，value 用 departOrgCode（新模型没有"全局共享"分类） */
 const storeOptions = ref<any[]>([]);
 async function loadStores() {
     try {
         const res = await storeAll();
         const records = res || [];
-        storeOptions.value = [
-            { label: '全局共享（所有店铺可见）', value: '' },
-            ...records.map((item: any) => ({ label: `${item.name}（${item.code}）`, value: item.id }))
-        ];
+        storeOptions.value = records
+            .filter((item: any) => !!item?.departOrgCode)
+            .map((item: any) => ({ label: `${item.name}（${item.code}）`, value: item.departOrgCode }));
     } catch (e) {
         console.warn('店铺列表加载失败', e);
     }
 }
+
+/** 可选的父级分类原始列表（来自 /shop/category/list） */
+const parentRecords = ref<any[]>([]);
+async function loadParentCategories() {
+    try {
+        // pageSize 给大一些：下拉里要能看到全部分类，避免漏掉超出首页的父分类
+        const res = await categoryList({ pageNo: 1, pageSize: 500 });
+        parentRecords.value = res?.records || res || [];
+    } catch (e) {
+        console.warn('父级分类加载失败', e);
+        parentRecords.value = [];
+    }
+}
+
+/**
+ * 父级分类下拉：
+ * 第一项固定为「顶级分类」（值 '0'），其余按层级缩进显示；
+ * 必须排除自己（后端也会拒绝"父级 = 自己"）。
+ */
+const parentOptions = computed(() => {
+    const options = parentRecords.value
+        .filter((item: any) => item?.id && item.id !== formData.id)
+        .map((item: any) => {
+            const level = Math.max(1, Number(item.level) || 1);
+            return { label: `${'　'.repeat(level - 1)}${item.name || item.id}`, value: item.id };
+        });
+    return [{ label: '顶级分类', value: '0' }, ...options];
+});
 const labelCol = ref<any>({ xs: { span: 24 }, sm: { span: 5 } });
 const wrapperCol = ref<any>({ xs: { span: 24 }, sm: { span: 16 } });
 const confirmLoading = ref<boolean>(false);
@@ -140,7 +194,7 @@ const fieldPickers = reactive({});
 // 表单禁用
 const disabled = computed(() => {
     if (props.formBpm === true) {
-        if (props.formData.disabled === false) {
+        if (props.formDataProp.disabled === false) {
             return false;
         } else {
             return true;
@@ -162,8 +216,9 @@ function add() {
 async function edit(record) {
     await nextTick();
     resetFields();
-    // 店铺下拉（分类按店独立）
+    // 店铺下拉 + 父级分类下拉（分类按店独立，父级必须同店铺）
     loadStores();
+    loadParentCategories();
     // 先刷新组件，清空之前的翻译数据
     await langTabsRef.value?.refresh();
 
@@ -172,6 +227,8 @@ async function edit(record) {
         if (queryRes) {
             const data = queryRes || {};
             Object.assign(formData, data);
+            // 父级为空统一回填成 '0'（顶级），避免下拉框显示空白
+            formData.parentId = data.parentId || '0';
             // LangTabs 内部自动兼容数组 / JSON 字符串两种形态
             langTabsRef.value?.mergeFrom(data.translations);
         }
@@ -199,8 +256,10 @@ async function submitForm() {
     // 组装提交数据：从 LangTabs 获取清理过的 translations
     let model = JSON.parse(JSON.stringify(formData));
     model.translations = langTabsRef.value?.clean() ?? [];
-    // "全局共享"选项的值是空串，统一转成 null，避免库里存一堆 ''
-    model.storeId = model.storeId || null;
+    // 归属为空统一转成 null，避免库里存一堆 ''
+    model.sysOrgCode = model.sysOrgCode || null;
+    // 父级分类：空统一转成 '0'（顶级），后端据 level 自动计算层级
+    model.parentId = model.parentId || '0';
     if (model.id) {
         isUpdate.value = true;
     }

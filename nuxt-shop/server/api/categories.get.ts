@@ -8,7 +8,7 @@
 // 前端不做也无法做店铺过滤：店铺身份由本项目服务端配置（STORE_CODE）
 // 通过 X-Store-Code 请求头传给后端，浏览器不感知、也改不了。
 
-import { resolveStoreLang } from '~~/types/shop-product'
+import { resolveStoreLang } from '~~/types/store-locale'
 
 export default defineEventHandler(async (event) => {
   const query = getQuery(event)

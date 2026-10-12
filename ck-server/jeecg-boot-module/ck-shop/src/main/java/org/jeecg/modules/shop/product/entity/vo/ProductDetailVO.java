@@ -35,10 +35,6 @@ public class ProductDetailVO extends ShopProduct {
      */
     private String categoryName;
     /**
-     * 品牌内部名称
-     */
-    private String brandName;
-    /**
      * 多语言文案
      */
     private List<ShopProductTranslation> translations;
@@ -62,8 +58,4 @@ public class ProductDetailVO extends ShopProduct {
      * SKU 组合（按 combinationKey 升序）
      */
     private List<ProductSkuVO> skus;
-    /**
-     * 销售渠道：本商品上架到了哪些店铺，含每店的分类归属与售价覆盖
-     */
-    private List<StoreListingVO> stores;
 }

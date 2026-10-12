@@ -10,7 +10,8 @@
 // 页面用法见 nuxt-shop/composables/useProducts.ts 的 useStoreProductDetail()。
 
 import type { StoreProductDetail } from '~~/types/shop-product'
-import { normalizeDetail, resolveStoreLang } from '~~/types/shop-product'
+import { normalizeDetail } from '~~/types/shop-product'
+import { resolveStoreLang } from '~~/types/store-locale'
 
 export default defineEventHandler(async (event): Promise<StoreProductDetail> => {
   const id = getRouterParam(event, 'slug')?.trim()

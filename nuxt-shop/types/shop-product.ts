@@ -9,12 +9,17 @@
 //        nuxt-shop/temp/spec-availability.selfcheck.ts
 //
 // 数据来源（Java 后端，全部通过 server/utils/apiClient.ts 的 createApiClient 调用）：
-//   GET /shop/product/store/list?lang&pageNo&pageSize&categoryId&brandId&keyword
+//   GET /shop/product/store/list?lang&pageNo&pageSize&categoryId&keyword
 //        -> JeecgBoot 信封 .result = { records, total, size, current, pages }
 //   GET /shop/product/store/detail?id&lang
 //        -> JeecgBoot 信封 .result = StoreProductDetail
 // 字段以后端 VO 为准：StoreProductCardVO / StoreProductDetailVO / StoreSpecVO /
 // StoreSpecValueVO / StoreSkuVO / TagRefVO + ShopProduct / ShopProductImage。
+
+// 语言清单不再写在本文件里（曾经 3 处手工同步），统一从 types/store-locale.ts 派生。
+// 这里 import 时带 .ts 后缀，是为了让 Node 的 TS 类型擦除模式也能解析
+// （temp/spec-availability.selfcheck.ts 直接 `node xxx.ts` 跑，Node 的 ESM 不做后缀补全）。
+import { STORE_DEFAULT_LANG, STORE_INTL_LOCALE_TAGS } from './store-locale.ts'
 
 /** 后端统一的 Y/N 标记 */
 export type YesNo = 'Y' | 'N'
@@ -50,9 +55,6 @@ export interface StoreProductCard {
   categoryId: string | null
   /** 当前语言分类名 */
   categoryName: string | null
-  brandId: string | null
-  /** 当前语言品牌名 */
-  brandName: string | null
   tags: ShopTagRef[]
 }
 
@@ -122,8 +124,6 @@ export interface StoreProductDetail {
   sortOrder: number | null
   categoryId: string | null
   categoryName: string | null
-  brandId: string | null
-  brandName: string | null
   tags: ShopTagRef[]
   /** 已按 sortOrder 升序 */
   specs: StoreSpec[]
@@ -206,8 +206,6 @@ export function normalizeCard(raw: unknown): StoreProductCard {
     sortOrder: toNullableString(item.sortOrder) === null ? null : toInteger(item.sortOrder, 0),
     categoryId: toNullableString(item.categoryId),
     categoryName: toNullableString(item.categoryName),
-    brandId: toNullableString(item.brandId),
-    brandName: toNullableString(item.brandName),
     tags: normalizeTags(item.tags),
   }
 }
@@ -313,20 +311,9 @@ export function normalizePage(raw: unknown, fallbackPageNo: number, fallbackPage
 // ---------------------------------------------------------------------------
 // 接口查询参数归一化（server/api/products*.ts 复用）
 // ---------------------------------------------------------------------------
-
-/** 店铺端支持的语言（与 nuxt.config.ts i18n.locales 一致） */
-export const STORE_SUPPORTED_LANGS = ['zh', 'en', 'fr'] as const
-
-/** 把 query.lang 收敛成 zh|en|fr 之一 */
-export function resolveStoreLang(value: unknown, fallback: string = 'en'): string {
-  const raw = Array.isArray(value) ? value[0] : value
-  const lang = typeof raw === 'string' ? raw.trim().toLowerCase() : ''
-  return (STORE_SUPPORTED_LANGS as readonly string[]).includes(lang)
-    ? lang
-    : (STORE_SUPPORTED_LANGS as readonly string[]).includes(fallback)
-      ? fallback
-      : 'en'
-}
+//
+// 语言解析（STORE_SUPPORTED_LANGS / resolveStoreLang）已收敛到 types/store-locale.ts，
+// 那里是店铺端语言清单的唯一来源，本文件不再重复维护。
 
 /** 正整数转换（页码 / 每页条数），非法值回退 fallback */
 export function toPositiveInt(value: unknown, fallback: number): number {
@@ -465,16 +452,10 @@ export function isSelectionComplete(specs: StoreSpec[], selection: SpecSelection
 // 展示辅助
 // ---------------------------------------------------------------------------
 
-const INTL_LOCALE_TAGS: Record<string, string> = {
-  zh: 'zh-CN',
-  en: 'en-US',
-  fr: 'fr-FR',
-}
-
-/** 把 i18n 的 locale code（zh / en / fr）转成 Intl 用的 BCP-47 tag */
+/** 把 i18n 的 locale code（zh / en / fr）转成 Intl 用的 BCP-47 tag（映射来自语言清单唯一来源） */
 export function toIntlLocale(locale?: string | null): string {
-  if (!locale) return 'en-US'
-  return INTL_LOCALE_TAGS[locale] ?? locale
+  if (!locale) return STORE_INTL_LOCALE_TAGS[STORE_DEFAULT_LANG] ?? 'en-US'
+  return STORE_INTL_LOCALE_TAGS[locale] ?? locale
 }
 
 /** 按当前 locale 用 Intl.NumberFormat 格式化价格数字（货币符号由 i18n 的 common.currency 提供） */

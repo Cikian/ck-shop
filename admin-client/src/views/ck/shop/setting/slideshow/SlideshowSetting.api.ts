@@ -5,7 +5,6 @@ enum Api {
   listAll = '/home/slide/all',
   /** 新增与编辑共用同一个地址，仅请求方法不同 */
   base = '/home/slide',
-  queryById = '/home/slide/queryById',
   deleteOne = '/home/slide/delete',
   deleteBatch = '/home/slide/deleteBatch',
   saveSort = '/home/slide/sort',
@@ -33,6 +32,8 @@ export interface SlideRecord {
   targetUrl?: string | null;
   /** 启用状态：Y 启用 / N 禁用 */
   enabled?: string | null;
+  /** 归属部门编码（= 所属店铺绑定的部门 org_code） */
+  sysOrgCode?: string | null;
   /** 各语言内容，形如 { zh: { title_zh, pic_url_zh }, en: {...} } */
   [langCode: string]: any;
 }
@@ -50,15 +51,17 @@ export interface LanguageItem {
   sort: number;
 }
 
-/** 列表接口：全量轮播图（按语言分组） */
-export const list = () => defHttp.get<SlideRecord[]>({ url: Api.listAll });
-
-/** 单条查询：返回已去掉协议的 targetUrl，便于编辑器回填 */
-export const queryById = (id: string) => defHttp.get<SlideRecord>({ url: Api.queryById, params: { id } });
+/**
+ * 列表接口：按店铺取轮播图（按语言分组）
+ * 不传 sysOrgCode 时：总部/管理员 = 不限（总览），运营 = 只看本部门
+ */
+export const list = (sysOrgCode?: string) => defHttp.get<SlideRecord[]>({ url: Api.listAll, params: { sysOrgCode } });
 
 /**
  * 保存 / 更新轮播图
- * 不启用响应转换，交由调用方根据 success 决定提示文案
+ * 归属通过 payload.sysOrgCode 传给后端（运营只能传本部门，越权会被拒）
+ * 不启用响应转换，交由调用方根据 success 决定提示文案；
+ * 新增时 result 为新文档 id（父页面据此选中刚建的那条）。
  */
 export const saveOrUpdate = (params: SlideRecord, isUpdate: boolean): Promise<ApiResult> => {
   return isUpdate
@@ -66,12 +69,12 @@ export const saveOrUpdate = (params: SlideRecord, isUpdate: boolean): Promise<Ap
     : defHttp.post({ url: Api.base, params }, { isTransformResponse: false });
 };
 
-/** 删除单条轮播图 */
+/** 删除单条轮播图（归属由后端按文档自身归属校验，这里只传 id） */
 export const deleteOne = (id: string) => defHttp.delete({ url: Api.deleteOne, params: { id } }, { joinParamsToUrl: true });
 
 /** 批量删除轮播图 */
 export const deleteBatch = (ids: string[]) => defHttp.delete({ url: Api.deleteBatch, params: { ids: ids.join(',') } }, { joinParamsToUrl: true });
 
-/** 保存排序（只更新 sort 字段，不会覆盖图片与标题） */
+/** 保存排序（只更新 sort 字段，不会覆盖图片与标题；归属按各自文档校验） */
 export const saveSort = (sortList: Array<{ id: string; sort: number }>): Promise<ApiResult> =>
   defHttp.put({ url: Api.saveSort, params: sortList }, { isTransformResponse: false });

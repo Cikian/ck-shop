@@ -32,15 +32,7 @@ public class ProductListVO extends ShopProduct {
      */
     private String categoryName;
     /**
-     * 品牌内部名称
-     */
-    private String brandName;
-    /**
      * 关联标签
      */
     private List<TagRefVO> tags;
-    /**
-     * 上架渠道：本商品上架到了哪些店铺（管理端列表直接展示"已上架 N 店"）
-     */
-    private List<StoreListingVO> stores;
 }

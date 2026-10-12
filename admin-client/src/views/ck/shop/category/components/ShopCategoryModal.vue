@@ -12,10 +12,7 @@
   import { ref, nextTick } from 'vue';
   import ShopCategoryForm from './ShopCategoryForm.vue'
   import JModal from '/@/components/Modal/src/JModal/JModal.vue';
-  import { useMessage } from '/@/hooks/web/useMessage';
-  const { createMessage } = useMessage();
   const title = ref<string>('');
-  const width = ref<number>(800);
   const visible = ref<boolean>(false);
   const disableSubmit = ref<boolean>(false);
   const registerForm = ref();

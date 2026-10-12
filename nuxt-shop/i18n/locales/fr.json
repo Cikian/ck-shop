@@ -65,6 +65,7 @@
     "testimonials": "Témoignages",
     "whatCustomersSay": "Ce que disent nos clients",
     "noSpam": "Pas de spam, désinscription à tout moment",
+    "unsubscribeAnytime": "Désabonnement à tout moment",
     "recommended": "Produits recommandés",
     "recommendedDesc": "Une sélection de produits à découvrir",
     "moreProducts": "Plus de produits",
@@ -118,6 +119,8 @@
   },
   "product": {
     "addToCart": "Ajouter au panier",
+    "cartComingSoon": "Panier bientôt disponible",
+    "cartComingSoonHint": "Le panier et la commande ne sont pas encore disponibles — vous pouvez pour l'instant parcourir le catalogue.",
     "notFound": "Produit introuvable",
     "backToProducts": "Retour aux produits",
     "new": "Nouveau",

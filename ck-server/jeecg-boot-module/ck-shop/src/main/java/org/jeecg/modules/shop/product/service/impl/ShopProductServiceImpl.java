@@ -10,9 +10,6 @@ import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
 import org.jeecg.common.exception.JeecgBootException;
-import org.jeecg.modules.shop.brand.entity.ShopBrand;
-import org.jeecg.modules.shop.brand.entity.ShopBrandTranslation;
-import org.jeecg.modules.shop.brand.mapper.ShopBrandMapper;
 import org.jeecg.modules.shop.category.entity.ShopCategory;
 import org.jeecg.modules.shop.category.entity.ShopCategoryTranslation;
 import org.jeecg.modules.shop.category.mapper.ShopCategoryMapper;
@@ -51,15 +48,7 @@ import org.jeecg.modules.shop.tag.entity.ShopTag;
 import org.jeecg.modules.shop.tag.entity.ShopTagTranslation;
 import org.jeecg.modules.shop.tag.mapper.ShopTagMapper;
 import org.jeecg.modules.shop.tag.mapper.ShopTagTranslationMapper;
-import org.jeecg.modules.shop.category.entity.ShopCategory;
-import org.jeecg.modules.shop.category.mapper.ShopCategoryMapper;
-import org.jeecg.modules.shop.product.entity.ShopProductStore;
-import org.jeecg.modules.shop.product.entity.dto.StoreListingDTO;
-import org.jeecg.modules.shop.product.entity.vo.StoreListingVO;
-import org.jeecg.modules.shop.product.entity.vo.StoreProductRowVO;
-import org.jeecg.modules.shop.product.mapper.ShopProductStoreMapper;
-import org.jeecg.modules.shop.store.entity.ShopStore;
-import org.jeecg.modules.shop.store.mapper.ShopStoreMapper;
+import org.jeecg.modules.shop.store.ShopOrgScopeResolver;
 import org.springframework.beans.BeanUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.DuplicateKeyException;
@@ -103,11 +92,6 @@ public class ShopProductServiceImpl extends ServiceImpl<ShopProductMapper, ShopP
 
     @Autowired
     private ShopProductTranslationMapper translationMapper;
-    /** 商品-店铺上架关系（渠道属性） */
-    @Autowired
-    private ShopProductStoreMapper productStoreMapper;
-    @Autowired
-    private ShopStoreMapper shopStoreMapper;
     @Autowired
     private ShopCategoryMapper shopCategoryMapper;
     @Autowired
@@ -128,8 +112,9 @@ public class ShopProductServiceImpl extends ServiceImpl<ShopProductMapper, ShopP
     private ShopCategoryMapper categoryMapper;
     @Autowired
     private ShopCategoryTranslationMapper categoryTranslationMapper;
+    /** 可见域/归属部门的唯一解析出口（运营只能管本部门，管理员不限） */
     @Autowired
-    private ShopBrandMapper brandMapper;
+    private ShopOrgScopeResolver orgScopeResolver;
 
     // ==================================================================
     // 管理端
@@ -138,17 +123,28 @@ public class ShopProductServiceImpl extends ServiceImpl<ShopProductMapper, ShopP
     @Override
     public IPage<ProductListVO> queryPageList(ProductQuery query, Integer pageNo, Integer pageSize, String language) {
         String lang = normalizeLanguage(language);
-        // 按店铺筛选时走连接查询：驱动表是 ck_shop_product_store，索引以 store_id 打头，
-        // 分类也要按"本店分类优先、回退主分类"来匹配，因此不能沿用下面的全量商品 wrapper。
-        if (query != null && StringUtils.isNotBlank(query.getStoreId())) {
-            return queryAdminPageByStore(query, pageNo, pageSize, lang);
+
+        /*
+         * 数据可见域（多店铺改造的核心）：
+         *   1) storeId（店铺筛选）→ 该店铺绑定部门的 org_code；
+         *   2) 与当前账号的可见部门域取交集。
+         * 两种"空"的语义必须分清：
+         *   - mergeScope 返回 null    → 不限（管理员且未按店铺筛选）；
+         *   - mergeScope 返回空 List  → 两个域没有交集，直接返回空分页。
+         * 交集为空时**绝不能把条件丢掉**——那就等于把全部店铺的数据返回给调用方。
+         */
+        String storeOrgCode = orgScopeResolver.resolveStoreOrgCode(query == null ? null : query.getStoreId());
+        List<String> scope = orgScopeResolver.mergeScope(storeOrgCode, orgScopeResolver.resolveVisibleOrgCodes());
+        if (scope != null && scope.isEmpty()) {
+            return emptyListPage(pageNo, pageSize);
         }
+
         QueryWrapper<ShopProduct> wrapper = new QueryWrapper<>();
+        applyOrgScope(wrapper, scope);
         if (query != null) {
             wrapper.eq(StringUtils.isNotBlank(query.getSpuCode()), "spu_code", query.getSpuCode());
             wrapper.eq(StringUtils.isNotBlank(query.getStatus()), "status", query.getStatus());
             wrapper.eq(StringUtils.isNotBlank(query.getCategoryId()), "category_id", query.getCategoryId());
-            wrapper.eq(StringUtils.isNotBlank(query.getBrandId()), "brand_id", query.getBrandId());
             wrapper.eq(StringUtils.isNotBlank(query.getIsRecommend()), "is_recommend", query.getIsRecommend());
         }
         String keyword = query == null ? null : query.getKeyword();
@@ -160,11 +156,16 @@ public class ShopProductServiceImpl extends ServiceImpl<ShopProductMapper, ShopP
         if (StringUtils.isNotBlank(tagId)) {
             List<String> productIds = baseMapper.selectProductIdsByTagId(tagId);
             if (CollectionUtils.isEmpty(productIds)) {
-                return new Page<>(pageNo == null ? 1 : pageNo, pageSize == null ? 10 : pageSize);
+                return emptyListPage(pageNo, pageSize);
             }
             wrapper.in("id", productIds);
         }
-        wrapper.orderByDesc("sort_order").orderByDesc("create_time");
+        if (query != null && StringUtils.isNotBlank(query.getCategoryId())) {
+            // 与店铺端口径一致：按"该分类及其后代"筛选，否则运营按父分类筛选会漏掉子分类商品
+            wrapper.in("category_id", collectCategoryIds(query.getCategoryId(), orgScopeResolver.resolveVisibleOrgCodes()));
+        }
+        // 与前台保持一致：sort_order 升序（数字越小越靠前）
+        wrapper.orderByAsc("sort_order").orderByDesc("create_time");
 
         Page<ShopProduct> page = new Page<>(pageNo == null ? 1 : pageNo, pageSize == null ? 10 : pageSize);
         IPage<ShopProduct> pageList = super.page(page, wrapper);
@@ -173,64 +174,37 @@ public class ShopProductServiceImpl extends ServiceImpl<ShopProductMapper, ShopP
         List<String> ids = records.stream().map(ShopProduct::getId).collect(Collectors.toList());
         ListContext ctx = buildListContext(ids, lang);
 
-        // 上架渠道：当前页一次性取回，列表直接展示"已上架 N 店"
-        Map<String, List<StoreListingVO>> storeListings = buildStoreListingsByProductIds(ids);
-        List<ProductListVO> voList = records.stream().map(item -> {
-            ProductListVO vo = toProductListVO(item, ctx);
-            vo.setStores(storeListings.getOrDefault(item.getId(), new ArrayList<>()));
-            return vo;
-        }).collect(Collectors.toList());
+        List<ProductListVO> voList = records.stream()
+                .map(item -> toProductListVO(item, ctx))
+                .collect(Collectors.toList());
         Page<ProductListVO> result = new Page<>(pageList.getCurrent(), pageList.getSize(), pageList.getTotal());
         result.setRecords(voList);
         return result;
     }
 
     /**
-     * 管理端：按店铺筛选商品分页。
-     * 走 ck_shop_product_store 与 ck_shop_product 的连接查询，保证：
-     * <ul>
-     *   <li>分页在数据库完成（不会把整店商品加载进内存再切页）；</li>
-     *   <li>分类按"本店分类优先、回退商品主分类"匹配，与店铺端列表保持一致；</li>
-     *   <li>不会因为漏加店铺条件而把别店商品带出来——条件在 XML 里由 store_id 强制。</li>
-     * </ul>
+     * 把可见域作用到商品查询条件上（实现收口在 ShopOrgScopeResolver，导出/列表共用同一套）。
      */
-    private IPage<ProductListVO> queryAdminPageByStore(ProductQuery query, Integer pageNo, Integer pageSize, String lang) {
-        List<String> categoryIds = null;
-        if (StringUtils.isNotBlank(query.getCategoryId())) {
-            categoryIds = collectCategoryIds(query.getCategoryId());
-        }
-        Page<StoreProductRowVO> page = new Page<>(pageNo == null ? 1 : pageNo, pageSize == null ? 10 : pageSize);
-        IPage<StoreProductRowVO> rowPage = productStoreMapper.selectAdminStoreProductPage(page,
-                query.getStoreId(), query.getStatus(), categoryIds, query.getBrandId(),
-                query.getSpuCode(), query.getTagId(), query.getKeyword());
+    private void applyOrgScope(QueryWrapper<ShopProduct> wrapper, List<String> scope) {
+        orgScopeResolver.applyScope(wrapper, scope);
+    }
 
-        List<String> ids = rowPage.getRecords().stream().map(StoreProductRowVO::getProductId).collect(Collectors.toList());
-        Map<String, ShopProduct> productById = ids.isEmpty()
-                ? Collections.emptyMap()
-                : this.listByIds(ids).stream()
-                .collect(Collectors.toMap(ShopProduct::getId, Function.identity(), (a, b) -> a));
-        // 按数据库返回的顺序还原
-        List<ShopProduct> records = ids.stream().map(productById::get).filter(Objects::nonNull).collect(Collectors.toList());
-
-        ListContext ctx = buildListContext(ids, lang);
-        // 上架渠道：当前页一次性取回，列表直接展示"已上架 N 店"
-        Map<String, List<StoreListingVO>> storeListings = buildStoreListingsByProductIds(ids);
-        List<ProductListVO> voList = records.stream().map(item -> {
-            ProductListVO vo = toProductListVO(item, ctx);
-            vo.setStores(storeListings.getOrDefault(item.getId(), new ArrayList<>()));
-            return vo;
-        }).collect(Collectors.toList());
-        Page<ProductListVO> result = new Page<>(rowPage.getCurrent(), rowPage.getSize(), rowPage.getTotal());
-        result.setRecords(voList);
-        return result;
+    /** 空分页（可见域无交集 / 标签筛不出商品时用），保持与正常分页一致的 current/size */
+    private Page<ProductListVO> emptyListPage(Integer pageNo, Integer pageSize) {
+        Page<ProductListVO> empty = new Page<>(pageNo == null ? 1 : pageNo, pageSize == null ? 10 : pageSize, 0);
+        empty.setRecords(new ArrayList<>());
+        return empty;
     }
 
     /**
-     * 收集某个分类及其全部后代的 id。
-     * 分类最多 3 级，一次把本店可见的分类读进内存逐层展开即可，无需递归 SQL
-     * （MySQL 5.7 也没有 CTE）。
+     * 收集某个分类及其全部后代的 id（可限定可见域）。
+     * 分类最多 3 级，一次读进内存逐层展开即可，无需递归 SQL（MySQL 5.7 也没有 CTE）。
+     *
+     * @param scope 可见域前缀列表；{@code null} 表示不限（总部）
      */
-    private List<String> collectCategoryIds(String categoryId) {
+    private List<String> collectCategoryIds(String categoryId, List<String> scope) {
+        // 全表加载一次（分类表很小），再按可见域过滤：以前没有任何过滤，
+        // 店铺端每次带 categoryId 的请求都会把所有店铺的分类都读进来
         List<ShopCategory> all = shopCategoryMapper.selectList(new LambdaQueryWrapper<ShopCategory>());
         List<String> result = new ArrayList<>();
         result.add(categoryId);
@@ -239,6 +213,9 @@ public class ShopProductServiceImpl extends ServiceImpl<ShopProductMapper, ShopP
         while (!frontier.isEmpty()) {
             Set<String> next = new HashSet<>();
             for (ShopCategory category : all) {
+                if (!orgScopeResolver.inScope(category.getSysOrgCode(), scope)) {
+                    continue;
+                }
                 if (category.getParentId() != null && frontier.contains(category.getParentId())
                         && !result.contains(category.getId())) {
                     result.add(category.getId());
@@ -250,101 +227,24 @@ public class ShopProductServiceImpl extends ServiceImpl<ShopProductMapper, ShopP
         return result;
     }
 
-    /**
-     * 同步"销售渠道"（本商品上架到哪些店铺、每店的分类归属与售价）。
-     *
-     * <b>约定</b>：{@code stores == null} 表示本次**不修改**上架关系；
-     * 传空数组表示"全部下架"。这个区分很重要——否则任何一次只改商品主体的保存
-     * 都会把上架关系清空，而运营完全无感。
-     *
-     * 每条关系用 upsert 写入，一条语句同时覆盖"新增 / 更新 / 复活曾经下架的行"；
-     * 本次没勾选的店铺只做逻辑下架，**绝不物理删除**。
-     */
-    private void syncStoreListings(String productId, List<StoreListingDTO> stores, String username, Date now) {
-        if (stores == null) {
-            return;
-        }
-        List<String> keepStoreIds = new ArrayList<>();
-        int index = 0;
-        for (StoreListingDTO item : stores) {
-            if (item == null || StringUtils.isBlank(item.getStoreId())) {
-                continue;
-            }
-            keepStoreIds.add(item.getStoreId());
-            productStoreMapper.upsertListing(IdWorker.getIdStr(), productId, item.getStoreId(),
-                    StringUtils.trimToNull(item.getCategoryId()),
-                    item.getPriceOverride(),
-                    StringUtils.defaultIfBlank(item.getStatus(), "Y"),
-                    item.getSortOrder() == null ? index : item.getSortOrder(),
-                    StringUtils.defaultIfBlank(item.getIsRecommend(), "N"),
-                    username);
-            index++;
-        }
-        productStoreMapper.softDeleteMissing(productId, keepStoreIds);
-    }
-
-    /**
-     * 批量取"上架渠道"，供列表展示（一次查询搞定当前页所有商品，避免 N+1）。
-     */
-    private Map<String, List<StoreListingVO>> buildStoreListingsByProductIds(List<String> productIds) {
-        if (CollectionUtils.isEmpty(productIds)) {
-            return Collections.emptyMap();
-        }
-        List<ShopProductStore> listings = productStoreMapper.selectByProductIds(productIds);
-        if (CollectionUtils.isEmpty(listings)) {
-            return Collections.emptyMap();
-        }
-        Map<String, ShopStore> storeById = shopStoreMapper.selectList(new LambdaQueryWrapper<ShopStore>())
-                .stream().collect(Collectors.toMap(ShopStore::getId, Function.identity(), (a, b) -> a));
-        Map<String, List<StoreListingVO>> result = new HashMap<>();
-        for (ShopProductStore item : listings) {
-            StoreListingVO vo = new StoreListingVO();
-            BeanUtils.copyProperties(item, vo);
-            ShopStore store = storeById.get(item.getStoreId());
-            if (store != null) {
-                vo.setStoreCode(store.getCode());
-                vo.setStoreName(store.getName());
-            }
-            result.computeIfAbsent(item.getProductId(), key -> new ArrayList<>()).add(vo);
-        }
-        return result;
-    }
-
-    /**
-     * 商品的上架渠道详情（管理端回显 / 列表展示用）。
-     */
-    private List<StoreListingVO> buildStoreListings(String productId) {
-        List<ShopProductStore> listings = productStoreMapper.selectByProductId(productId);
-        if (CollectionUtils.isEmpty(listings)) {
-            return new ArrayList<>();
-        }
-        Map<String, ShopStore> storeById = shopStoreMapper.selectList(new LambdaQueryWrapper<ShopStore>())
-                .stream().collect(Collectors.toMap(ShopStore::getId, Function.identity(), (a, b) -> a));
-        return listings.stream().map(item -> {
-            StoreListingVO vo = new StoreListingVO();
-            BeanUtils.copyProperties(item, vo);
-            ShopStore store = storeById.get(item.getStoreId());
-            if (store != null) {
-                vo.setStoreCode(store.getCode());
-                vo.setStoreName(store.getName());
-            }
-            return vo;
-        }).collect(Collectors.toList());
-    }
-
     @Override
     @Transactional(rollbackFor = Exception.class)
     public String saveProduct(ProductDTO dto) {
         if (dto == null) {
             throw new JeecgBootException("商品数据不能为空!");
         }
+        // 归属部门：新增时默认取操作人当前部门；管理员可以显式指定。
+        // 只有先定下归属，才能做"按部门唯一"的 SPU 预检。
+        String orgCode = orgScopeResolver.resolveWritableOrgCode(dto.getSysOrgCode(), null);
         // 先按唯一约束预检，失败了给友好提示（比数据库报 DuplicateKeyException 更可读）
-        checkSpuCodeUnique(dto.getSpuCode(), null);
+        checkSpuCodeUnique(dto.getSpuCode(), orgCode, null);
 
         ShopProduct product = new ShopProduct();
         BeanUtils.copyProperties(dto, product);
         product.setId(IdWorker.getIdStr());
         product.setDelFlag(null);
+        // 显式写入归属（非空时 MybatisInterceptor 不会再覆盖），保证与上面的校验结果一致
+        product.setSysOrgCode(orgCode);
         // 新增：缺什么补什么（含自动生成 spu_code）
         applyInsertDefaults(product);
 
@@ -377,13 +277,23 @@ public class ShopProductServiceImpl extends ServiceImpl<ShopProductMapper, ShopP
         if (Objects.isNull(exist)) {
             throw new JeecgBootException("商品不存在或已删除!");
         }
-        checkSpuCodeUnique(dto.getSpuCode(), dto.getId());
+        // 越权防线：接口可以被直接按 id 调用，列表过滤不算数
+        orgScopeResolver.checkAccessible(exist.getSysOrgCode(), "商品");
+        /*
+         * 归属部门：运营不允许改。
+         * resolveWritableOrgCode 在"请求归属 ≠ 当前部门"时直接抛错——
+         * 这是后端硬校验，前端把下拉置灰只是体验层面的配合。
+         */
+        String orgCode = orgScopeResolver.resolveWritableOrgCode(dto.getSysOrgCode(), exist.getSysOrgCode());
+        checkSpuCodeUnique(dto.getSpuCode(), orgCode, dto.getId());
 
         ShopProduct product = new ShopProduct();
         BeanUtils.copyProperties(dto, product);
         // 审计字段不覆盖
         product.setCreateBy(null).setCreateTime(null);
         product.setDelFlag(null);
+        // 归属以服务端解析结果为准，忽略请求里的原始值
+        product.setSysOrgCode(orgCode);
         // 编辑采用"库中现值兜底"的部分更新语义：
         // 前端未提交的字段沿用原值，绝不重新生成 spu_code、也不把 price 写成 0
         applyUpdateDefaults(product, exist);
@@ -408,6 +318,7 @@ public class ShopProductServiceImpl extends ServiceImpl<ShopProductMapper, ShopP
         if (StringUtils.isBlank(id)) {
             throw new JeecgBootException("请选择要删除的商品!");
         }
+        loadAccessible(id);
         clearChildren(Collections.singletonList(id));
         super.removeById(id);
         return true;
@@ -419,8 +330,20 @@ public class ShopProductServiceImpl extends ServiceImpl<ShopProductMapper, ShopP
         if (CollectionUtils.isEmpty(ids)) {
             throw new JeecgBootException("请至少选择一条数据!");
         }
-        clearChildren(ids);
-        super.removeByIds(ids);
+        List<String> distinctIds = ids.stream().filter(StringUtils::isNotBlank).distinct().collect(Collectors.toList());
+        // 与单条删除口径一致：有 id 不存在就直接报错，不做"部分成功"（否则前端以为全删了）
+        List<ShopProduct> found = this.listByIds(distinctIds);
+        if (found.size() < distinctIds.size()) {
+            Set<String> foundIds = found.stream().map(ShopProduct::getId).collect(Collectors.toSet());
+            List<String> missing = distinctIds.stream().filter(id -> !foundIds.contains(id)).collect(Collectors.toList());
+            throw new JeecgBootException("部分商品不存在或已删除：" + String.join(",", missing));
+        }
+        // 批量删除同样要逐条校验越权：listByIds 已自动排除软删除行
+        for (ShopProduct item : found) {
+            orgScopeResolver.checkAccessible(item.getSysOrgCode(), "商品");
+        }
+        clearChildren(distinctIds);
+        super.removeByIds(distinctIds);
         return true;
     }
 
@@ -432,6 +355,7 @@ public class ShopProductServiceImpl extends ServiceImpl<ShopProductMapper, ShopP
         if (!"Y".equals(status) && !"N".equals(status)) {
             throw new JeecgBootException("状态值不合法，只能为 Y 或 N!");
         }
+        loadAccessible(id);
         ShopProduct product = new ShopProduct();
         product.setId(id);
         product.setStatus(status);
@@ -444,13 +368,23 @@ public class ShopProductServiceImpl extends ServiceImpl<ShopProductMapper, ShopP
         return true;
     }
 
-    @Override
-    public ProductDetailVO getDetailById(String id, String language) {
+    /**
+     * 按 id 取商品并做越权校验。
+     * 所有"按 id 操作"的入口都必须走这里——列表已经过滤了，但接口是可以被直接按 id 调的。
+     */
+    private ShopProduct loadAccessible(String id) {
         ShopProduct product = super.getById(id);
         if (Objects.isNull(product)) {
-            throw new JeecgBootException("未找到数据!");
+            throw new JeecgBootException("商品不存在或已删除!");
         }
-        // 与列表接口保持一致：按调用方传入的语言回退标题/分类名/品牌名
+        orgScopeResolver.checkAccessible(product.getSysOrgCode(), "商品");
+        return product;
+    }
+
+    @Override
+    public ProductDetailVO getDetailById(String id, String language) {
+        ShopProduct product = loadAccessible(id);
+        // 与列表接口保持一致：按调用方传入的语言回退标题/分类名
         String lang = normalizeLanguage(language);
         ProductDetailVO vo = new ProductDetailVO();
         BeanUtils.copyProperties(product, vo);
@@ -464,7 +398,6 @@ public class ShopProductServiceImpl extends ServiceImpl<ShopProductMapper, ShopP
 
         vo.setImages(imageMapper.selectByProductId(id));
         vo.setCategoryName(loadCategoryName(product.getCategoryId(), lang));
-        vo.setBrandName(loadBrandName(product.getBrandId(), lang));
 
         List<String> tagIds = tagMapper.selectTagIdsByProductId(id);
         vo.setTagIds(tagIds);
@@ -472,7 +405,6 @@ public class ShopProductServiceImpl extends ServiceImpl<ShopProductMapper, ShopP
 
         vo.setSpecs(buildSpecTree(id));
         vo.setSkus(buildSkuVOList(combinationMapper.selectByProductIdWithValues(id), product.getPrice()));
-        vo.setStores(buildStoreListings(id));
         return vo;
     }
 
@@ -481,7 +413,7 @@ public class ShopProductServiceImpl extends ServiceImpl<ShopProductMapper, ShopP
         if (StringUtils.isBlank(productId)) {
             return new ArrayList<>();
         }
-        ShopProduct product = super.getById(productId);
+        ShopProduct product = loadAccessible(productId);
         BigDecimal basePrice = product == null ? null : product.getPrice();
         return buildSkuVOList(combinationMapper.selectByProductIdWithValues(productId), basePrice);
     }
@@ -491,87 +423,79 @@ public class ShopProductServiceImpl extends ServiceImpl<ShopProductMapper, ShopP
     // ==================================================================
 
     @Override
-    public IPage<StoreProductCardVO> queryStorePageList(String storeId, String language, String categoryId, String brandId,
+    public IPage<StoreProductCardVO> queryStorePageList(String orgCode, String language, String categoryId,
                                                         String keyword, Integer pageNo, Integer pageSize) {
         String lang = normalizeLanguage(language);
-        // 分类要按"本店分类优先、回退商品主分类"匹配，因此按 [该分类 + 其后代] 一起查
-        List<String> categoryIds = StringUtils.isNotBlank(categoryId) ? collectCategoryIds(categoryId) : null;
+        if (StringUtils.isBlank(orgCode)) {
+            // 解析不到店铺归属部门时报错，**绝不退化成"返回全量"**——那就是 A 店展示 B 店商品
+            throw new JeecgBootException("无法确定店铺归属部门，已拒绝查询");
+        }
+        // 分类筛选：按 [该分类 + 其后代] 一起查（分类树最多 3 级，内存展开即可）
+        List<String> categoryIds = StringUtils.isNotBlank(categoryId)
+                ? collectCategoryIds(categoryId, Collections.singletonList(orgCode)) : null;
 
         /*
-         * 店铺端列表一律走 ck_shop_product_store 驱动：
-         * 条件里强制 ps.store_id = ?，从根上避免"A 店商品出现在 B 店"。
+         * 直接以归属列为驱动条件查商品表：
+         *   sys_org_code LIKE 'orgCode%' —— 前缀式编码天然实现"本部门及其下级部门"；
+         *   status='Y'                   —— 与店铺端"只看已上架"的口径一致。
+         * 条件由 wrapper 强制带上，从根上避免"漏了店铺条件"。
          */
-        Page<StoreProductRowVO> page = new Page<>(pageNo == null ? 1 : pageNo, pageSize == null ? 12 : pageSize);
-        IPage<StoreProductRowVO> rowPage = productStoreMapper.selectStoreProductPage(
-                page, storeId, categoryIds, brandId, keyword);
+        QueryWrapper<ShopProduct> wrapper = new QueryWrapper<>();
+        wrapper.likeRight("sys_org_code", orgCode);
+        wrapper.eq("status", "Y");
+        if (!CollectionUtils.isEmpty(categoryIds)) {
+            wrapper.in("category_id", categoryIds);
+        }
+        if (StringUtils.isNotBlank(keyword)) {
+            String kw = escapeSqlLike(keyword);
+            wrapper.inSql("id", "SELECT product_id FROM ck_shop_product_translation WHERE title LIKE '%" + kw + "%'");
+        }
+        wrapper.orderByDesc("is_recommend").orderByAsc("sort_order").orderByDesc("create_time");
 
-        List<String> ids = rowPage.getRecords().stream()
-                .map(StoreProductRowVO::getProductId).collect(Collectors.toList());
-        Map<String, BigDecimal> storePriceById = rowPage.getRecords().stream()
-                .filter(row -> row.getStorePrice() != null)
-                .collect(Collectors.toMap(StoreProductRowVO::getProductId, StoreProductRowVO::getStorePrice, (a, b) -> a));
-        Map<String, ShopProduct> productById = ids.isEmpty()
-                ? Collections.emptyMap()
-                : this.listByIds(ids).stream()
-                .collect(Collectors.toMap(ShopProduct::getId, Function.identity(), (a, b) -> a));
-        List<ShopProduct> records = ids.stream().map(productById::get).filter(Objects::nonNull).collect(Collectors.toList());
-        // 本店售价覆盖基准价（只影响没有单独定价的 SKU）
-        records.forEach(item -> {
-            BigDecimal override = storePriceById.get(item.getId());
-            if (override != null) {
-                item.setPrice(override);
-            }
-        });
+        Page<ShopProduct> page = new Page<>(pageNo == null ? 1 : pageNo, pageSize == null ? 12 : pageSize);
+        IPage<ShopProduct> productPage = super.page(page, wrapper);
 
+        List<ShopProduct> records = productPage.getRecords();
+        List<String> ids = records.stream().map(ShopProduct::getId).collect(Collectors.toList());
         ListContext ctx = buildListContext(ids, lang);
         List<StoreProductCardVO> voList = records.stream()
                 .map(item -> toStoreCardVO(item, ctx, ctx.combinations.getOrDefault(item.getId(), Collections.emptyList())))
                 .collect(Collectors.toList());
-        Page<StoreProductCardVO> result = new Page<>(rowPage.getCurrent(), rowPage.getSize(), rowPage.getTotal());
+        Page<StoreProductCardVO> result = new Page<>(productPage.getCurrent(), productPage.getSize(), productPage.getTotal());
         result.setRecords(voList);
         return result;
     }
 
     @Override
-    public StoreProductDetailVO getStoreDetail(String storeId, String idOrSpuCode, String language) {
+    public StoreProductDetailVO getStoreDetail(String orgCode, String idOrSpuCode, String language) {
         String lang = normalizeLanguage(language);
+        if (StringUtils.isBlank(orgCode)) {
+            throw new JeecgBootException("无法确定店铺归属部门，已拒绝查询");
+        }
         // 前台路由使用 spu_code（分享到社交平台的链接更短、可读），因此主键与 spu_code 都支持
         ShopProduct product = super.getById(idOrSpuCode);
         if (Objects.isNull(product)) {
-            product = baseMapper.selectAliveBySpuCode(idOrSpuCode);
+            // spu_code 只在部门内唯一：必须带上归属部门一起查，否则会命中别店的同码商品
+            product = baseMapper.selectAliveBySpuCode(idOrSpuCode, orgCode);
         }
         if (Objects.isNull(product)) {
             throw new JeecgBootException("商品不存在或已下架!");
         }
-        final String productId = product.getId();
-
         /*
-         * 关键：必须校验"这件商品确实上架在当前店铺"。
-         * 少了这一步，任何人换个 spu_code 就能看到别的店铺的商品详情——
+         * 关键：必须校验"这件商品确实属于当前店铺（部门）"。
+         * 少了这一步，任何人换个 spu_code / 商品 id 就能看到别店的商品详情——
          * 多店铺最典型的事故就是这一类"忘了带店铺条件"。
          */
-        ShopProductStore listing = productStoreMapper.selectOne(new LambdaQueryWrapper<ShopProductStore>()
-                .eq(ShopProductStore::getProductId, productId)
-                .eq(ShopProductStore::getStoreId, storeId)
-                .last("LIMIT 1"));
-        if (listing == null || !"Y".equals(listing.getStatus())) {
+        if (!matchesOrg(product.getSysOrgCode(), orgCode)) {
             throw new JeecgBootException("商品在当前店铺不存在或已下架!");
         }
         // 与店铺端列表保持一致：商品总开关下架也不对外暴露详情
         if (!"Y".equals(product.getStatus())) {
             throw new JeecgBootException("商品已下架!");
         }
-        /*
-         * 本店售价：覆盖商品基准价。
-         * 语义与现有价格回退逻辑一致——只影响"没有单独定价的 SKU"所用的基准价，
-         * 单独定过价的 SKU 仍以自身价格为准。
-         */
-        if (listing.getPriceOverride() != null) {
-            product.setPrice(listing.getPriceOverride());
-        }
-        // 分类归属：本店分类优先，为空才回退商品主分类
-        String effectiveCategoryId = StringUtils.isNotBlank(listing.getCategoryId())
-                ? listing.getCategoryId() : product.getCategoryId();
+        final String productId = product.getId();
+        // 分类归属就是商品自身的分类：一商品只属于一个店铺，不再有"本店分类覆盖"这一层
+        String effectiveCategoryId = product.getCategoryId();
 
         StoreProductDetailVO vo = new StoreProductDetailVO();
         BeanUtils.copyProperties(product, vo);
@@ -591,7 +515,6 @@ public class ShopProductServiceImpl extends ServiceImpl<ShopProductMapper, ShopP
             vo.setCoverUrl(product.getMainImage());
         }
         vo.setCategoryName(loadCategoryName(effectiveCategoryId, lang));
-        vo.setBrandName(loadBrandName(product.getBrandId(), lang));
         vo.setTags(loadTagRefs(tagMapper.selectTagIdsByProductId(productId), lang));
         vo.setImages(imageMapper.selectByProductId(productId));
 
@@ -600,6 +523,17 @@ public class ShopProductServiceImpl extends ServiceImpl<ShopProductMapper, ShopP
         vo.setCombinations(buildStoreSkuList(
                 combinationMapper.selectByProductIdWithValues(productId), product.getPrice(), specTree));
         return vo;
+    }
+
+    /**
+     * 商品归属部门是否落在店铺（部门）可见域内。
+     * 与后台一致地采用前缀语义："店铺绑定部门"及其下级部门的商品，前台都能看到，
+     * 避免"运营把商品挂到子部门后，前台反而什么都看不到"的诡异现象。
+     */
+    private boolean matchesOrg(String productOrgCode, String storeOrgCode) {
+        return StringUtils.isNotBlank(productOrgCode)
+                && StringUtils.isNotBlank(storeOrgCode)
+                && productOrgCode.startsWith(storeOrgCode);
     }
 
     // ==================================================================
@@ -1060,10 +994,7 @@ public class ShopProductServiceImpl extends ServiceImpl<ShopProductMapper, ShopP
             }
         }
 
-        // ---------- 6. 销售渠道：上架到哪些店、每店分类与售价 ----------
-        syncStoreListings(productId, dto.getStores(), username, now);
-
-        // ---------- 7. 回写汇总字段 ----------
+        // ---------- 6. 回写汇总字段 ----------
         if (hasCombinations) {
             BigDecimal basePrice = product.getPrice() == null ? BigDecimal.ZERO : product.getPrice();
             product.setStock(stockSum);
@@ -1156,25 +1087,35 @@ public class ShopProductServiceImpl extends ServiceImpl<ShopProductMapper, ShopP
         if (StringUtils.isBlank(product.getCategoryId())) {
             product.setCategoryId(exist.getCategoryId());
         }
-        if (StringUtils.isBlank(product.getBrandId())) {
-            product.setBrandId(exist.getBrandId());
-        }
+        // 归属部门不在这里兜底：它由 orgScopeResolver 显式解析后写入，
+        // 若在这里再用库中现值覆盖，反而会把"管理员跨部门调整"的结果吞掉。
     }
 
     /**
-     * SPU 唯一性预检。
-     * 必须用原生 SQL 显式包含已软删除的行：表上是 uk_spu_code(spu_code, status)，
-     * 唯一索引不区分 del_flag。若只查未删除行，软删后重建同一 SPU 会绕过校验、
-     * 到 INSERT 时才抛 DuplicateKeyException（用户看到的是系统错误）。
+     * SPU 唯一性预检（**按部门**）。
+     *
+     * 唯一索引是 {@code uk_spu_code(sys_org_code, spu_code)}：spu_code 只在部门内唯一，
+     * 不同店铺可以有相同编码——前台路由的店铺身份来自域名 / X-Store-Code，不靠 spu_code 区分。
+     * 必须用原生 SQL 显式包含已软删除的行（索引不区分 del_flag），
+     * 否则软删后重建同一 SPU 会绕过校验、到 INSERT 时才抛 DuplicateKeyException（用户看到的是系统错误）。
      * 同时 LIMIT 1 避免历史上已存在多行同 SPU 时抛 TooManyResultsException。
      */
-    private void checkSpuCodeUnique(String spuCode, String excludeId) {
+    private void checkSpuCodeUnique(String spuCode, String orgCode, String excludeId) {
         if (StringUtils.isBlank(spuCode)) {
             return;
         }
-        ShopProduct exist = baseMapper.selectAnyBySpuCode(spuCode);
+        if (StringUtils.isBlank(orgCode)) {
+            throw new JeecgBootException("无法确定商品归属部门，已拒绝保存");
+        }
+        ShopProduct exist = baseMapper.selectAnyBySpuCode(spuCode, orgCode);
         if (exist != null && !exist.getId().equals(excludeId)) {
-            throw new JeecgBootException("商品SPU编码已存在：" + spuCode);
+            if (exist.getDelFlag() != null && exist.getDelFlag() == 1) {
+                // spu_code 是前台路由标识，禁止回收复用（否则已分享出去的旧链接会指向另一个商品）。
+                // 命中软删行时给一条能解释清楚的提示，而不是干巴巴的"编码已存在"。
+                throw new JeecgBootException("本店铺内曾用过商品SPU编码[" + spuCode + "]，该编码已被删除、按规则不回收复用"
+                        + "（分享出去的链接必须永远指向同一个商品）。请换一个编码");
+            }
+            throw new JeecgBootException("本店铺内商品SPU编码已存在：" + spuCode + "（各店铺之间可以重复）");
         }
     }
 
@@ -1189,7 +1130,6 @@ public class ShopProductServiceImpl extends ServiceImpl<ShopProductMapper, ShopP
         String language = DEFAULT_LANGUAGE;
         Map<String, List<ShopProductTranslation>> translations = new HashMap<>();
         Map<String, String> categoryNames = new HashMap<>();
-        Map<String, String> brandNames = new HashMap<>();
         Map<String, TagRefVO> tagRefs = new HashMap<>();
         Map<String, List<String>> tagIdsByProduct = new HashMap<>();
         Map<String, List<ShopProductSkuCombination>> combinations = new HashMap<>();
@@ -1237,17 +1177,13 @@ public class ShopProductServiceImpl extends ServiceImpl<ShopProductMapper, ShopP
             }
         }
 
-        // 分类名 / 品牌名（批量）
+        // 分类名（批量）
         Set<String> categoryIds = new LinkedHashSet<>();
-        Set<String> brandIds = new LinkedHashSet<>();
         // 依赖 products 表，调用方已在 records 中持有，这里通过一次查询补齐
         List<ShopProduct> products = productIds.isEmpty() ? Collections.emptyList() : baseMapper.selectBatchIds(productIds);
         for (ShopProduct p : products) {
             if (StringUtils.isNotBlank(p.getCategoryId())) {
                 categoryIds.add(p.getCategoryId());
-            }
-            if (StringUtils.isNotBlank(p.getBrandId())) {
-                brandIds.add(p.getBrandId());
             }
         }
         if (!categoryIds.isEmpty()) {
@@ -1263,22 +1199,6 @@ public class ShopProductServiceImpl extends ServiceImpl<ShopProductMapper, ShopP
                 ShopCategory category = categoryMap.get(cid);
                 if (category != null) {
                     ctx.categoryNames.put(cid, names.containsKey(cid) ? names.get(cid) : category.getName());
-                }
-            }
-        }
-        if (!brandIds.isEmpty()) {
-            Map<String, String> names = new HashMap<>();
-            for (ShopBrandTranslation bt : brandMapper.selectTranslationsByBrandIds(new ArrayList<>(brandIds))) {
-                if (language.equals(bt.getLanguageCode())) {
-                    names.put(bt.getBrandId(), bt.getName());
-                }
-            }
-            Map<String, ShopBrand> brandMap = brandMapper.selectBatchIds(brandIds).stream()
-                    .collect(Collectors.toMap(ShopBrand::getId, Function.identity()));
-            for (String bid : brandIds) {
-                ShopBrand brand = brandMap.get(bid);
-                if (brand != null) {
-                    ctx.brandNames.put(bid, names.containsKey(bid) ? names.get(bid) : brand.getCode());
                 }
             }
         }
@@ -1302,7 +1222,6 @@ public class ShopProductServiceImpl extends ServiceImpl<ShopProductMapper, ShopP
         vo.setCoverUrl(translation != null && StringUtils.isNotBlank(translation.getCoverUrl())
                 ? translation.getCoverUrl() : product.getMainImage());
         vo.setCategoryName(ctx.categoryNames.get(product.getCategoryId()));
-        vo.setBrandName(ctx.brandNames.get(product.getBrandId()));
         List<String> tagIds = ctx.tagIdsByProduct.getOrDefault(product.getId(), Collections.emptyList());
         List<TagRefVO> tags = tagIds.stream().map(ctx.tagRefs::get).filter(Objects::nonNull).collect(Collectors.toList());
         vo.setTags(tags);
@@ -1324,7 +1243,6 @@ public class ShopProductServiceImpl extends ServiceImpl<ShopProductMapper, ShopP
             vo.setCoverUrl(product.getMainImage());
         }
         vo.setCategoryName(ctx.categoryNames.get(product.getCategoryId()));
-        vo.setBrandName(ctx.brandNames.get(product.getBrandId()));
         List<String> tagIds = ctx.tagIdsByProduct.getOrDefault(product.getId(), Collections.emptyList());
         vo.setTags(tagIds.stream().map(ctx.tagRefs::get).filter(Objects::nonNull).collect(Collectors.toList()));
 
@@ -1388,22 +1306,6 @@ public class ShopProductServiceImpl extends ServiceImpl<ShopProductMapper, ShopP
             }
         }
         return category.getName();
-    }
-
-    private String loadBrandName(String brandId, String language) {
-        if (StringUtils.isBlank(brandId)) {
-            return null;
-        }
-        ShopBrand brand = brandMapper.selectById(brandId);
-        if (brand == null) {
-            return null;
-        }
-        for (ShopBrandTranslation bt : brandMapper.selectTranslationsByBrandId(brandId)) {
-            if (language.equals(bt.getLanguageCode()) && StringUtils.isNotBlank(bt.getName())) {
-                return bt.getName();
-            }
-        }
-        return brand.getCode();
     }
 
     private List<TagRefVO> loadTagRefs(List<String> tagIds, String language) {

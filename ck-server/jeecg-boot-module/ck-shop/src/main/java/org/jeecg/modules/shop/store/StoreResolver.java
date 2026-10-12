@@ -42,6 +42,18 @@ public class StoreResolver {
     @Value("${ck.shop.default-store-code:default}")
     private String defaultStoreCode;
 
+    /**
+     * 是否允许"解析不到店铺就回退到默认店铺"。
+     *
+     * 本地开发/直连调试需要它（省得每次带请求头）；但**生产环境必须设为 false**：
+     * 某个前台站点漏配 STORE_CODE、或者域名没登记到 ck_shop_store.domain 时，
+     * 回退会让它**静默展示默认店铺的商品**——这正是"A 店展示 B 店数据"最隐蔽的一种，
+     * 页面一切正常、没有任何报错，只有人工比对才能发现。
+     * 关掉之后这种配置错误会直接报错，属于"宁可吵也不要错"。
+     */
+    @Value("${ck.shop.allow-default-store-fallback:true}")
+    private boolean allowDefaultStoreFallback;
+
     public StoreResolver(ShopStoreMapper shopStoreMapper) {
         this.shopStoreMapper = shopStoreMapper;
     }
@@ -72,7 +84,13 @@ public class StoreResolver {
             }
         }
 
-        // 3) 默认店铺：仅用于本地开发/直连调试
+        // 3) 默认店铺：仅用于本地开发/直连调试（生产应关闭，见 allowDefaultStoreFallback 注释）
+        if (!allowDefaultStoreFallback) {
+            throw new JeecgBootException("无法确定店铺：请求既未携带 " + STORE_HEADER
+                    + "，Host(" + host + ") 也未匹配任何店铺域名。"
+                    + "请检查前台站点的 STORE_CODE 配置或【店铺管理】中的域名绑定。"
+                    + "（本地调试可把 ck.shop.allow-default-store-fallback 设为 true）");
+        }
         ShopStore fallback = shopStoreMapper.selectEnabledByCode(defaultStoreCode);
         if (fallback == null) {
             throw new JeecgBootException("无法确定店铺：请先在【店铺管理】中创建店铺，"

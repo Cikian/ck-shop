@@ -102,7 +102,10 @@ public class ShiroConfig {
         }
 
         // 配置不会被拦截的链接 顺序判断
-        filterChainDefinitionMap.put("/home/slide", "anon"); //首页轮播图
+        // 首页轮播图：**只放行店铺端的 GET 读**（路径 /home/slide/store，由方法上的 @IgnoreAuth 精确控制）。
+        // 以前这里按路径写 "/home/slide" -> anon，会连 POST/PUT 一起放行，
+        // 等于任何人都能改写首页轮播图；现在写接口一律要求登录。
+        // filterChainDefinitionMap.put("/home/slide", "anon"); //首页轮播图
 
         filterChainDefinitionMap.put("/sys/cas/client/validateLogin", "anon"); //cas验证登录
         filterChainDefinitionMap.put("/sys/randomImage/**", "anon"); //登录验证码接口排除

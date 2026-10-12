@@ -84,12 +84,14 @@ public class ShopCategory implements Serializable {
     @Schema(description = "是否显示: N-隐藏, Y-显示")
     private String isShow;
     /**
-     * 所属店铺：**为空表示全局共享节点**（所有店铺可见），非空表示该店专属。
-     * 分类按店独立——不同店铺的经营品类往往完全不同，共享一棵混合大树会让运营难以维护；
-     * 同时约定"子节点可见域必须是父节点可见域的子集"，避免跨店父子关系。
+     * 归属部门编码（数据隔离维度，与商品保持同一套规则）。
+     *
+     * 分类按店独立——不同店铺的经营品类往往完全不同，共享一棵混合大树会让运营难以维护。
+     * 与商品一致：新增时由 {@code MybatisInterceptor} 自动填充为操作人部门；
+     * 运营不能跨部门改归属，只有 {@code shop-store:manage-all} 可以。
      */
-    @Schema(description = "所属店铺(空=全局共享)")
-    private String storeId;
+    @Schema(description = "归属部门编码(sys_org_code)")
+    private String sysOrgCode;
     /**
      * 删除标记：分类同样走逻辑删除，与商品/品牌/标签保持一致（业务数据不物理删除）。
      * 此前该表没有 del_flag，删除是物理删除，无法追溯。

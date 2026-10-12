@@ -25,7 +25,10 @@ import java.util.List;
 public interface IShopProductService extends IService<ShopProduct> {
 
     /**
-     * 管理端分页查询（含分类名、品牌名、默认语言标题、标签）
+     * 管理端分页查询（含分类名、默认语言标题、标签）。
+     *
+     * 可见域：调用方若带 storeId，会先解析成该店铺绑定部门的 org_code；
+     * 再与当前账号的可见部门域取交集。运营只能看到本部门商品，管理员不限。
      *
      * @param query    筛选条件
      * @param pageNo   页码
@@ -82,16 +85,19 @@ public interface IShopProductService extends IService<ShopProduct> {
 
     /**
      * 店铺端商品分页。
-     * storeId 必须由 StoreResolver 解析得到（请求头 X-Store-Code 或域名），
-     * 一律以 ck_shop_product_store 为驱动表过滤，防止跨店展示。
+     *
+     * @param orgCode 店铺绑定部门的 org_code（由 StoreResolver → ck_shop_store.depart_id → sys_depart.org_code 解析而来）。
+     *                直接查 ck_shop_product 的归属列，**不再 join 任何上架关系表**——
+     *                一商品只属于一个店铺，归属列本身就是店铺身份。
      */
-    IPage<StoreProductCardVO> queryStorePageList(String storeId, String language, String categoryId, String brandId,
+    IPage<StoreProductCardVO> queryStorePageList(String orgCode, String language, String categoryId,
                                                  String keyword, Integer pageNo, Integer pageSize);
 
     /**
      * 店铺端商品详情（含规格树与存在的SKU组合，供前端做组合置灰）。
      *
+     * @param orgCode     店铺绑定部门的 org_code；商品归属必须落在该部门的可见域内
      * @param idOrSpuCode 商品主键或 spu_code（前台路由用 spu_code，分享链接更短）
      */
-    StoreProductDetailVO getStoreDetail(String storeId, String idOrSpuCode, String language);
+    StoreProductDetailVO getStoreDetail(String orgCode, String idOrSpuCode, String language);
 }

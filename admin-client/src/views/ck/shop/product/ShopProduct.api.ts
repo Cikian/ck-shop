@@ -84,11 +84,6 @@ export const updateProductStatus = (params) => {
 };
 
 /**
- * 品牌下拉（全部启用品牌）
- */
-export const brandList = (params) => defHttp.get({ url: '/shop/brand/list', params });
-
-/**
  * 标签下拉（全部启用标签）
  */
 export const tagAll = () => defHttp.get({ url: '/shop/tag/all' });
@@ -103,5 +98,5 @@ export const optionsAll = () => defHttp.get({ url: '/shop/options/all' });
  */
 export const categoryList = (params) => defHttp.get({ url: '/shop/category/list', params });
 
-/** 启用中的店铺（商品列表的店铺筛选、商品表单的销售渠道选择共用） */
+/** 启用中的店铺（商品列表的所属店铺筛选、商品/分类表单的所属店铺选择共用） */
 export const storeAll = () => defHttp.get({ url: '/shop/store/all' });

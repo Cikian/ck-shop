@@ -1,6 +1,7 @@
 package org.jeecg.modules.shop.product.controller;
 
 import com.baomidou.mybatisplus.core.metadata.IPage;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.servlet.http.HttpServletRequest;
@@ -12,12 +13,15 @@ import org.jeecg.modules.shop.product.entity.ShopProduct;
 import org.jeecg.modules.shop.product.entity.vo.StoreProductCardVO;
 import org.jeecg.modules.shop.product.entity.vo.StoreProductDetailVO;
 import org.jeecg.modules.shop.product.service.IShopProductService;
+import org.jeecg.modules.shop.store.ShopOrgScopeResolver;
 import org.jeecg.modules.shop.store.StoreResolver;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+
+import java.util.ArrayList;
 
 /**
  * <p>
@@ -28,6 +32,10 @@ import org.springframework.web.bind.annotation.RestController;
  *
  * 店铺身份来自 {@link StoreResolver}：请求头 X-Store-Code 优先（由前台站点服务端注入，
  * 不出现在用户可见 URL 中），其次按域名兜底。解析不到就报错，**绝不返回全量**。
+ *
+ * 多店铺改造后，商品的归属列是部门编码 {@code sys_org_code}，
+ * 因此这里由 {@link ShopOrgScopeResolver} 把"店铺"翻译成"店铺绑定部门的 org_code"，
+ * 业务层一律只用 org_code 过滤——少一层店铺-商品的间接关系，就少一处漏条件的风险。
  *
  * @author Cikian
  * @version 1.0
@@ -46,6 +54,9 @@ public class ShopStoreProductController extends JeecgController<ShopProduct, ISh
     @Autowired
     private StoreResolver storeResolver;
 
+    @Autowired
+    private ShopOrgScopeResolver orgScopeResolver;
+
     /**
      * 店铺端商品分页列表（当前店铺 + 已上架）
      */
@@ -54,15 +65,26 @@ public class ShopStoreProductController extends JeecgController<ShopProduct, ISh
     @GetMapping(value = "/list")
     public Result<IPage<StoreProductCardVO>> list(@RequestParam(name = "lang", required = false) String lang,
                                                   @RequestParam(name = "categoryId", required = false) String categoryId,
-                                                  @RequestParam(name = "brandId", required = false) String brandId,
                                                   @RequestParam(name = "keyword", required = false) String keyword,
                                                   @RequestParam(name = "pageNo", defaultValue = "1") Integer pageNo,
                                                   @RequestParam(name = "pageSize", defaultValue = "12") Integer pageSize,
                                                   HttpServletRequest req) {
         String language = lang != null && !lang.isEmpty() ? lang : resolveLanguage(req);
-        String storeId = storeResolver.resolveStoreId(req);
+        String orgCode = orgScopeResolver.resolveStoreOrgCodeOrNull(storeResolver.resolve(req));
+        if (orgCode == null) {
+            // 店铺没绑部门（或部门被删）属于**数据缺失**，不是配置错误：
+            // 返回空目录而不是 500，整站仍可访问；日志里已经 warn，运维能发现
+            return Result.OK(emptyPage(pageNo, pageSize));
+        }
         return Result.OK(shopProductService.queryStorePageList(
-                storeId, language, categoryId, brandId, keyword, pageNo, pageSize));
+                orgCode, language, categoryId, keyword, pageNo, pageSize));
+    }
+
+    /** 店铺归属缺失时返回的空分页（与正常分页结构一致，前端无需特殊处理） */
+    private IPage<StoreProductCardVO> emptyPage(Integer pageNo, Integer pageSize) {
+        Page<StoreProductCardVO> empty = new Page<>(pageNo == null ? 1 : pageNo, pageSize == null ? 12 : pageSize, 0);
+        empty.setRecords(new ArrayList<>());
+        return empty;
     }
 
     /**
@@ -83,8 +105,12 @@ public class ShopStoreProductController extends JeecgController<ShopProduct, ISh
             return Result.error("缺少商品标识（id 或 spuCode）");
         }
         String language = lang != null && !lang.isEmpty() ? lang : resolveLanguage(req);
-        String storeId = storeResolver.resolveStoreId(req);
-        return Result.OK(shopProductService.getStoreDetail(storeId, key, language));
+        String orgCode = orgScopeResolver.resolveStoreOrgCodeOrNull(storeResolver.resolve(req));
+        if (orgCode == null) {
+            // 同列表：归属缺失时按"商品不存在"返回业务错误，而不是 500
+            return Result.error("商品在当前店铺不存在或已下架");
+        }
+        return Result.OK(shopProductService.getStoreDetail(orgCode, key, language));
     }
 
     private String resolveLanguage(HttpServletRequest request) {

@@ -151,6 +151,8 @@
     record: SlideRecord;
     languages: LanguageItem[];
     sortHint: number;
+    /** 当前编辑的店铺归属部门编码；由父组件按所选店铺传入 */
+    sysOrgCode?: string;
   }>();
 
   const emit = defineEmits<{
@@ -166,7 +168,19 @@
   /** 当前记录主键；为空表示尚未落库的新增草稿 */
   const currentId = ref('');
 
-  const form = reactive({
+  /**
+   * 表单模型。
+   * 注意 enabled 是 boolean（绑定 a-switch），提交时才转成后端的 'Y' | 'N'，
+   * 不要把它当成 SlideRecord['enabled']（字符串）使用。
+   */
+  const form = reactive<{
+    desc: string;
+    goods: string;
+    targetUrl: string;
+    protocol: string;
+    sort: number;
+    enabled: boolean;
+  }>({
     desc: '',
     goods: '',
     targetUrl: '',
@@ -260,20 +274,23 @@
     scheduleSave();
   }
 
-  /** 组装提交结构；编辑时 targetUrl 为空则不提交，保留后端原值 */
+  /**
+   * 组装提交结构。
+   * targetUrl 始终提交：后端已没有"不传就保留原值"的语义，清空链接必须显式传 ''。
+   */
   function buildPayload() {
     const payload: any = {
       desc: form.desc.trim(),
       goods: form.goods.trim(),
       sort: Number(form.sort) || props.sortHint,
       enabled: form.enabled ? 'Y' : 'N',
+      // 归属：新增时决定这条轮播图属于哪个店铺；编辑时必须与库中一致，否则后端拒绝
+      sysOrgCode: props.sysOrgCode || undefined,
+      // 空字符串 = 清空跳转链接
+      targetUrl: form.targetUrl.trim() ? `${form.protocol}${form.targetUrl.trim()}` : '',
     };
     if (currentId.value) {
       payload.id = currentId.value;
-    }
-    const targetUrl = form.targetUrl.trim();
-    if (targetUrl) {
-      payload.targetUrl = `${form.protocol}${targetUrl}`;
     }
     props.languages.forEach((lang) => {
       payload[lang.code] = {
@@ -282,6 +299,25 @@
       };
     });
     return payload;
+  }
+
+  /** 后端返回的 id 判定：只接受"看起来像主键"的字符串，避免把提示语当成 id */
+  function looksLikeId(value: unknown): value is string {
+    return typeof value === 'string' && /^[A-Za-z0-9_-]{8,}$/.test(value);
+  }
+
+  /**
+   * 当前是否有未落库的内容（供父组件在切换店铺前判断草稿会不会丢）。
+   * 描述 / 关联商品 / 链接 / 任一语言的标题或图片，任意一项非空即视为有内容。
+   */
+  function hasDraftContent(): boolean {
+    if (currentId.value) {
+      return false;
+    }
+    if (form.desc.trim() || form.goods.trim() || form.targetUrl.trim()) {
+      return true;
+    }
+    return Object.keys(contents).some((code) => hasImage(code) || !!(contents[code]?.[`title_${code}`] || '').trim());
   }
 
   async function saveNow() {
@@ -302,6 +338,16 @@
         saveState.value = 'error';
         createMessage.warning(res.message || '保存失败');
         return;
+      }
+      // 新增成功后必须拿回主键，否则父页面无法选中刚建的那条（会跳到列表第一条），
+      // 编辑器也会一直停留在"新增"状态，再次输入就会重复创建。
+      if (isCreate) {
+        if (looksLikeId(res.result)) {
+          currentId.value = res.result;
+        } else {
+          // 理论上后端一定返回主键；万一拿不到就明确提示，避免用户以为还在编辑同一条
+          createMessage.warning('已保存，但未取到主键，请刷新页面后确认');
+        }
       }
       saveState.value = 'saved';
       emit('saved', { ...props.record, ...buildPayload(), id: currentId.value });
@@ -331,7 +377,7 @@
     }, SAVE_DELAY);
   }
 
-  defineExpose({ saveNow });
+  defineExpose({ saveNow, hasDraftContent });
 </script>
 
 <style lang="less" scoped>
