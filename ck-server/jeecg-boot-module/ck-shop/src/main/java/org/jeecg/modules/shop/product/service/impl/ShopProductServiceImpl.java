@@ -65,6 +65,7 @@ import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
@@ -424,7 +425,7 @@ public class ShopProductServiceImpl extends ServiceImpl<ShopProductMapper, ShopP
 
     @Override
     public IPage<StoreProductCardVO> queryStorePageList(String orgCode, String language, String categoryId,
-                                                        String keyword, Integer pageNo, Integer pageSize) {
+                                                        String keyword, Integer pageNo, Integer pageSize, String sortBy) {
         String lang = normalizeLanguage(language);
         if (StringUtils.isBlank(orgCode)) {
             // 解析不到店铺归属部门时报错，**绝不退化成"返回全量"**——那就是 A 店展示 B 店商品
@@ -450,7 +451,8 @@ public class ShopProductServiceImpl extends ServiceImpl<ShopProductMapper, ShopP
             String kw = escapeSqlLike(keyword);
             wrapper.inSql("id", "SELECT product_id FROM ck_shop_product_translation WHERE title LIKE '%" + kw + "%'");
         }
-        wrapper.orderByDesc("is_recommend").orderByAsc("sort_order").orderByDesc("create_time");
+        // 排序：只按白名单映射到固定列，未知取值回落到原有默认排序（详见 applyStoreSort）
+        applyStoreSort(wrapper, sortBy);
 
         Page<ShopProduct> page = new Page<>(pageNo == null ? 1 : pageNo, pageSize == null ? 12 : pageSize);
         IPage<ShopProduct> productPage = super.page(page, wrapper);
@@ -464,6 +466,102 @@ public class ShopProductServiceImpl extends ServiceImpl<ShopProductMapper, ShopP
         Page<StoreProductCardVO> result = new Page<>(productPage.getCurrent(), productPage.getSize(), productPage.getTotal());
         result.setRecords(voList);
         return result;
+    }
+
+    /**
+     * 店铺端：按商品主键取单张卡片，并完成可见性校验（收藏等写操作的统一准入判断）。
+     *
+     * <p>与 {@link #getStoreDetail} 的区别是**只做准入 + 卡片装配**，不查规格树与 SKU 组合：
+     * 收藏一件商品只需要知道"它在不在这个店铺里、上没上架"，
+     * 走详情接口等于每次收藏都白白多查几张子表。
+     */
+    @Override
+    public StoreProductCardVO getStoreCard(String orgCode, String productId, String language) {
+        if (StringUtils.isBlank(orgCode)) {
+            // 解析不到店铺归属就报错，绝不退化成"任意店铺都能收藏"——那就是跨店写入
+            throw new JeecgBootException("无法确定店铺归属部门，已拒绝操作");
+        }
+        if (StringUtils.isBlank(productId)) {
+            throw new JeecgBootException("缺少商品 ID");
+        }
+        // getById 走 MP 的逻辑删除：已软删除的商品直接查不到
+        ShopProduct product = super.getById(productId);
+        if (product == null || !matchesOrg(product.getSysOrgCode(), orgCode)) {
+            throw new JeecgBootException("商品在当前店铺不存在或已下架!");
+        }
+        if (!"Y".equals(product.getStatus())) {
+            throw new JeecgBootException("商品已下架!");
+        }
+        ListContext ctx = buildListContext(Collections.singletonList(product.getId()), normalizeLanguage(language));
+        return toStoreCardVO(product, ctx, ctx.combinations.getOrDefault(product.getId(), Collections.emptyList()));
+    }
+
+    /**
+     * 店铺端：按主键批量取卡片（我的收藏列表用）。
+     *
+     * <p>过滤条件刻意与 {@link #queryStorePageList} 保持一致（可见部门 + 上架 + 未软删除），
+     * 这样"收藏了但商品已下架"的条目会自动从收藏列表消失，
+     * 而不是留在列表里、点进去才报错。
+     */
+    @Override
+    public List<StoreProductCardVO> listStoreCardsByIds(List<String> productIds, String orgCode, String language) {
+        if (CollectionUtils.isEmpty(productIds)) {
+            return new ArrayList<>();
+        }
+        if (StringUtils.isBlank(orgCode)) {
+            throw new JeecgBootException("无法确定店铺归属部门，已拒绝查询");
+        }
+        List<String> ids = productIds.stream()
+                .filter(StringUtils::isNotBlank)
+                .distinct()
+                .collect(Collectors.toList());
+        if (ids.isEmpty()) {
+            return new ArrayList<>();
+        }
+        String lang = normalizeLanguage(language);
+        QueryWrapper<ShopProduct> wrapper = new QueryWrapper<>();
+        wrapper.in("id", ids);
+        wrapper.likeRight("sys_org_code", orgCode);
+        wrapper.eq("status", "Y");
+        List<ShopProduct> products = super.list(wrapper);
+        ListContext ctx = buildListContext(
+                products.stream().map(ShopProduct::getId).collect(Collectors.toList()), lang);
+        return products.stream()
+                .map(item -> toStoreCardVO(item, ctx, ctx.combinations.getOrDefault(item.getId(), Collections.emptyList())))
+                .collect(Collectors.toList());
+    }
+
+    /**
+     * 店铺端列表排序白名单。
+     *
+     * <p>只把 sortBy 当作"枚举键"来匹配，命中后写入的是**代码里硬编码的列名**，
+     * 任何未知 / 空 / 恶意取值都回落到默认排序，因此不存在 SQL 注入面。
+     * 大小写与首尾空格会被归一化（如 "Sales " → sales）。
+     *
+     * @param sortBy 前端传入的排序标识：sales / newest / price_asc / price_desc，其余走默认
+     */
+    private void applyStoreSort(QueryWrapper<ShopProduct> wrapper, String sortBy) {
+        String sort = sortBy == null ? "" : sortBy.trim().toLowerCase(Locale.ROOT);
+        switch (sort) {
+            case "sales":
+                // 近30天销量优先，其次累计销量，最后按运营排序号兜底，保证同销量商品顺序稳定
+                wrapper.orderByDesc("month_sales_count").orderByDesc("sales_count").orderByAsc("sort_order");
+                break;
+            case "newest":
+                // MySQL 中 NULL 视为最小值，DESC 时天然排在最后，listed_at 为 NULL 的商品不会抢占头部
+                wrapper.orderByDesc("listed_at").orderByDesc("create_time");
+                break;
+            case "price_asc":
+                wrapper.orderByAsc("min_price");
+                break;
+            case "price_desc":
+                wrapper.orderByDesc("min_price");
+                break;
+            default:
+                // 原有默认排序，保持不变
+                wrapper.orderByDesc("is_recommend").orderByAsc("sort_order").orderByDesc("create_time");
+                break;
+        }
     }
 
     @Override
@@ -1255,6 +1353,21 @@ public class ShopProductServiceImpl extends ServiceImpl<ShopProductMapper, ShopP
         if (vo.getPrice() == null) {
             vo.setPrice(vo.getMinPrice() != null ? vo.getMinPrice() : BigDecimal.ZERO);
         }
+
+        // P0 电商字段：BeanUtils 的浅拷贝对同名同型字段已经生效，
+        // 这里显式再写一遍是为了让"哪些字段要透出到店铺端"这件事在代码里可见，
+        // 而不是藏在一次隐式拷贝里（将来实体加字段却忘了透出时，这里会立刻暴露）。
+        vo.setOriginalPrice(product.getOriginalPrice());
+        vo.setSalesCount(product.getSalesCount());
+        vo.setMonthSalesCount(product.getMonthSalesCount());
+        vo.setReviewCount(product.getReviewCount());
+        vo.setRatingAvg(product.getRatingAvg());
+        vo.setFavoriteCount(product.getFavoriteCount());
+        vo.setViewCount(product.getViewCount());
+        // 实体与 VO 都是 Boolean（见 ShopProduct.freeShipping 的注释）：
+        // NULL 归一成 false，前端就只需要处理"是/否"两种情况。
+        vo.setFreeShipping(Boolean.TRUE.equals(product.getFreeShipping()));
+        vo.setListedAt(product.getListedAt());
         return vo;
     }
 

@@ -56,6 +56,32 @@ export interface StoreProductCard {
   /** 当前语言分类名 */
   categoryName: string | null
   tags: ShopTagRef[]
+
+  // ===== P0 电商统计字段 =====
+  //
+  // 数据来源：ck_shop_product 的 original_price / sales_count / month_sales_count /
+  // review_count / rating_avg / favorite_count / free_shipping / listed_at。
+  //
+  // 【渲染契约】这些字段为 0 / null / false 时表示「没有数据」，对应 UI 元素
+  // **整块不渲染**，不得显示 0 值或兜底假数据（延续项目既有约定）。
+  // 判断逻辑统一收敛在 resolvePriceView / hasSalesStats，不要在组件里各写一遍。
+
+  /** 划线原价；null 或 <= price 时不展示划线 */
+  originalPrice: number | null
+  /** 累计销量；0 = 无数据 */
+  salesCount: number
+  /** 近 30 天销量；0 = 无数据 */
+  monthSalesCount: number
+  /** 评价总数；0 = 无数据 */
+  reviewCount: number
+  /** 平均评分 0.0-5.0；0 = 无数据 */
+  ratingAvg: number
+  /** 收藏数；0 = 无数据 */
+  favoriteCount: number
+  /** 是否包邮 */
+  freeShipping: boolean
+  /** 上架时间（后端可能返回 ISO 字符串）；做「新品」排序用 */
+  listedAt: string | null
 }
 
 /** 商品图集（ShopProductImage） */
@@ -171,6 +197,18 @@ export function toNullableString(value: unknown): string | null {
   return str.length ? str : null
 }
 
+/**
+ * 布尔归一化。
+ * Java 后端可能用 Boolean / 1-0 / 'Y'-'N' 三种方式返回布尔字段，
+ * 这里统一收敛，避免出现 'false' 字符串被判为真值的经典 bug。
+ */
+export function asBoolean(value: unknown): boolean {
+  if (value === true || value === 1) return true
+  if (value === false || value === 0 || value === null || value === undefined) return false
+  const str = String(value).trim().toLowerCase()
+  return str === 'true' || str === '1' || str === 'y' || str === 'yes'
+}
+
 export function normalizeTag(raw: unknown): ShopTagRef | null {
   const item = asRecord(raw)
   const id = toNullableString(item.id)
@@ -206,6 +244,14 @@ export function normalizeCard(raw: unknown): StoreProductCard {
     sortOrder: toNullableString(item.sortOrder) === null ? null : toInteger(item.sortOrder, 0),
     categoryId: toNullableString(item.categoryId),
     categoryName: toNullableString(item.categoryName),
+    originalPrice: toNumberOrNull(item.originalPrice),
+    salesCount: toInteger(item.salesCount, 0),
+    monthSalesCount: toInteger(item.monthSalesCount, 0),
+    reviewCount: toInteger(item.reviewCount, 0),
+    ratingAvg: toNumberOrNull(item.ratingAvg) ?? 0,
+    favoriteCount: toInteger(item.favoriteCount, 0),
+    freeShipping: asBoolean(item.freeShipping),
+    listedAt: toNullableString(item.listedAt),
     tags: normalizeTags(item.tags),
   }
 }
@@ -339,23 +385,31 @@ export function toOptionalQueryString(value: unknown): string | undefined {
 // 规格组合置灰算法（本任务核心）
 // ---------------------------------------------------------------------------
 //
-// 判定规则（与任务契约 + Lead 用 SQL 复算的期望值一致）：
+// 判定规则（2026-10-14 改版，交互从"先取消再换"改为"同规格直接切换"）：
 //   规格值 V 可选 ⇔ 存在至少一个 combination 满足：
 //       1. saleable === 'Y' && stock > 0            （组合可售）
 //       2. combination.specValueIds 包含 V 的 id
-//       3. combination.specValueIds 包含"当前已选的所有其它规格值"的 id
-//          —— 注意这里是"所有其它已选值"，**不排除 V 自己所在的规格**：
-//             一个组合每个规格只会有一个值，所以当同规格里已选了别的值时，
-//             V 必然无法与之共存 => 置灰（例：已选 白色，则 红色 / 黑色 置灰；
-//             想换颜色需先点一下已选值取消）。
-//             V 自己就是被选中的那个值时，规则退化为"包含其它已选值"，仍然可选。
+//       3. combination.specValueIds 包含"当前已选的所有**其它规格**的值"的 id
+//          —— 注意这里按 **specId** 排除整个"V 所属的规格"，而不是只排除 V 自己：
+//             一个组合在每个规格上只会取一个值，所以"本规格还选着别的值"这件事
+//             与 V 能不能选**无关**——用户点了 V 就是要换掉那个值。
+//             （例：已选「39 码 + 棕褐」，此时「40 码」仍然可选：只要存在
+//               40码+棕褐的可售组合即可，点击后 39 自动被 40 替换。）
 //
-// 已选中规格值的处理策略（两种标准做法里选一种，这里选 **保持选中**）：
-//   - 用户只能点击"当前可选"的值，所以状态永远来自合法路径；
-//   - 已选中的值不参与置灰（选中态优先），再次点击即可取消，用户不会卡在非法状态。
+// 为什么必须按 specId 排除，而不是"把同规格的旧值当成一个必须满足的条件"：
+//   旧实现要求组合同时包含"已选的全部值"，而同规格的两个值天然互斥，
+//   于是选完 39 之后 40/41/42/43 全部置灰，用户必须先点一下 39 把它取消才能选 40。
+//   那既不直观（看着像"这件商品只有 39 码"），也违背主流电商的规格切换习惯。
 //
-// 自测样例（含不存在组合 / saleable='N' / stock=0 三种边界 + Lead 给的演示商品
-// 期望值）见：nuxt-shop/temp/spec-availability.selfcheck.ts
+// 仍被置灰的情形（这是需求的硬约束）：**该值与其它规格已选值没有任何可售组合**。
+//   例：已选「棕褐」时，若「43 码 + 棕褐」组合不存在，43 码依旧灰色不可选。
+//
+// 已选中规格值的处理策略（保持选中，不参与置灰）：
+//   - 已选中的值永远可点，作用变成"取消选择"；
+//   - 同规格的其它值走"直接切换"，不做二次确认。
+//
+// 自测样例（含不存在组合 / saleable='N' / stock=0 三种边界 + 同规格切换矩阵
+// + Lead 给的演示商品期望值）见：nuxt-shop/temp/spec-availability.selfcheck.ts
 
 /** 组合是否可售：商家标记可售 且 库存 > 0 */
 export function isCombinationSellable(combination: StoreSkuCombination): boolean {
@@ -364,7 +418,8 @@ export function isCombinationSellable(combination: StoreSkuCombination): boolean
 
 /**
  * 单个规格值是否可选。
- * @param specId 该规格值所属规格的 id
+ *
+ * @param specId 该规格值所属规格的 id（用于把"本规格已选的旧值"从约束里排除）
  * @param selection 当前已选状态 specId -> valueId
  */
 export function isSpecValueAvailable(
@@ -374,8 +429,10 @@ export function isSpecValueAvailable(
   combinations: StoreSkuCombination[],
 ): boolean {
   const requiredOtherValueIds: string[] = []
-  for (const [, otherValueId] of Object.entries(selection || {})) {
-    // 排除 V 自己（V 已被选中时，规则要求的是"其它"已选值）
+  for (const [otherSpecId, otherValueId] of Object.entries(selection || {})) {
+    // 排除「V 自己所属规格」的选择：同规格换值是直接替换，不是"两个值共存"
+    if (otherSpecId === specId) continue
+    // 再排除 V 自己（防御性：数据异常导致同一 valueId 出现在别的规格下时也按"自己"处理）
     if (otherValueId && otherValueId !== valueId) requiredOtherValueIds.push(otherValueId)
   }
 
@@ -389,7 +446,11 @@ export function isSpecValueAvailable(
 
 /**
  * 计算当前选择下需要置灰的规格值 id 集合。
- * 已选中的规格值不置灰（选中态优先，见上方策略说明）。
+ *
+ * 两层排除：
+ *   1. 本规格已选中的那个值不置灰（选中态优先：点它 = 取消选择）；
+ *   2. 置灰判定按 specId 排除本规格的旧值（见 isSpecValueAvailable），
+ *      所以"换规格"这件事本身不会再被旧值挡住。
  */
 export function computeUnavailableValueIds(
   specs: StoreSpec[],
@@ -498,4 +559,122 @@ export function resolveSkuPrice(
     return toNumberOrNull(combination.effectivePrice) ?? toNumberOrNull(combination.price) ?? toNumberOrNull(product.price)
   }
   return toNumberOrNull(product.minPrice) ?? toNumberOrNull(product.price)
+}
+
+// ---------------------------------------------------------------------------
+// 展示辅助 · 电商统计字段（P0）
+// ---------------------------------------------------------------------------
+//
+// 「有没有数据 → 显不显示」的判断全部收敛到这里，组件只负责渲染，
+// 避免在 12 个组件里各写一遍 `salesCount > 0 ? ... : ''` 还写得不一致。
+
+/** 商城价格展示：整数不带小数（¥4,299），有角分才带两位（¥211.68） */
+export function formatShopPrice(value: number | null | undefined, locale?: string | null): string {
+  const num = toNumberOrNull(value)
+  if (num === null) return '--'
+  return new Intl.NumberFormat(toIntlLocale(locale), {
+    minimumFractionDigits: Number.isInteger(num) ? 0 : 2,
+    maximumFractionDigits: 2,
+  }).format(num)
+}
+
+/** 大数字压缩：12345 → 1.2万；999 → 999 */
+export function formatCompactCount(value: number | null | undefined): string {
+  const num = toNumberOrNull(value)
+  if (num === null || num <= 0) return '0'
+  if (num < 10000) return String(Math.trunc(num))
+  const wan = num / 10000
+  return `${wan >= 100 ? Math.trunc(wan) : wan.toFixed(1).replace(/\.0$/, '')}万`
+}
+
+/** 是否有可展示的销量/评价统计 */
+export function hasSalesStats(
+  product: Pick<StoreProductCard, 'salesCount' | 'reviewCount'>,
+): boolean {
+  return toInteger(product.salesCount, 0) > 0 || toInteger(product.reviewCount, 0) > 0
+}
+
+/** 是否展示划线价：必须有值，且严格高于现价（否则不渲染） */
+export function hasOriginalPrice(
+  product: Pick<StoreProductCard, 'price' | 'minPrice' | 'originalPrice'>,
+): boolean {
+  const price = toNumberOrNull(product.minPrice) ?? toNumberOrNull(product.price)
+  const original = toNumberOrNull(product.originalPrice)
+  return original !== null && price !== null && original > price
+}
+
+/** 价格视图：把「现价 / 划线价 / 是否划线 / 优惠金额」一次算清 */
+export interface StorePriceView {
+  /** 展示价 */
+  price: number | null
+  /** 划线原价；不展示时为 null */
+  originalPrice: number | null
+  /** 是否渲染划线价 */
+  showOriginal: boolean
+  /**
+   * 优惠金额（原价 - 现价）；无优惠时为 null。
+   * 这里只给数字，文案由组件用 i18n 渲染（types 层不出现任何中文），
+   * 例如 t('shop.discountOff', { amount: formatShopPrice(view.discountAmount) })。
+   */
+  discountAmount: number | null
+}
+
+export function resolvePriceView(
+  product: Pick<StoreProductCard, 'price' | 'minPrice' | 'maxPrice' | 'originalPrice'>,
+): StorePriceView {
+  const price = toNumberOrNull(product.minPrice) ?? toNumberOrNull(product.price)
+  const original = toNumberOrNull(product.originalPrice)
+  const showOriginal = price !== null && original !== null && original > price
+  return {
+    price,
+    originalPrice: showOriginal ? original : null,
+    showOriginal,
+    discountAmount: showOriginal && price !== null && original !== null ? original - price : null,
+  }
+}
+
+/** 评分展示：无评价时返回 null（不渲染） */
+export function resolveRating(
+  product: Pick<StoreProductCard, 'ratingAvg' | 'reviewCount'>,
+): number | null {
+  if (toInteger(product.reviewCount, 0) <= 0) return null
+  const rating = toNumberOrNull(product.ratingAvg)
+  return rating !== null && rating > 0 ? rating : null
+}
+
+/** 是否跨价格区间（用于「¥899 起」与「价格随规格不同而变化」提示） */
+export function isPriceRange(
+  product: Pick<StoreProductCard, 'minPrice' | 'maxPrice'>,
+): boolean {
+  const min = toNumberOrNull(product.minPrice)
+  const max = toNumberOrNull(product.maxPrice)
+  return min !== null && max !== null && max > min
+}
+
+/**
+ * 商品角标：从真实 tag code 映射到角标样式。
+ * 标签体系见 ck_shop_tag（HOT / SALE / NEW / PICK / FAST / TOP），
+ * 未识别的一律走中性样式，不做猜测。
+ */
+export type BadgeTone = 'hot' | 'sale' | 'new' | 'neutral'
+
+export function resolveTagTone(code: string | null | undefined): BadgeTone {
+  switch ((code || '').toUpperCase()) {
+    case 'HOT':
+      return 'hot'
+    case 'SALE':
+      return 'sale'
+    case 'NEW':
+      return 'new'
+    default:
+      return 'neutral'
+  }
+}
+
+/** 服务标签（包邮 / 现货速发 / 品质优选 / 七天无理由）：同样只认已知 code */
+export function resolveServiceTagCodes(product: Pick<StoreProductCard, 'tags'>): string[] {
+  const known = new Set(['FAST', 'TOP'])
+  return (product.tags || [])
+    .map(tag => (tag.code || '').toUpperCase())
+    .filter(code => known.has(code))
 }

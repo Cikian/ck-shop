@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="org.jeecg.modules.shop.favorite.mapper.ShopFavoriteMapper">
+
+    <!--
+      含已软删除的行：再次收藏时靠它判断"是插入新行还是复活旧行"。
+      不过滤 del_flag 是这里的**全部意义**，写了反而会撞唯一索引。
+    -->
+    <select id="selectAnyByProduct" resultType="org.jeecg.modules.shop.favorite.entity.ShopFavorite">
+        SELECT *
+        FROM ck_shop_favorite
+        WHERE user_id = #{userId}
+          AND store_id = #{storeId}
+          AND product_id = #{productId}
+        LIMIT 1
+    </select>
+
+    <!-- 复活：把 del_flag 置回 0 并刷新时间；create_time 保持不变（首次收藏时间才是用户认知里的"收藏时间"） -->
+    <update id="restoreFavorite">
+        UPDATE ck_shop_favorite
+        SET del_flag    = 0,
+            update_by   = #{operator},
+            update_time = NOW()
+        WHERE user_id = #{userId}
+          AND store_id = #{storeId}
+          AND product_id = #{productId}
+          AND del_flag = 1
+    </update>
+
+    <!-- 取消收藏：只动当前有效的那一行，返回受影响行数用于判断计数要不要减 -->
+    <update id="softDeleteByProduct">
+        UPDATE ck_shop_favorite
+        SET del_flag    = 1,
+            update_by   = #{operator},
+            update_time = NOW()
+        WHERE user_id = #{userId}
+          AND store_id = #{storeId}
+          AND product_id = #{productId}
+          AND del_flag = 0
+    </update>
+
+</mapper>

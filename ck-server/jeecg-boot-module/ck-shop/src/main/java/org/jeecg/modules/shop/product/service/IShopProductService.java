@@ -89,9 +89,17 @@ public interface IShopProductService extends IService<ShopProduct> {
      * @param orgCode 店铺绑定部门的 org_code（由 StoreResolver → ck_shop_store.depart_id → sys_depart.org_code 解析而来）。
      *                直接查 ck_shop_product 的归属列，**不再 join 任何上架关系表**——
      *                一商品只属于一个店铺，归属列本身就是店铺身份。
+     * @param sortBy  排序方式，取值白名单（大小写不敏感，未识别或为空时使用默认排序）：
+     *                <ul>
+     *                  <li>{@code sales}      销量优先：month_sales_count DESC, sales_count DESC, sort_order ASC</li>
+     *                  <li>{@code newest}     最新上架：listed_at DESC, create_time DESC</li>
+     *                  <li>{@code price_asc}  价格升序：min_price ASC</li>
+     *                  <li>{@code price_desc} 价格降序：min_price DESC</li>
+     *                  <li>其他/空            默认：is_recommend DESC, sort_order ASC, create_time DESC</li>
+     *                </ul>
      */
     IPage<StoreProductCardVO> queryStorePageList(String orgCode, String language, String categoryId,
-                                                 String keyword, Integer pageNo, Integer pageSize);
+                                                 String keyword, Integer pageNo, Integer pageSize, String sortBy);
 
     /**
      * 店铺端商品详情（含规格树与存在的SKU组合，供前端做组合置灰）。
@@ -100,4 +108,34 @@ public interface IShopProductService extends IService<ShopProduct> {
      * @param idOrSpuCode 商品主键或 spu_code（前台路由用 spu_code，分享链接更短）
      */
     StoreProductDetailVO getStoreDetail(String orgCode, String idOrSpuCode, String language);
+
+    /**
+     * 店铺端：按商品主键取**单张**商品卡片，并完成可见性校验。
+     *
+     * <p>存在的意义是给"以商品为对象的写操作"（收藏 / 取消收藏）一个统一的准入判断：
+     * 商品必须存在、未软删除、归属落在该店铺部门可见域内、且处于上架状态；
+     * 任一不满足都抛业务异常（{@link org.jeecg.common.exception.JeecgBootException}）。
+     *
+     * <p>之所以不直接调 {@link #getStoreDetail}：详情要额外装配规格树与全部 SKU 组合，
+     * 而收藏只需要"这件商品能不能被这个店铺的用户看到"，用详情接口等于每次收藏都多查 3 张表。
+     *
+     * @param orgCode   店铺绑定部门的 org_code
+     * @param productId 商品主键（不接受 spu_code：写操作必须锁定唯一主键）
+     * @param language  界面语言
+     * @return 商品卡片（含价格 / 库存 / 收藏数等展示字段）
+     */
+    StoreProductCardVO getStoreCard(String orgCode, String productId, String language);
+
+    /**
+     * 店铺端：按商品主键批量取卡片（我的收藏列表用）。
+     *
+     * <p>过滤条件与店铺端列表**完全一致**（可见部门 + status='Y' + 未软删除），
+     * 因此"收藏了但商品已下架"的商品会自动从收藏列表消失，不会出现点了就报错的僵尸条目。
+     * 返回顺序不保证，调用方按自己的顺序（如收藏时间倒序）重排。
+     *
+     * @param productIds 商品主键集合；为空直接返回空列表
+     * @param orgCode    店铺绑定部门的 org_code
+     * @param language   界面语言
+     */
+    List<StoreProductCardVO> listStoreCardsByIds(List<String> productIds, String orgCode, String language);
 }

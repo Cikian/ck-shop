@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.core.mapper.BaseMapper;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 import org.apache.ibatis.annotations.Select;
+import org.apache.ibatis.annotations.Update;
 import org.jeecg.modules.shop.product.entity.ShopProduct;
 
 import java.util.List;
@@ -70,4 +71,28 @@ public interface ShopProductMapper extends BaseMapper<ShopProduct> {
      */
     @Select("SELECT COUNT(*) FROM ck_shop_product WHERE del_flag = 0 AND category_id = #{categoryId}")
     int countAliveByCategoryId(@Param("categoryId") String categoryId);
+
+    /**
+     * 增量维护收藏数（{@code ck_shop_product.favorite_count}）。
+     *
+     * <p>为什么是"库内自增"而不是"读出来 +1 再写回"：后者在并发收藏下必然丢更新
+     * （两个人同时读出 10，各自写 11，实际收了两次却只 +1）。这里把加减放到一条 UPDATE 里，
+     * 由数据库保证原子性。
+     *
+     * <p>为什么用 {@code CASE} 而不是 {@code GREATEST}：CASE 是 SQL92 标准写法，
+     * MySQL / PostgreSQL / Oracle 行为完全一致，不依赖具体方言的函数实现。
+     * 下限夹到 0 是为了兜住"历史计数本来就比关系表行数少"的脏数据——宁可少算，不出现负数。
+     *
+     * <p>刻意**不动 update_time**：收藏是买家行为，不该让运营在后台看到"这件商品刚被修改过"
+     * 而去找一个不存在的编辑记录。
+     *
+     * @param productId 商品主键
+     * @param delta     增量，+1 收藏 / -1 取消收藏
+     * @return 受影响行数（0 表示商品不存在或已软删除）
+     */
+    @Update("UPDATE ck_shop_product SET favorite_count = "
+            + "CASE WHEN COALESCE(favorite_count, 0) + #{delta} < 0 THEN 0 "
+            + "ELSE COALESCE(favorite_count, 0) + #{delta} END "
+            + "WHERE id = #{productId} AND del_flag = 0")
+    int incrementFavoriteCount(@Param("productId") String productId, @Param("delta") int delta);
 }
