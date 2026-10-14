@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>店铺端重构 · 效果图总览（22 款）</title>
+<style>
+  :root { color-scheme: light; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 40px 24px 96px;
+    background: #f4f4f5; color: #18181b;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+  }
+  .wrap { max-width: 1320px; margin: 0 auto; }
+  h1 { font-size: 30px; margin: 0 0 10px; letter-spacing: -0.02em; }
+  .sub { color: #52525b; font-size: 14px; line-height: 1.75; margin: 0 0 8px; }
+  .sub code { background: #e4e4e7; padding: 1px 5px; border-radius: 4px; font-size: 12px; }
+  .alert {
+    margin: 20px 0 8px; padding: 14px 16px; border-radius: 10px;
+    background: #fef2f2; border: 1px solid #fecaca; color: #7f1d1d; font-size: 13px; line-height: 1.75;
+  }
+  .alert b { color: #991b1b; }
+  .ok {
+    margin: 20px 0 8px; padding: 14px 16px; border-radius: 10px;
+    background: #f0fdf4; border: 1px solid #bbf7d0; color: #14532d; font-size: 13px; line-height: 1.75;
+  }
+  .ok b { color: #166534; }
+  h2.grp {
+    font-size: 13px; letter-spacing: .16em; text-transform: uppercase; color: #71717a;
+    margin: 52px 0 6px; padding-bottom: 10px; border-bottom: 1px solid #d4d4d8;
+  }
+  h2.grp span { display: block; font-size: 20px; letter-spacing: -0.01em; text-transform: none; color: #18181b; margin-top: 6px; font-weight: 700; }
+  h2.grp small { display: block; font-size: 13px; letter-spacing: 0; text-transform: none; color: #52525b; font-weight: 400; margin-top: 6px; line-height: 1.7; }
+  h2.grp.now { border-bottom-color: #18181b; }
+  h2.grp.now em {
+    display: inline-block; font-style: normal; background: #18181b; color: #fff;
+    font-size: 11px; padding: 2px 8px; border-radius: 999px; margin-left: 8px; letter-spacing: .08em;
+  }
+  .grid { display: grid; grid-template-columns: 1fr; gap: 26px; margin-top: 22px; }
+  @media (min-width: 1080px) { .grid { grid-template-columns: 1fr 1fr; } }
+  .card {
+    background: #fff; border-radius: 14px; overflow: hidden;
+    box-shadow: 0 1px 3px rgba(0,0,0,.08), 0 14px 34px -14px rgba(0,0,0,.2);
+    display: flex; flex-direction: column;
+  }
+  .card.hi { outline: 2px solid #18181b; outline-offset: 2px; }
+  .shot { display: block; cursor: zoom-in; background: #e4e4e7; overflow: hidden; }
+  .shot img { display: block; width: 100%; height: auto; transition: transform .5s cubic-bezier(.2,.6,.2,1); }
+  .shot:hover img { transform: scale(1.015); }
+  .meta { padding: 16px 18px 20px; }
+  .meta h3 { font-size: 16px; margin: 0 0 3px; letter-spacing: -0.01em; }
+  .meta .en { font-size: 11px; letter-spacing: .12em; text-transform: uppercase; color: #a1a1aa; }
+  .meta p { margin: 10px 0 0; font-size: 13px; line-height: 1.7; color: #3f3f46; }
+  .swatches { display: flex; gap: 6px; margin-top: 12px; flex-wrap: wrap; align-items: center; }
+  .swatches i { width: 22px; height: 22px; border-radius: 6px; border: 1px solid rgba(0,0,0,.12); }
+  .swatches b { font-size: 11px; color: #a1a1aa; font-weight: 500; margin-left: 4px; }
+  .tag { display: inline-block; margin-top: 10px; margin-right: 4px; font-size: 11px; padding: 3px 8px; border-radius: 999px; background: #f4f4f5; color: #52525b; }
+  .tag.warn { background: #fef3c7; color: #92400e; }
+  .tag.dep { background: #fee2e2; color: #991b1b; }
+  .tag.new { background: #dbeafe; color: #1e40af; }
+  .tag.good { background: #dcfce7; color: #166534; }
+  dialog { border: 0; padding: 0; background: transparent; max-width: 96vw; max-height: 96vh; }
+  dialog::backdrop { background: rgba(0,0,0,.84); }
+  dialog img { max-width: 96vw; max-height: 92vh; display: block; border-radius: 8px; cursor: zoom-out; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>店铺端重构 · 效果图总览（22 款）</h1>
+  <p class="sub">
+    按轮次倒序排列，<b>最新一轮在最上面</b>。点击任意图片可放大。<br>
+    除第一、二轮外，全部使用同一批真实商品（<code>ck_shop_product</code> 的极光 X1 5G 手机 / 三合一冲锋衣 / 主动降噪耳机 / 双人速开帐篷 / 中帮防水徒步鞋 / 轻薄商务本 Air 14），
+    商品图是 Unsplash 占位图，不是真实主图。
+  </p>
+
+  <div class="ok">
+    <b>✅ 已定稿的视觉方案：C · 珊瑚玫红 × 奶油白</b><br>
+    背景 <code>#FFF6F2</code> · 卡片 <code>#FFFFFF</code> · 主色 <code>#FF4D6D</code> · 点缀 <code>#FFD54A</code> ·
+    文字 <code>#1F1A1C</code> / <code>#8A8189</code> · 卡片圆角 20px · 药丸按钮 · 圆润中文黑体 · 价格字号为商品名的 2 倍以上。<br>
+    配套文档：<code>后端促销字段清单.md</code>（P0 加 7 个字段即可覆盖效果图里 90% 的电商元素）
+  </div>
+
+  <div class="alert">
+    <b>⚠️ 落地时的两条红线</b><br>
+    1）<b>促销/销量/评价元素依赖后端新增字段</b>。效果图里的「已售 1.2万件」「¥5,999 划线价」「直降 1,700」「4.9 分 1286 条评价」目前在 <code>ck-shop</code> 库中<b>完全不存在</b>；
+    字段未上线前，对应元素必须<b>整块不渲染</b>，不得显示 0 或兜底假值（延续项目既有约定）。<br>
+    2）<b>划线价与销量有合规风险</b>（《价格法》虚构原价、《广告法》虚假宣传）。<code>ck_shop_cart_event</code> 是加购流水，<b>不能</b>当销量展示。
+  </div>
+
+  <h2 class="grp now">第五轮 · 按你的反馈修订 <em>当前</em>
+    <span>取消独立商品列表页 / 详情页改竖向堆叠 / 购物车重新设计</span>
+    <small>三点调整：① 首页承担浏览职责，<code>/products</code> 只做搜索结果页；② 详情页下半部改<b>单列竖向堆叠 + 吸顶锚点导航</b>；③ 购物车重新设计（凑单进度 + 表头化清单 + 右侧结算明细卡 + 失效折叠 + 猜你喜欢）。</small>
+  </h2>
+  <div class="grid" id="gridE"></div>
+
+  <h2 class="grp">第四轮 · 页面级效果图（其中 3 张已被第五轮取代）
+    <span>商品列表 / 商品详情 / 购物车 / 登录 / 个人中心 / 移动端</span>
+    <small>按只读勘察报告对齐真实页面结构。被取代的 3 张仍保留，方便对比"改动前后"。</small>
+  </h2>
+  <div class="grid" id="gridD"></div>
+
+  <h2 class="grp">第三轮 · 配色方案（已定稿 C）
+    <span>国内主流电商 × 潮流年轻化，骨架一致只换配色与字体</span>
+    <small>回应「配色 / 字体不对」这条明确反馈。</small>
+  </h2>
+  <div class="grid" id="gridC"></div>
+
+  <h2 class="grp">第二轮 · 排版结构（已否决）
+    <span>只变页面骨架，锁定 ② 静谧奢华的视觉语言</span>
+    <small>用来隔离「排版」这一个变量。</small>
+  </h2>
+  <div class="grid" id="gridB"></div>
+
+  <h2 class="grp">第一轮 · 样式方向（已否决）
+    <span>视觉语言：配色 / 字体 / 圆角 / 阴影 / 质感</span>
+    <small>失败原因：走的是欧美生活方式买手店路线（暖米白 + 衬线 + 英文界面），与「国内电商 + 潮流年轻化」完全相反。</small>
+  </h2>
+  <div class="grid" id="gridA"></div>
+</div>
+
+<dialog id="viewer"><img id="viewerImg" alt=""></dialog>
+
+<script>
+const PA = ['#FFF6F2', '#FFFFFF', '#FF4D6D', '#FFD54A'];
+
+const roundE = [
+  { file: '23-home-browse.png', zh: '首页（浏览型）', en: 'Home · Browse-first', hi: true,
+    desc: '分类卡片区从左上角起 4×2 排布，每张卡含分类图 + 分类名 + 商品数；下方秒杀条 + 「为你推荐」4×3 商品流（12 张卡，含角标/划线价/已售/包邮/七天无理由）+ 排序 chips。首页即浏览主战场，不需要单独的列表页。',
+    swatches: PA, tags: ['秒杀条只在后端有进行中活动时才渲染', '排序走真实 sortBy 接口'], new: true },
+  { file: '24-search-results.png', zh: '搜索结果页（原商品列表页）', en: 'Search Results', hi: true,
+    desc: '搜索框回填关键词「手机」+ 摘要「"手机"的搜索结果 · 共 8 件商品」+ 排序 + 分类筛选 chips + 相关搜索（用真实分类名）+ 4×2 商品网格 + 分页。',
+    swatches: PA, tags: ['只服务搜索，浏览交给首页', '相关搜索用真实分类，不写死热门词'], new: true },
+  { file: '26-product-detail-vertical.png', zh: '商品详情页（下半部竖向堆叠）', en: 'Product Detail · Vertical Stack', hi: true,
+    desc: '上半部两栏（图集含分享/收藏浮层按钮 + 信息列），下半部**单列竖向堆叠**：吸顶锚点导航（商品详情/规格参数/用户评价/为你推荐）+ 四个整宽模块依次向下排。',
+    swatches: PA, tags: ['按你要求改为竖向滚动', '评价模块只展示真实汇总，无数据不渲染'], new: true },
+  { file: '25-cart-redesigned.png', zh: '购物车（重新设计）', en: 'Cart · Redesigned', hi: true,
+    desc: '凑单进度卡（满减引导 + 进度条）→ 表头化商品清单（全选 | 商品信息 | 单价 | 数量 | 小计 | 操作）→ 右侧 sticky 结算明细卡（商品总额 / 优惠券 -¥30 / 免运费 / 应付总额超大字 / 去结算）→ 失效商品折叠分组 → 猜你喜欢凑单条。',
+    swatches: PA, tags: ['凑单/优惠券无数据时整块不渲染', '去结算保持永久禁用（订单未开发）'], new: true },
+];
+
+const roundD = [
+  { file: '17-page-product-list.png', zh: '商品列表页（已作废）', en: 'Product List',
+    desc: '分类药丸标签行 + 面包屑 +「共 26 件商品」+ 排序下拉 + 4 列卡片 + 分页器。',
+    swatches: PA, tags: ['❌ 已被「搜索结果页」#24 取代', '原因：用户明确不需要独立的商品列表页'] },
+  { file: '18-page-product-detail.png', zh: '商品详情页（已作废）', en: 'Product Detail',
+    desc: '下方为「商品描述 / 规格参数 / 用户评价 / 为你推荐」**四栏并排**。',
+    swatches: PA, tags: ['❌ 已被 #26 取代', '原因：用户要求下半部改为竖向滚动，不要横向排列'] },
+  { file: '19-page-cart.png', zh: '购物车页（已作废）', en: 'Cart',
+    desc: '两个分组列表 + 吸底结算栏。',
+    swatches: PA, tags: ['❌ 已被重新设计 #25 取代', '原因：用户认为"太普通了"'] },
+  { file: '20-page-login.png', zh: '登录页', en: 'Login', hi: true,
+    desc: '居中白色卡片 + 珊瑚玫红柔光背景；用户名 / 密码 / 验证码（右侧验证码图片 + 点击刷新）；满宽登录按钮；**无忘记密码、无注册入口、无第三方登录、无页脚** —— 与现状一致。',
+    swatches: PA, tags: ['忠实还原现状（无注册入口）'] },
+  { file: '21-page-profile.png', zh: '个人中心', en: 'Profile', hi: true,
+    desc: '资料卡（头像 / 小极 / Gold Member 徽章 / 注册时间）+ 四张统计卡 + 五个标签页 + 左「我的订单」右「收货地址」两栏。',
+    swatches: PA, tags: ['⚠️ 纠正：第 4 张卡应为「积分 1250」不是「累计消费」', '⚠️ 纠正：实际布局为 lg:grid-cols-4 左侧 1 栏资料卡', '当前统计与订单全是页面内 mock 数据'], warn: true },
+  { file: '22-page-mobile.png', zh: '移动端（首页 + 商品详情）', en: 'Mobile Responsive', hi: true,
+    desc: '左屏移动端首页：Logo + 搜索框 + 横向分类药丸 + 轮播 Banner + 秒杀条 + 双列商品卡 + 底部四标签导航栏。右屏移动端详情页：大图轮播（1/5）+ 价格区块 + 规格药丸 + 数量 + 评价摘要 + 底部固定加购栏。',
+    swatches: PA, tags: ['响应式：网格 2→3→4 列', '移动端底部标签栏是新增结构'], new: true },
+];
+
+const roundC = [
+  { file: '12-cn-electric-purple.png', zh: 'A · 电光紫 × 荧光绿', en: 'Electric Purple × Neon Lime',
+    desc: '纯白底 + #7C3AED 主色 + #C6FF00 点睛 + #FF2D55 价格。潮牌冲突感。', swatches: ['#FFFFFF', '#7C3AED', '#C6FF00'], tags: ['未选'] },
+  { file: '13-cn-blue-orange.png', zh: 'B · 潮蓝 × 亮橘', en: 'Trend Blue × Bright Orange',
+    desc: '极浅冷灰底 + #2563EB 主色 + #FF6B35 促销点缀，京东式三栏。', swatches: ['#F5F7FA', '#2563EB', '#FF6B35'], tags: ['未选'] },
+  { file: '14-cn-coral-cream.png', zh: 'C · 珊瑚玫红 × 奶油白 ★已定稿', en: 'Coral Rose × Cream',
+    desc: '奶油白 #FFF6F2 + 珊瑚玫红 #FF4D6D + 明黄 #FFD54A，20px 圆角、圆润黑体、种草社区气质。', swatches: PA, tags: ['已定稿'], good: true },
+  { file: '15-cn-dark-neon.png', zh: 'D · 曜黑 × 荧光撞色', en: 'Obsidian × Neon',
+    desc: '深底 #0E0E12 + 荧光绿 #39FF88 + 紫青渐变光效，球鞋潮牌硬核感。', swatches: ['#0E0E12', '#39FF88', '#A855F7'], tags: ['未选'] },
+  { file: '16-cn-red-yellow.png', zh: 'E · 中国红 × 明黄', en: 'China Red × Bright Yellow',
+    desc: '白底 + #E1251B 中国红 + #FFC300 促销黄，最经典的国内电商配方。', swatches: ['#FFFFFF', '#E1251B', '#FFC300'], tags: ['未选'] },
+];
+
+const roundB = [
+  { file: '07-layout-editorial-magazine.png', zh: '⑦ 杂志编辑式排版', en: 'Editorial Magazine', desc: '12 栏非对称杂志网格，超大衬线标题横跨 8 栏。', swatches: ['#FAF7F2', '#B08D57'], tags: [] },
+  { file: '08-layout-bento-grid.png', zh: '⑧ Bento 栅格首页', en: 'Bento Grid', desc: '首屏是一整块严丝合缝的模块板。', swatches: ['#FAF7F2', '#B08D57'], tags: [] },
+  { file: '09-layout-immersive-fullbleed.png', zh: '⑨ 沉浸式全宽叙事', en: 'Immersive Full-bleed', desc: '透明导航浮在全屏大图上，图片带与文字块交替。', swatches: ['#FAF7F2', '#B08D57'], tags: [] },
+  { file: '10-layout-catalog-shopfirst.png', zh: '⑩ 货架目录式', en: 'Catalogue / Shop-first', desc: '左侧常驻分类树 + 筛选，右侧紧凑四列商品栅格。', swatches: ['#FAF7F2', '#B08D57'], tags: [] },
+  { file: '11-layout-centered-gallery.png', zh: '⑪ 居中画廊式', en: 'Centred Boutique Gallery', desc: '单列居中、极限留白，一次只展示一件。', swatches: ['#FAF7F2', '#B08D57'], tags: [] },
+];
+
+const roundA = [
+  { file: '01-editorial-minimal.png', zh: '① 极简编辑风', en: 'Editorial Minimal / Swiss', desc: '纯白 + 近黑 + 单一强调色 #FF3B00，直角零阴影。', swatches: ['#FFFFFF', '#FF3B00'], tags: [] },
+  { file: '02-quiet-luxury.png', zh: '② 静谧奢华', en: 'Quiet Luxury', desc: '暖米白 + 深咖啡 + 香槟金细线，衬线大标题。', swatches: ['#FAF7F2', '#B08D57'], tags: [] },
+  { file: '03-nature-distilled.png', zh: '③ 自然质朴', en: 'Nature Distilled', desc: '奶油底 + 陶土 / 橄榄，柔和圆角与纸纹颗粒。', swatches: ['#F5F0E1', '#C67B5C'], tags: [] },
+  { file: '04-bold-retail.png', zh: '④ 活力零售', en: 'Bold Retail', desc: '高饱和红 / 深靛 / 明黄，描边与硬投影。', swatches: ['#FF3D2E', '#FFD84D'], tags: ['折扣角标是 AI 编的'] },
+  { file: '05-liquid-glass-dark.png', zh: '⑤ 液态玻璃 · 深色', en: 'Liquid Glass Dark', desc: '近黑深空底 + 玻璃面板 + 渐变流光。', swatches: ['#0B0D14', '#7C5CFF'], tags: [] },
+  { file: '06-soft-neutral.png', zh: '⑥ 柔和中性', en: 'Soft Neutral Calm', desc: '燕麦米白 + 墨绿，柔和漫射阴影。', swatches: ['#F7F4EF', '#7F8B72'], tags: [] },
+];
+
+const viewer = document.getElementById('viewer');
+const viewerImg = document.getElementById('viewerImg');
+
+function render(list, mountId) {
+  const mount = document.getElementById(mountId);
+  for (const it of list) {
+    const card = document.createElement('article');
+    card.className = 'card' + (it.hi ? ' hi' : '');
+    const sw = it.swatches.map(c => `<i style="background:${c}" title="${c}"></i>`).join('');
+    const tg = (it.tags || []).map(t => {
+      let cls = '';
+      if (/^⚠️/.test(t)) cls = ' warn';
+      else if (/依赖|新增功能/.test(t)) cls = it.new ? ' new' : ' dep';
+      else if (/已定稿/.test(t)) cls = ' good';
+      return `<span class="tag${cls}">${t}</span>`;
+    }).join(' ');
+    card.innerHTML = `
+      <span class="shot"><img src="${it.file}" alt="${it.zh} ${it.en}" loading="lazy"></span>
+      <div class="meta">
+        <h3>${it.zh}</h3>
+        <div class="en">${it.en}</div>
+        <p>${it.desc}</p>
+        <div class="swatches">${sw}<b>${it.swatches.join(' · ')}</b></div>
+        <div>${tg}</div>
+      </div>`;
+    card.querySelector('.shot').addEventListener('click', () => {
+      viewerImg.src = it.file;
+      viewerImg.alt = `${it.zh} ${it.en}`;
+      viewer.showModal();
+    });
+    mount.appendChild(card);
+  }
+}
+
+render(roundE, 'gridE');
+render(roundD, 'gridD');
+render(roundC, 'gridC');
+render(roundB, 'gridB');
+render(roundA, 'gridA');
+viewer.addEventListener('click', () => viewer.close());
+</script>
+</body>
+</html>

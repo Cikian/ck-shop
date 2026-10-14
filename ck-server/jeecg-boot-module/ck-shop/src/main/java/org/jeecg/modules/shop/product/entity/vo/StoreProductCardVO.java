@@ -1,10 +1,12 @@
 package org.jeecg.modules.shop.product.entity.vo;
 
+import com.fasterxml.jackson.annotation.JsonFormat;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Data;
 
 import java.io.Serializable;
 import java.math.BigDecimal;
+import java.util.Date;
 import java.util.List;
 
 /**
@@ -43,6 +45,9 @@ public class StoreProductCardVO implements Serializable {
     @Schema(description = "展示价：优先 minPrice，其次基准价")
     private BigDecimal price;
 
+    @Schema(description = "划线原价/市场价，NULL=不展示划线")
+    private BigDecimal originalPrice;
+
     @Schema(description = "最低售价")
     private BigDecimal minPrice;
 
@@ -54,6 +59,31 @@ public class StoreProductCardVO implements Serializable {
 
     @Schema(description = "可售库存合计")
     private Integer stock;
+
+    @Schema(description = "累计销量")
+    private Integer salesCount;
+
+    @Schema(description = "近 30 天销量")
+    private Integer monthSalesCount;
+
+    @Schema(description = "评价总数")
+    private Integer reviewCount;
+
+    @Schema(description = "平均评分 0.0-5.0")
+    private BigDecimal ratingAvg;
+
+    @Schema(description = "收藏数")
+    private Integer favoriteCount;
+
+    @Schema(description = "浏览量")
+    private Integer viewCount;
+
+    @Schema(description = "是否包邮")
+    private Boolean freeShipping;
+
+    @JsonFormat(timezone = "GMT+8", pattern = "yyyy-MM-dd HH:mm:ss")
+    @Schema(description = "上架时间")
+    private Date listedAt;
 
     @Schema(description = "状态: N-下架, Y-上架")
     private String status;

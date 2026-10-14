@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="org.jeecg.modules.shop.order.mapper.ShopPromotionUserQuotaMapper">
+
+    <!--
+      幂等地建额度行。
+      INSERT IGNORE：并发下单时两个请求都尝试插入，只有一个成功，
+      另一个因为唯一键 uk_promo_user 冲突被忽略——这正是我们想要的"只建一行"。
+      初始 used_quantity 为 0，真正的累加交给下面的条件 UPDATE。
+    -->
+    <insert id="seedQuota">
+        INSERT IGNORE INTO ck_shop_promotion_user_quota
+        (id, promotion_id, user_id, store_id, used_quantity, create_time, update_time)
+        VALUES (#{id}, #{promotionId}, #{userId}, #{storeId}, 0, NOW(), NOW())
+    </insert>
+
+    <!--
+      限购锁。
+      `used_quantity + #{quantity} &lt;= #{limit}` 就是"每人限购 N 件"的全部实现。
+      InnoDB 会对该行加排他锁，两个并发下单请求被串行化：
+      第一个把 used_quantity 从 0 加到 2，第二个看到 2，2 + 2 > 2，条件不成立 → 0 行 → 拒绝下单。
+
+      这是文档里"优惠券/积分并发核销：限购绕过"的根治手段。
+      任何"先 select 求和再判断"的写法在同一场景下都会放行两个请求。
+    -->
+    <update id="tryAccumulate">
+        UPDATE ck_shop_promotion_user_quota
+        SET used_quantity = used_quantity + #{quantity},
+            update_time   = NOW()
+        WHERE promotion_id = #{promotionId}
+          AND user_id = #{userId}
+          AND used_quantity + #{quantity} &lt;= #{limit}
+    </update>
+
+</mapper>

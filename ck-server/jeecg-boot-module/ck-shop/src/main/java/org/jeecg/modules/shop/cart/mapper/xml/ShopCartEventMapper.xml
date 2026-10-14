@@ -1,0 +1,144 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="org.jeecg.modules.shop.cart.mapper.ShopCartEventMapper">
+
+    <!-- 店铺可见域：三个分支的语义见 Mapper 接口注释，这里落成 SQL -->
+    <sql id="storeScope">
+        <if test="storeIds != null">
+            <choose>
+                <when test="storeIds.size() == 0">AND 1 = 0</when>
+                <otherwise>
+                    AND e.store_id IN
+                    <foreach collection="storeIds" item="sid" open="(" separator="," close=")">#{sid}</foreach>
+                </otherwise>
+            </choose>
+        </if>
+    </sql>
+
+    <!-- 加购类事件：只有这两类算"加购动作"，改数量/删除不算 -->
+    <sql id="addEventCondition">
+        AND e.event_type IN ('ADD', 'INCR')
+    </sql>
+
+    <!--
+      加购汇总。
+      SUM 结果显式 CAST 成 SIGNED：MySQL 的 SUM(int) 返回 DECIMAL，
+      直接映射到 Java Long 会走类型转换的边界逻辑，显式转换更稳妥。
+    -->
+    <select id="selectAddOverview" resultType="org.jeecg.modules.shop.cart.entity.vo.CartStatsOverviewVO">
+        SELECT COUNT(1)                                             AS addTimes,
+               CAST(COALESCE(SUM(e.quantity), 0) AS SIGNED)         AS addQuantity,
+               COUNT(DISTINCT e.user_id)                            AS addUsers,
+               COUNT(DISTINCT e.product_id)                         AS addProducts,
+               COUNT(DISTINCT NULLIF(e.sku_id, ''))                 AS addSkus
+        FROM ck_shop_cart_event e
+        WHERE e.del_flag = 0
+          <include refid="addEventCondition"/>
+          AND e.create_time &gt;= #{start}
+          AND e.create_time &lt;= #{end}
+          <include refid="storeScope"/>
+    </select>
+
+    <!--
+      按日趋势。
+      DATE_FORMAT 直接产出 yyyy-MM-dd 字符串，避免 DATE 类型映射到 String 时的平台差异。
+    -->
+    <select id="selectDailyTrend" resultType="org.jeecg.modules.shop.cart.entity.vo.CartStatsTrendVO">
+        SELECT DATE_FORMAT(e.create_time, '%Y-%m-%d')       AS statDate,
+               COUNT(1)                                     AS addTimes,
+               CAST(COALESCE(SUM(e.quantity), 0) AS SIGNED) AS addQuantity,
+               COUNT(DISTINCT e.user_id)                    AS addUsers,
+               COUNT(DISTINCT e.product_id)                 AS addProducts
+        FROM ck_shop_cart_event e
+        WHERE e.del_flag = 0
+          <include refid="addEventCondition"/>
+          AND e.create_time &gt;= #{start}
+          AND e.create_time &lt;= #{end}
+          <include refid="storeScope"/>
+        GROUP BY DATE_FORMAT(e.create_time, '%Y-%m-%d')
+        ORDER BY statDate ASC
+    </select>
+
+    <!--
+      热度排行：按 商品 + SKU 维度分组。
+      分组里带上 title/spuCode/coverUrl/skuName 是必要的——MySQL 允许 GROUP BY 使用别名，
+      这样 SELECT 的表达式的确由分组列决定，不会出现 ONLY_FULL_GROUP_BY 报错。
+    -->
+    <select id="selectRank" resultType="org.jeecg.modules.shop.cart.entity.vo.CartStatsRankVO">
+        SELECT e.product_id                                    AS productId,
+               e.sku_id                                        AS skuId,
+               COALESCE(t.title, tz.title, p.spu_code)         AS title,
+               p.spu_code                                      AS spuCode,
+               p.main_image                                    AS coverUrl,
+               p.status                                        AS productStatus,
+               c.combination_name                              AS skuName,
+               COUNT(1)                                        AS addTimes,
+               CAST(COALESCE(SUM(e.quantity), 0) AS SIGNED)    AS addQuantity,
+               COUNT(DISTINCT e.user_id)                       AS addUsers,
+               MAX(e.create_time)                              AS lastAddTime
+        FROM ck_shop_cart_event e
+                 LEFT JOIN ck_shop_product p ON p.id = e.product_id
+                 LEFT JOIN ck_shop_product_translation t
+                           ON t.product_id = e.product_id AND t.language_code = #{lang}
+                 LEFT JOIN ck_shop_product_translation tz
+                           ON tz.product_id = e.product_id AND tz.language_code = #{defaultLang}
+                 LEFT JOIN ck_shop_product_sku_combination c
+                           ON c.id = e.sku_id AND e.sku_id &lt;&gt; ''
+        WHERE e.del_flag = 0
+          <include refid="addEventCondition"/>
+          AND e.create_time &gt;= #{start}
+          AND e.create_time &lt;= #{end}
+          <include refid="storeScope"/>
+        <if test="keyword != null and keyword != ''">
+            AND (t.title LIKE CONCAT('%', #{keyword}, '%')
+                OR tz.title LIKE CONCAT('%', #{keyword}, '%')
+                OR p.spu_code LIKE CONCAT('%', #{keyword}, '%'))
+        </if>
+        GROUP BY e.product_id,
+                 e.sku_id,
+                 COALESCE(t.title, tz.title, p.spu_code),
+                 p.spu_code,
+                 p.main_image,
+                 p.status,
+                 c.combination_name
+        ORDER BY addTimes DESC, addQuantity DESC, MAX(e.create_time) DESC
+        LIMIT #{limit}
+    </select>
+
+    <!-- 加购明细：一排 join 出"谁、什么时候、加了什么规格、几件" -->
+    <select id="selectEventPage" resultType="org.jeecg.modules.shop.cart.entity.vo.CartStatsEventVO">
+        SELECT e.id                                             AS id,
+               e.username                                       AS username,
+               s.name                                           AS storeName,
+               e.product_id                                     AS productId,
+               COALESCE(t.title, tz.title, p.spu_code)          AS title,
+               p.spu_code                                       AS spuCode,
+               e.sku_id                                         AS skuId,
+               c.combination_name                               AS skuName,
+               e.quantity                                       AS quantity,
+               e.event_type                                     AS eventType,
+               e.source                                         AS source,
+               e.create_time                                    AS createTime
+        FROM ck_shop_cart_event e
+                 LEFT JOIN ck_shop_store s ON s.id = e.store_id
+                 LEFT JOIN ck_shop_product p ON p.id = e.product_id
+                 LEFT JOIN ck_shop_product_translation t
+                           ON t.product_id = e.product_id AND t.language_code = #{lang}
+                 LEFT JOIN ck_shop_product_translation tz
+                           ON tz.product_id = e.product_id AND tz.language_code = #{defaultLang}
+                 LEFT JOIN ck_shop_product_sku_combination c
+                           ON c.id = e.sku_id AND e.sku_id &lt;&gt; ''
+        WHERE e.del_flag = 0
+          AND e.create_time &gt;= #{start}
+          AND e.create_time &lt;= #{end}
+          <include refid="storeScope"/>
+        <if test="keyword != null and keyword != ''">
+            AND (t.title LIKE CONCAT('%', #{keyword}, '%')
+                OR tz.title LIKE CONCAT('%', #{keyword}, '%')
+                OR p.spu_code LIKE CONCAT('%', #{keyword}, '%')
+                OR e.username LIKE CONCAT('%', #{keyword}, '%'))
+        </if>
+        ORDER BY e.create_time DESC, e.id DESC
+    </select>
+
+</mapper>

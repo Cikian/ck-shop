@@ -54,6 +54,25 @@ public class ShopProduct implements Serializable {
     @Schema(description = "基准价格")
     private BigDecimal price;
     /**
+     * 成本价（毛利统计口径）。
+     *
+     * <p>下单时会把成本价**快照**进订单明细：采购价会变，
+     * 如果不在下单时锁定，事后算出来的"历史毛利"会随成本价改而变，
+     * 月度报表永远对不上。
+     *
+     * <p>为 0 表示未录入，此时订单毛利偏高——这是显式已知的口径，
+     * 比"编一个成本"诚实。SKU 成本价优先于商品成本价。
+     */
+    @Excel(name = "成本价", width = 15)
+    @Schema(description = "成本价(毛利统计; 0=未录入)")
+    private BigDecimal costPrice;
+    /**
+     * 划线原价/市场价，NULL 表示前端不展示划线价
+     */
+    @Excel(name = "划线原价", width = 15)
+    @Schema(description = "划线原价/市场价，NULL=不展示划线")
+    private BigDecimal originalPrice;
+    /**
      * 最低售价(SKU汇总)
      */
     @Excel(name = "最低售价", width = 15)
@@ -71,6 +90,62 @@ public class ShopProduct implements Serializable {
     @Excel(name = "总库存", width = 15)
     @Schema(description = "总库存")
     private Integer stock;
+    /**
+     * 预占库存（下单占用，支付成功后转实扣）。
+     *
+     * <p>真正可售量 = {@code stock - frozenStock}。
+     * 所有预占都在带条件的原子 UPDATE 里完成（见 {@code ShopStockMapper}），
+     * 不存在"查出来再判断"的超卖窗口。
+     */
+    @Schema(description = "预占库存(下单占用)")
+    private Integer frozenStock;
+    /**
+     * 累计销量
+     */
+    @Excel(name = "累计销量", width = 15)
+    @Schema(description = "累计销量")
+    private Integer salesCount;
+    /**
+     * 近 30 天销量
+     */
+    @Excel(name = "近30天销量", width = 15)
+    @Schema(description = "近 30 天销量")
+    private Integer monthSalesCount;
+    /**
+     * 评价总数
+     */
+    @Excel(name = "评价总数", width = 15)
+    @Schema(description = "评价总数")
+    private Integer reviewCount;
+    /**
+     * 平均评分 0.0-5.0
+     */
+    @Excel(name = "平均评分", width = 15)
+    @Schema(description = "平均评分 0.0-5.0")
+    private BigDecimal ratingAvg;
+    /**
+     * 收藏数
+     */
+    @Excel(name = "收藏数", width = 15)
+    @Schema(description = "收藏数")
+    private Integer favoriteCount;
+    /**
+     * 浏览量
+     */
+    @Excel(name = "浏览量", width = 15)
+    @Schema(description = "浏览量")
+    private Integer viewCount;
+    /**
+     * 是否包邮。
+     *
+     * <p>库里是 {@code tinyint(1)}，这里用 {@code Boolean} 而不是 {@code Integer}：
+     * 店铺端列表接口（StoreProductCardVO）与详情接口（StoreProductDetailVO extends ShopProduct）
+     * 必须返回**同一类型**。否则同一个字段一个返回 {@code true} 另一个返回 {@code 1}，
+     * 前端就得为同一个语义写两套判断，迟早出错。
+     */
+    @Excel(name = "是否包邮", width = 15, replace = {"是_true", "否_false"})
+    @Schema(description = "是否包邮")
+    private Boolean freeShipping;
     /**
      * 单位
      */
@@ -127,6 +202,13 @@ public class ShopProduct implements Serializable {
     @Excel(name = "主图URL", width = 30)
     @Schema(description = "主图URL")
     private String mainImage;
+    /**
+     * 上架时间（NULL 表示从未上架）
+     */
+    @JsonFormat(timezone = "GMT+8", pattern = "yyyy-MM-dd HH:mm:ss")
+    @DateTimeFormat(pattern = "yyyy-MM-dd HH:mm:ss")
+    @Schema(description = "上架时间")
+    private Date listedAt;
     /**
      * 创建人
      */

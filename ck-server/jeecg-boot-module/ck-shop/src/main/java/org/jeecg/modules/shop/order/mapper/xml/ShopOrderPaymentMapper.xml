@@ -1,0 +1,93 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="org.jeecg.modules.shop.order.mapper.ShopOrderPaymentMapper">
+
+    <!--
+      置为支付成功。
+      WHERE 里限定 status IN ('INIT','PENDING')：这就是"重复回调"的判据。
+      渠道普遍会重推 5~8 次，第二次进来时 status 已是 SUCCESS，影响 0 行，
+      调用方据此识别为重复回调并直接 ACK，不会重复写资金流水、不会重复扣库存。
+    -->
+    <update id="markPaid">
+        UPDATE ck_shop_order_payment
+        SET status           = 'SUCCESS',
+            channel_trade_no = #{channelTradeNo},
+            paid_amount      = #{paidAmount},
+            pay_time         = #{payTime},
+            error_code       = NULL,
+            error_msg        = NULL,
+            version          = version + 1,
+            update_by        = #{operator},
+            update_time      = NOW()
+        WHERE id = #{id}
+          AND status IN ('INIT', 'PENDING')
+    </update>
+
+    <update id="markTerminal">
+        UPDATE ck_shop_order_payment
+        SET status      = #{status},
+            error_code  = #{errorCode},
+            error_msg   = #{errorMsg},
+            close_time  = CASE WHEN #{status} = 'CLOSED' THEN NOW() ELSE close_time END,
+            version     = version + 1,
+            update_by   = #{operator},
+            update_time = NOW()
+        WHERE id = #{id}
+          AND status IN
+        <foreach collection="expectStatuses" item="st" open="(" separator="," close=")">#{st}</foreach>
+    </update>
+
+    <!--
+      退款额度锁。
+      条件 refund_amount + delta &lt;= amount 写在 WHERE 里，由 InnoDB 行锁串行化并发退款：
+      第二个并发请求会看到已经加上去的 refund_amount，条件不成立 → 影响 0 行 → 业务层拒绝。
+      "先查 sum 再判断"在这种场景下 100% 会超额，因为查与写之间没有锁。
+    -->
+    <update id="accumulateRefundAmount">
+        UPDATE ck_shop_order_payment
+        SET refund_amount = refund_amount + #{delta},
+            version       = version + 1,
+            update_by     = #{operator},
+            update_time   = NOW()
+        WHERE id = #{id}
+          AND status = 'SUCCESS'
+          AND refund_amount + #{delta} &lt;= amount
+    </update>
+
+    <!-- 渠道退款失败时把预占的额度还回去，避免额度被永久占用 -->
+    <update id="releaseRefundAmount">
+        UPDATE ck_shop_order_payment
+        SET refund_amount = refund_amount - #{delta},
+            version       = version + 1,
+            update_by     = #{operator},
+            update_time   = NOW()
+        WHERE id = #{id}
+          AND refund_amount &gt;= #{delta}
+    </update>
+
+    <update id="recordNotify">
+        UPDATE ck_shop_order_payment
+        SET notify_count     = notify_count + 1,
+            notify_time      = #{notifyTime},
+            last_notify_body = #{body},
+            update_by        = #{operator},
+            update_time      = NOW()
+        WHERE id = #{id}
+    </update>
+
+    <!--
+      补单扫描：只取 INIT/PENDING 且创建时间足够早的单。
+      createdBefore 这个条件很关键——刚下单 1 秒的单去查渠道，渠道那边可能还没落账，
+      查询结果会是"查无此单"，反而触发错误的关单动作。
+    -->
+    <select id="selectStalePending" resultType="org.jeecg.modules.shop.order.entity.ShopOrderPayment">
+        SELECT *
+        FROM ck_shop_order_payment
+        WHERE status IN ('INIT', 'PENDING')
+          AND del_flag = 0
+          AND create_time &lt; #{createdBefore}
+        ORDER BY create_time ASC
+        <if test="limit != null">LIMIT #{limit}</if>
+    </select>
+
+</mapper>

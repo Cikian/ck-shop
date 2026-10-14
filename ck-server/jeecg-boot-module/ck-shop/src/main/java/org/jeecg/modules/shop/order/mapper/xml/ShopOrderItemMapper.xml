@@ -1,0 +1,104 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="org.jeecg.modules.shop.order.mapper.ShopOrderItemMapper">
+
+    <!--
+      排行的统计口径（唯一权威，改动必须同步改这里与 OrderStatsServiceImpl 的注释）：
+
+      1. **只统计已支付订单**：join 订单表并限定 pay_status <> 'UNPAID'。
+         待支付订单还没成交，把它算进销量会让运营做出错误的补货决策。
+
+      2. **按支付时间归集**：用 o.pay_time 而不是 i.create_time。
+         两者在"月底下单、月初付款"时会落在不同月份，而经营看板按付款月看。
+
+      3. **已退款的订单仍然计入销量**：selleck 卖出去了就是卖出去了，
+         退货率是另一个指标。把退款订单从销量里剔除会让"卖了 100 件"变成
+         "卖了 100 件但又变成 80 件"，运营无法判断到底备了多少货。
+
+      4. **不过滤 del_flag**：归档只是列表可见性，不影响历史事实。
+
+      5. **不 join 商品表**：商品名/图/分类一律取订单明细里的快照，
+         保证历史榜单不会因为商品改名而"穿越"。
+    -->
+
+    <sql id="rankScopeFilter">
+        <if test="scope != null">
+            <choose>
+                <when test="scope.size() == 0">AND 1 = 0</when>
+                <otherwise>
+                    AND (
+                    <foreach collection="scope" item="code" separator=" OR ">
+                        i.store_org_code LIKE CONCAT(#{code}, '%')
+                    </foreach>
+                    )
+                </otherwise>
+            </choose>
+        </if>
+        <if test="storeIds != null">
+            <choose>
+                <when test="storeIds.size() == 0">AND 1 = 0</when>
+                <otherwise>
+                    AND i.store_id IN
+                    <foreach collection="storeIds" item="sid" open="(" separator="," close=")">#{sid}</foreach>
+                </otherwise>
+            </choose>
+        </if>
+    </sql>
+
+    <select id="statsRankByProduct" resultType="org.jeecg.modules.shop.order.entity.vo.OrderStatsRankVO">
+        SELECT i.product_id                              AS productId,
+               i.sku_id                                  AS skuId,
+               MAX(i.product_name)                       AS productName,
+               MAX(i.sku_name)                           AS skuName,
+               MAX(i.product_image)                      AS productImage,
+               MAX(i.category_name)                      AS categoryName,
+               COALESCE(SUM(i.quantity), 0)              AS quantity,
+               COUNT(DISTINCT i.order_id)                AS orderCount,
+               COALESCE(SUM(i.actual_amount), 0)         AS salesAmount,
+               COALESCE(SUM(i.actual_amount - i.cost_amount), 0) AS grossProfit
+        FROM ck_shop_order_item i
+                 INNER JOIN ck_shop_order o ON o.id = i.order_id
+        WHERE o.pay_status &lt;&gt; 'UNPAID'
+          AND i.del_flag = 0
+        <if test="start != null">AND o.pay_time &gt;= #{start}</if>
+        <if test="end != null">AND o.pay_time &lt; #{end}</if>
+        <include refid="rankScopeFilter"/>
+        GROUP BY i.product_id, i.sku_id
+        ORDER BY quantity DESC, salesAmount DESC
+        <if test="limit != null">LIMIT #{limit}</if>
+    </select>
+
+    <select id="statsRankByCategory" resultType="org.jeecg.modules.shop.order.entity.vo.OrderStatsRankVO">
+        SELECT i.category_id                             AS productId,
+               ''                                        AS skuId,
+               MAX(i.category_name)                      AS productName,
+               NULL                                      AS skuName,
+               NULL                                      AS productImage,
+               MAX(i.category_name)                      AS categoryName,
+               COALESCE(SUM(i.quantity), 0)              AS quantity,
+               COUNT(DISTINCT i.order_id)                AS orderCount,
+               COALESCE(SUM(i.actual_amount), 0)         AS salesAmount,
+               COALESCE(SUM(i.actual_amount - i.cost_amount), 0) AS grossProfit
+        FROM ck_shop_order_item i
+                 INNER JOIN ck_shop_order o ON o.id = i.order_id
+        WHERE o.pay_status &lt;&gt; 'UNPAID'
+          AND i.del_flag = 0
+        <if test="start != null">AND o.pay_time &gt;= #{start}</if>
+        <if test="end != null">AND o.pay_time &lt; #{end}</if>
+        <include refid="rankScopeFilter"/>
+        GROUP BY i.category_id
+        ORDER BY salesAmount DESC
+        <if test="limit != null">LIMIT #{limit}</if>
+    </select>
+
+    <!-- 列表页批量取明细：一次 IN 查询，避免"每个订单查一次明细"的 N+1 -->
+    <select id="selectByOrderIds" resultType="org.jeecg.modules.shop.order.entity.ShopOrderItem">
+        SELECT *
+        FROM ck_shop_order_item
+        WHERE del_flag = 0
+          AND order_id IN
+        <foreach collection="orderIds" item="oid" open="(" separator="," close=")">#{oid}</foreach>
+        ORDER BY create_time ASC
+    </select>
+
+</mapper>

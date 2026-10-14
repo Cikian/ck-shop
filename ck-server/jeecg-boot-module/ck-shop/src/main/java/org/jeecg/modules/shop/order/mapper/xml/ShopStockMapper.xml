@@ -1,0 +1,163 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="org.jeecg.modules.shop.order.mapper.ShopStockMapper">
+
+    <!--
+      ============================================================================
+      核心判据：可售量 = stock - frozen_stock
+
+      所有预占语句都是这个形式：
+        SET frozen_stock = frozen_stock + qty
+        WHERE id = ? AND stock - frozen_stock >= qty
+
+      判断与修改在**同一条 UPDATE** 里完成，InnoDB 会对该行加锁，
+      并发请求被串行化：第二个请求重新求值 stock - frozen_stock，
+      条件不成立就影响 0 行。"查出来再判断"的写法在这种场景下必然超卖。
+      ============================================================================
+    -->
+
+    <!-- ==================== 无规格商品 ==================== -->
+
+    <!--
+      下单预占。
+      额外要求 status = 'Y'（已上架）与 del_flag = 0：商品在用户点结算的这一瞬间
+      被下架时（运营刚好操作），条件不成立 → 影响 0 行 → 下单失败并提示"商品已下架"，
+      而不是"库存不足"这种误导性提示。
+    -->
+    <update id="occupyProductStock">
+        UPDATE ck_shop_product
+        SET frozen_stock = frozen_stock + #{quantity}
+        WHERE id = #{productId}
+          AND del_flag = 0
+          AND status = 'Y'
+          AND stock - frozen_stock &gt;= #{quantity}
+    </update>
+
+    <!--
+      释放预占。
+      frozen_stock >= quantity 保证不会减成负数（重复关单时影响 0 行，视为已释放）。
+      不加 status/del_flag 条件：商品被下架甚至被删除，也必须能把预占释放掉，
+      否则库存会被永久占用——这是"释放逻辑"与"占用逻辑"必须区别对待的地方。
+    -->
+    <update id="releaseProductStock">
+        UPDATE ck_shop_product
+        SET frozen_stock = frozen_stock - #{quantity}
+        WHERE id = #{productId}
+          AND frozen_stock &gt;= #{quantity}
+    </update>
+
+    <!--
+      支付实扣：库存与预占同时减。
+      要求两者都够：正常链路下预占已经在 OCCUPY 时扣过资格，这里应当必然成功。
+      如果影响 0 行，说明预占被别处释放掉了（例如定时任务误判超时），
+      调用方必须**记录异常并告警**，而不是当作成功继续——
+      否则会出现"付了钱但没扣库存"的超卖。
+    -->
+    <update id="deductProductStock">
+        UPDATE ck_shop_product
+        SET stock        = stock - #{quantity},
+            frozen_stock = frozen_stock - #{quantity},
+            sales_count  = sales_count + #{quantity}
+        WHERE id = #{productId}
+          AND stock &gt;= #{quantity}
+          AND frozen_stock &gt;= #{quantity}
+    </update>
+
+    <!--
+      退款回补。
+      这里**不回滚 sales_count**：销量是"卖出去过"的累计指标，
+      退款是另一个指标（退货率）。把销量减回去会让运营无法判断真实动销，
+      也会让"近 30 天销量"随退款波动，报表一天一个样。
+    -->
+    <update id="restoreProductStock">
+        UPDATE ck_shop_product
+        SET stock = stock + #{quantity}
+        WHERE id = #{productId}
+    </update>
+
+    <!--
+      按 SKU 重算 SPU 汇总库存。
+      子查询查的是另一张表（sku），不违反 MySQL "不能在子查询里引用被更新的表" 的限制。
+
+      为什么用重算（SUM）而不是 stock = stock - qty：
+      ● 重算：每次下单后汇总值自动与 SKU 明细对齐，运营手工调过某个 SKU 也能自愈；
+      ● 增减：任何一次外部改动（运营改 SKU 库存、导入、数据修复）造成的偏差会永久留在汇总上，
+        而且没有任何机制能发现它。
+      多一次子查询的代价，远小于"列表页库存长期不准"的代价。
+
+      WHERE 里的 EXISTS 判断：只对**确实有 SKU** 的商品重算。
+      无规格商品的 stock 是它自己的库存，不能被"SUM(空)=0"覆盖成 0——
+      那会让所有无规格商品看起来都售罄。
+    -->
+    <update id="syncProductStockFromSku">
+        UPDATE ck_shop_product p
+        SET p.stock = (SELECT COALESCE(SUM(c.stock), 0)
+                         FROM ck_shop_product_sku_combination c
+                        WHERE c.product_id = p.id
+                          AND c.del_flag = 0)
+        WHERE p.id = #{productId}
+          AND EXISTS (SELECT 1 FROM ck_shop_product_sku_combination c2
+                       WHERE c2.product_id = p.id AND c2.del_flag = 0)
+    </update>
+
+    <update id="increaseProductSales">
+        UPDATE ck_shop_product
+        SET sales_count = sales_count + #{quantity}
+        WHERE id = #{productId}
+    </update>
+
+    <!-- ==================== SKU ==================== -->
+
+    <update id="occupySkuStock">
+        UPDATE ck_shop_product_sku_combination
+        SET frozen_stock = frozen_stock + #{quantity}
+        WHERE id = #{skuId}
+          AND del_flag = 0
+          AND saleable = 'Y'
+          AND stock - frozen_stock &gt;= #{quantity}
+    </update>
+
+    <update id="releaseSkuStock">
+        UPDATE ck_shop_product_sku_combination
+        SET frozen_stock = frozen_stock - #{quantity}
+        WHERE id = #{skuId}
+          AND frozen_stock &gt;= #{quantity}
+    </update>
+
+    <update id="deductSkuStock">
+        UPDATE ck_shop_product_sku_combination
+        SET stock        = stock - #{quantity},
+            frozen_stock = frozen_stock - #{quantity}
+        WHERE id = #{skuId}
+          AND stock &gt;= #{quantity}
+          AND frozen_stock &gt;= #{quantity}
+    </update>
+
+    <update id="restoreSkuStock">
+        UPDATE ck_shop_product_sku_combination
+        SET stock = stock + #{quantity}
+        WHERE id = #{skuId}
+    </update>
+
+    <!-- ==================== 秒杀限量 ==================== -->
+
+    <!--
+      seckill_stock IS NOT NULL 表示该活动限量；为 NULL 表示不限量。
+      把"是否限量"编码进 SQL 条件，避免调用方判断与执行之间出现分歧。
+    -->
+    <update id="occupyPromotionStock">
+        UPDATE ck_shop_promotion
+        SET seckill_stock = seckill_stock - #{quantity}
+        WHERE id = #{promotionId}
+          AND seckill_stock IS NOT NULL
+          AND seckill_stock &gt;= #{quantity}
+    </update>
+
+    <update id="releasePromotionStock">
+        UPDATE ck_shop_promotion
+        SET seckill_stock = seckill_stock + #{quantity}
+        WHERE id = #{promotionId}
+          AND seckill_stock IS NOT NULL
+    </update>
+
+</mapper>

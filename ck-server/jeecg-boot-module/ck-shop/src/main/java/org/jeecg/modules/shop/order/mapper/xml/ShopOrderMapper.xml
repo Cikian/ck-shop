@@ -1,0 +1,216 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="org.jeecg.modules.shop.order.mapper.ShopOrderMapper">
+
+    <!--
+      ============================================================================
+      统计相关的三条纪律（写在最前面，因为它们决定了数字可不可信）
+
+      1. 统计**不过滤 del_flag**。
+         del_flag 是"归档"标记，只影响后台列表的默认可见性；归档的订单仍然是
+         真实发生过的交易。如果统计把它排除，取消率、退款率会随归档动作而跳变，
+         历史报表每次跑出来的结果都不一样。
+
+      2. 金额一律 COALESCE(..., 0)。
+         没有支付/退款记录时 SUM 返回 NULL，直接映射到 BigDecimal 会变成 null，
+         前端拿到 null 要么显示空白、要么报错。统计口径里"没有"就是 0。
+
+      3. 时间一律用左闭右开区间 [start, end)。
+         用 BETWEEN 会把 end 当天的 00:00:00 也算进去，导致"按天查"时
+         每隔一天的数据对不上。
+      ============================================================================
+    -->
+
+    <!-- 订单表可见域过滤：scope 为部门编码前缀列表（null = 不限） -->
+    <sql id="orderScopeFilter">
+        <if test="scope != null">
+            <choose>
+                <when test="scope.size() == 0">AND 1 = 0</when>
+                <otherwise>
+                    AND (
+                    <foreach collection="scope" item="code" separator=" OR ">
+                        store_org_code LIKE CONCAT(#{code}, '%')
+                    </foreach>
+                    )
+                </otherwise>
+            </choose>
+        </if>
+        <if test="storeIds != null">
+            <choose>
+                <when test="storeIds.size() == 0">AND 1 = 0</when>
+                <otherwise>
+                    AND store_id IN
+                    <foreach collection="storeIds" item="sid" open="(" separator="," close=")">#{sid}</foreach>
+                </otherwise>
+            </choose>
+        </if>
+    </sql>
+
+    <!-- 退款单表可见域过滤（列带 r. 前缀） -->
+    <sql id="refundScopeFilter">
+        <if test="scope != null">
+            <choose>
+                <when test="scope.size() == 0">AND 1 = 0</when>
+                <otherwise>
+                    AND (
+                    <foreach collection="scope" item="code" separator=" OR ">
+                        r.store_org_code LIKE CONCAT(#{code}, '%')
+                    </foreach>
+                    )
+                </otherwise>
+            </choose>
+        </if>
+        <if test="storeIds != null">
+            <choose>
+                <when test="storeIds.size() == 0">AND 1 = 0</when>
+                <otherwise>
+                    AND r.store_id IN
+                    <foreach collection="storeIds" item="sid" open="(" separator="," close=")">#{sid}</foreach>
+                </otherwise>
+            </choose>
+        </if>
+    </sql>
+
+    <sql id="orderTimeRange">
+        <if test="start != null">AND create_time &gt;= #{start}</if>
+        <if test="end != null">AND create_time &lt; #{end}</if>
+    </sql>
+
+    <!--
+      归档：状态条件写在 SQL 里。
+      "已取消/已关闭"之外的状态（待支付/待发货/已发货/已完成）都不允许归档——
+      归档之后订单会从默认列表消失，正在履约的订单消失是运营事故。
+    -->
+    <update id="archiveById">
+        UPDATE ck_shop_order
+        SET del_flag    = 1,
+            update_by   = #{operator},
+            update_time = NOW()
+        WHERE id = #{id}
+          AND del_flag = 0
+          AND order_status IN ('CANCELLED', 'CLOSED')
+    </update>
+
+    <!--
+      原子累加已退款金额。
+      WHERE 里的 refund_amount + delta &lt;= paid_amount 是并发退款超额的根治手段：
+      InnoDB 会对这一行加锁，第二个并发请求读到的 refund_amount 已经是更新后的值，
+      条件不成立 → 影响 0 行 → 调用方拒绝本次退款。
+      另外要求 paid_amount &gt; 0，避免对未支付订单产生"退款"记录。
+    -->
+    <update id="accumulateRefundAmount">
+        UPDATE ck_shop_order
+        SET refund_amount = refund_amount + #{delta},
+            version       = version + 1,
+            update_by     = #{operator},
+            update_time   = NOW()
+        WHERE id = #{id}
+          AND paid_amount &gt; 0
+          AND refund_amount + #{delta} &lt;= paid_amount
+    </update>
+
+    <!-- ==================== 统计：总览 ==================== -->
+    <select id="statsOverview" resultType="org.jeecg.modules.shop.order.entity.vo.OrderStatsOverviewVO">
+        SELECT COUNT(1)                                                                       AS totalOrders,
+               COALESCE(SUM(CASE WHEN order_status = 'WAIT_PAY' THEN 1 ELSE 0 END), 0)         AS waitPayOrders,
+               COALESCE(SUM(CASE WHEN order_status = 'WAIT_SHIP' THEN 1 ELSE 0 END), 0)        AS waitShipOrders,
+               COALESCE(SUM(CASE WHEN order_status = 'SHIPPED' THEN 1 ELSE 0 END), 0)          AS shippedOrders,
+               COALESCE(SUM(CASE WHEN order_status = 'COMPLETED' THEN 1 ELSE 0 END), 0)        AS completedOrders,
+               COALESCE(SUM(CASE WHEN order_status = 'CANCELLED' THEN 1 ELSE 0 END), 0)        AS cancelledOrders,
+               COALESCE(SUM(CASE WHEN order_status = 'CLOSED' THEN 1 ELSE 0 END), 0)           AS closedOrders,
+               COALESCE(SUM(CASE WHEN pay_status &lt;&gt; 'UNPAID' THEN 1 ELSE 0 END), 0)           AS paidOrders,
+               COALESCE(SUM(CASE WHEN pay_status &lt;&gt; 'UNPAID' THEN pay_amount ELSE 0 END), 0)  AS gmv,
+               COALESCE(SUM(CASE WHEN pay_status &lt;&gt; 'UNPAID' THEN paid_amount ELSE 0 END), 0) AS paidAmount,
+               COALESCE(SUM(refund_amount), 0)                                                 AS refundAmount,
+               COALESCE(SUM(CASE WHEN pay_status &lt;&gt; 'UNPAID' THEN discount_amount ELSE 0 END), 0) AS discountAmount,
+               COALESCE(SUM(CASE WHEN pay_status &lt;&gt; 'UNPAID' THEN freight_amount ELSE 0 END), 0)  AS freightAmount,
+               COALESCE(SUM(CASE WHEN pay_status &lt;&gt; 'UNPAID' THEN cost_amount ELSE 0 END), 0)     AS costAmount,
+               COALESCE(SUM(CASE WHEN pay_status &lt;&gt; 'UNPAID' THEN gross_profit ELSE 0 END), 0)    AS grossProfit,
+               COALESCE(SUM(CASE WHEN pay_status &lt;&gt; 'UNPAID' THEN total_quantity ELSE 0 END), 0)  AS totalQuantity,
+               COUNT(DISTINCT user_id)                                                          AS orderUsers
+        FROM ck_shop_order
+        WHERE 1 = 1
+        <include refid="orderTimeRange"/>
+        <include refid="orderScopeFilter"/>
+    </select>
+
+    <!-- ==================== 统计：状态分布 ==================== -->
+    <select id="statsByStatus" resultType="org.jeecg.modules.shop.order.entity.vo.OrderStatsStatusVO">
+        SELECT order_status        AS status,
+               COUNT(1)            AS orderCount,
+               COALESCE(SUM(pay_amount), 0) AS amount
+        FROM ck_shop_order
+        WHERE 1 = 1
+        <include refid="orderTimeRange"/>
+        <include refid="orderScopeFilter"/>
+        GROUP BY order_status
+    </select>
+
+    <!-- ==================== 统计：下单趋势 ==================== -->
+    <select id="statsOrderTrend" resultType="org.jeecg.modules.shop.order.entity.vo.OrderStatsTrendVO">
+        SELECT DATE_FORMAT(create_time, '%Y-%m-%d') AS date,
+               COUNT(1)                             AS orderCount,
+               COALESCE(SUM(total_quantity), 0)     AS quantity
+        FROM ck_shop_order
+        WHERE 1 = 1
+        <include refid="orderTimeRange"/>
+        <include refid="orderScopeFilter"/>
+        GROUP BY DATE_FORMAT(create_time, '%Y-%m-%d')
+        ORDER BY date ASC
+    </select>
+
+    <!-- ==================== 统计：支付趋势（按支付时间归日） ==================== -->
+    <select id="statsPayTrend" resultType="org.jeecg.modules.shop.order.entity.vo.OrderStatsTrendVO">
+        SELECT DATE_FORMAT(pay_time, '%Y-%m-%d') AS date,
+               COUNT(1)                          AS paidCount,
+               COALESCE(SUM(pay_amount), 0)      AS gmv,
+               COALESCE(SUM(paid_amount), 0)     AS paidAmount
+        FROM ck_shop_order
+        WHERE pay_status &lt;&gt; 'UNPAID'
+          AND pay_time IS NOT NULL
+        <if test="start != null">AND pay_time &gt;= #{start}</if>
+        <if test="end != null">AND pay_time &lt; #{end}</if>
+        <include refid="orderScopeFilter"/>
+        GROUP BY DATE_FORMAT(pay_time, '%Y-%m-%d')
+        ORDER BY date ASC
+    </select>
+
+    <!--
+      统计：退款趋势。
+      退款时间只在退款单上（一个订单可能多次部分退款），所以必须从退款单聚合，
+      不能用订单的某个时间字段——那会把"分三次退"合并成一条，逐日退款额就错了。
+      只统计 SUCCESS：退款中的钱还没出去，算进"已退"会让资金对账凭空少一截。
+    -->
+    <select id="statsRefundTrend" resultType="org.jeecg.modules.shop.order.entity.vo.OrderStatsTrendVO">
+        SELECT DATE_FORMAT(r.refund_time, '%Y-%m-%d') AS date,
+               COALESCE(SUM(r.refund_amount), 0)      AS refundAmount
+        FROM ck_shop_order_refund r
+        WHERE r.status = 'SUCCESS'
+          AND r.refund_time IS NOT NULL
+        <if test="start != null">AND r.refund_time &gt;= #{start}</if>
+        <if test="end != null">AND r.refund_time &lt; #{end}</if>
+        <include refid="refundScopeFilter"/>
+        GROUP BY DATE_FORMAT(r.refund_time, '%Y-%m-%d')
+        ORDER BY date ASC
+    </select>
+
+    <!-- 风险指标：已关闭但已收款（正常应为 0） -->
+    <select id="countClosedButPaid" resultType="java.lang.Long">
+        SELECT COUNT(1)
+        FROM ck_shop_order
+        WHERE order_status = 'CLOSED'
+          AND paid_amount &gt; 0
+        <include refid="orderScopeFilter"/>
+    </select>
+
+    <!-- 风险指标：待支付但已过支付截止时间（定时任务待处理量） -->
+    <select id="countOverdueWaitPay" resultType="java.lang.Long">
+        SELECT COUNT(1)
+        FROM ck_shop_order
+        WHERE order_status = 'WAIT_PAY'
+          AND pay_deadline IS NOT NULL
+          AND pay_deadline &lt; #{now}
+        <include refid="orderScopeFilter"/>
+    </select>
+
+</mapper>

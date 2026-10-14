@@ -21,16 +21,18 @@ interface BackendEnvelope<T = any> {
 
 export function createApiClient(
   event: H3Event,
-  options: { withAuth?: boolean } = {}
+  options: { withAuth?: boolean; lang?: string } = {}
 ) {
   const config = useRuntimeConfig(event)
   const signUtils = signMd5Utils({ signSecret: config.signSecret })
 
   // 【核心修改】：从事件上下文中安全获取当前语言代码（如 'zh' 或 'en'）
-  // 1. 优先读取 @nuxtjs/i18n 在服务端解析出来的 event.context.locale
-  // 2. 其次降级读取前端可能在请求中自带的 'x-language' 头部信息
-  // 3. 最后默认回退到 'en'
-  const lang = getHeader(event, 'x-language') || event.context.locale || 'en'
+  // 1. 优先使用调用方显式传入的 lang（BFF 里用 ?lang= 解析出来的值最准确，
+  //    因为 /api/* 这类路径没有语言前缀，i18n 中间件解析不出 event.context.locale）
+  // 2. 其次读取前端可能在请求中自带的 'x-language' 头部信息
+  // 3. 再读 @nuxtjs/i18n 在服务端解析出来的 event.context.locale
+  // 4. 最后默认回退到 'en'
+  const lang = options.lang || getHeader(event, 'x-language') || event.context.locale || 'en'
 
   const headers: Record<string, string> = {}
   let token: string | undefined
@@ -40,8 +42,18 @@ export function createApiClient(
     if (!token) {
       throw createError({ statusCode: 401, statusMessage: '未登录或登录已过期' })
     }
-    headers['x-access-token'] = token
-    headers['Authorization'] = token
+    // ⚠️ 只发**一个** token 头，且用后端真正读取的那个名字：X-Access-Token。
+    //
+    // 曾经这里同时设置 'x-access-token'、'X-Access-Token' 和 'Authorization'。
+    // HTTP 头名大小写不敏感，但 undici 把它们当成三个不同的键各发一遍，
+    // Tomcat 收到重复的 X-Access-Token 后用 ", " 拼成一个值，
+    // 后端拿到的就是 "eyJ...eyJ..., eyJ...eyJ..." ——
+    // JeecgBoot 报 "The token was expected to have 3 parts, but got > 3"（Token非法无效!），
+    // 结果是**所有需要登录态的接口都调不通**。
+    // 本项目此前只有匿名接口，所以这个坑一直没暴露；购物车是第一个要求登录的功能。
+    //
+    // 后端读取位置：config/shiro/filters/JwtFilter#executeLogin 与 common/util/TokenUtils
+    // 都只读 X-Access-Token；'token' 读的是**请求参数**而不是请求头，Authorization 则完全不读。
     headers['X-Access-Token'] = token
     headers['tenant-id'] = '0'
   }
@@ -76,10 +88,6 @@ export function createApiClient(
       options.headers['timestamp'] = timestamp
       options.headers['sign'] = sign
       options.headers['version'] = 'v3'
-
-      if (token) {
-        options.headers['token'] = token
-      }
 
       console.log(`[API →] ${options.method || 'GET'} ${config.apiBaseUrl}${url}`)
     },

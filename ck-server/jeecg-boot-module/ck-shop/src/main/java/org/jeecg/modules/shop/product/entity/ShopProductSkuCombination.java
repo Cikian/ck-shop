@@ -64,10 +64,24 @@ public class ShopProductSkuCombination implements Serializable {
     @Schema(description = "SKU售价")
     private BigDecimal price;
     /**
+     * SKU 成本价，为空回退商品级成本价。
+     *
+     * <p>不同规格成本可能不同（例如大容量内存条更贵），
+     * 因此 SKU 级成本价优先；都为空时按 0 计入毛利。
+     */
+    @Schema(description = "SKU成本价(NULL=回退商品成本价)")
+    private BigDecimal costPrice;
+    /**
      * SKU库存
      */
     @Schema(description = "SKU库存")
     private Integer stock;
+    /**
+     * 预占库存（下单占用，支付成功后转实扣）。
+     * 真正可售量 = {@code stock - frozenStock}。
+     */
+    @Schema(description = "预占库存(下单占用)")
+    private Integer frozenStock;
     /**
      * SKU配图URL
      */

@@ -20,6 +20,14 @@ const DEFAULT_PAGE_NO = 1
 const DEFAULT_PAGE_SIZE = 12
 const MAX_PAGE_SIZE = 60
 
+/**
+ * 排序白名单。
+ * 必须与 Java 后端 queryStorePageList 的 sortBy 取值一一对应；
+ * 这里显式过滤，任何未知取值都会被丢弃（后端走默认排序），
+ * 避免把用户输入原样透传到下游查询。
+ */
+const ALLOWED_SORT_BY = new Set(['sales', 'newest', 'price_asc', 'price_desc'])
+
 export default defineEventHandler(async (event): Promise<StoreProductPage> => {
   const query = getQuery(event)
   const contextLocale = (event.context as Record<string, unknown>).locale
@@ -29,6 +37,9 @@ export default defineEventHandler(async (event): Promise<StoreProductPage> => {
   const pageSize = clampInt(toPositiveInt(query.pageSize, DEFAULT_PAGE_SIZE), 1, MAX_PAGE_SIZE)
   const categoryId = toOptionalQueryString(query.categoryId)
   const keyword = toOptionalQueryString(query.keyword)
+
+  const rawSortBy = toOptionalQueryString(query.sortBy)
+  const sortBy = rawSortBy && ALLOWED_SORT_BY.has(rawSortBy) ? rawSortBy : undefined
 
   const api = createApiClient(event, { withAuth: false })
 
@@ -41,6 +52,7 @@ export default defineEventHandler(async (event): Promise<StoreProductPage> => {
         pageSize,
         ...(categoryId ? { categoryId } : {}),
         ...(keyword ? { keyword } : {}),
+        ...(sortBy ? { sortBy } : {}),
       },
     })
 

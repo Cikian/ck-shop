@@ -1,3 +1,133 @@
+<template>
+  <div class="min-h-screen bg-[var(--color-cream)] pt-navbar">
+    <div class="mx-auto max-w-7xl px-2 pb-16 sm:px-3 lg:px-4">
+      <!-- 面包屑：首页 → 全部分类 → 当前分类 -->
+      <nav
+        class="flex flex-wrap items-center gap-2 pt-6 text-sm text-[var(--color-muted)] sm:pt-8"
+        :aria-label="t('cart.breadcrumbLabel')"
+      >
+        <NuxtLinkLocale
+          to="/"
+          class="cursor-pointer transition-colors hover:text-[var(--color-brand-600)] motion-reduce:transition-none"
+        >
+          {{ t('common.home') }}
+        </NuxtLinkLocale>
+        <UIcon name="lucide:chevron-right" class="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+        <NuxtLinkLocale
+          to="/categories"
+          class="cursor-pointer transition-colors hover:text-[var(--color-brand-600)] motion-reduce:transition-none"
+        >
+          {{ t('categories.title') }}
+        </NuxtLinkLocale>
+        <UIcon name="lucide:chevron-right" class="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+        <span class="font-bold text-[var(--color-ink)]">{{ currentCategory?.name || categoryId }}</span>
+      </nav>
+
+      <header class="mb-7 mt-4 sm:mb-9">
+        <h1 class="text-3xl font-black tracking-tight text-[var(--color-ink)] sm:text-4xl">
+          {{ currentCategory?.name || t('categories.title') }}
+        </h1>
+        <p v-if="!pending && !error" class="mt-2 text-sm text-[var(--color-muted)]">
+          {{ t('products.totalProducts', { count: total }) }}
+        </p>
+      </header>
+
+      <!-- 加载骨架 -->
+      <div
+        v-if="pending"
+        class="product-grid"
+        aria-busy="true"
+      >
+        <span class="sr-only">{{ t('common.loading') }}</span>
+        <div v-for="i in 12" :key="i" class="ui-card animate-pulse overflow-hidden">
+          <div class="aspect-square bg-[var(--color-line-soft)]"></div>
+          <div class="space-y-2 p-3.5">
+            <div class="h-4 w-full rounded bg-[var(--color-line-soft)]"></div>
+            <div class="h-4 w-2/3 rounded bg-[var(--color-line-soft)]"></div>
+            <div class="h-6 w-1/3 rounded bg-[var(--color-line-soft)]"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 错误态 -->
+      <div v-else-if="error" class="ui-card flex flex-col items-center px-6 py-16 text-center">
+        <span class="flex h-16 w-16 items-center justify-center rounded-full bg-[var(--color-error-50)] text-[var(--color-error-600)]">
+          <UIcon name="lucide:wifi-off" class="h-7 w-7" aria-hidden="true" />
+        </span>
+        <h2 class="mt-5 text-lg font-black text-[var(--color-ink)]">{{ t('products.loadError') }}</h2>
+        <p class="mt-2 text-sm text-[var(--color-muted)]">{{ t('products.loadErrorDesc') }}</p>
+        <button type="button" class="ui-pill ui-pill-brand mt-6 h-11 px-6 text-sm" @click="refresh()">
+          <UIcon name="lucide:rotate-ccw" class="h-4 w-4" aria-hidden="true" />
+          {{ t('common.retry') }}
+        </button>
+      </div>
+
+      <!-- 空态：该分类下确实没有在售商品 -->
+      <div v-else-if="!records.length" class="ui-card flex flex-col items-center px-6 py-16 text-center">
+        <span class="flex h-16 w-16 items-center justify-center rounded-full bg-[var(--color-brand-50)] text-[var(--color-brand-500)]">
+          <UIcon name="lucide:package-search" class="h-7 w-7" aria-hidden="true" />
+        </span>
+        <p class="mt-5 text-sm font-bold text-[var(--color-ink)]">{{ t('products.noProducts') }}</p>
+        <NuxtLinkLocale to="/products" class="ui-pill ui-pill-ghost mt-6 h-11 px-6 text-sm">
+          <UIcon name="lucide:layout-grid" class="h-4 w-4" aria-hidden="true" />
+          {{ t('products.all') }}
+        </NuxtLinkLocale>
+      </div>
+
+      <!-- 商品网格：统一用新的 StoreProductCard（价格/角标/统计的渲染契约都在组件里） -->
+      <template v-else>
+        <div class="product-grid">
+          <StoreProductCard v-for="product in records" :key="product.id" :product="product" />
+        </div>
+
+        <!-- 分页（后端分页：pageNo / pageSize） -->
+        <nav
+          v-if="totalPages > 1"
+          class="mt-10 flex flex-wrap items-center justify-center gap-2"
+          :aria-label="t('products.pagination')"
+        >
+          <button
+            type="button"
+            class="flex h-10 min-w-[44px] cursor-pointer items-center justify-center gap-1 rounded-full border border-[var(--color-line)] bg-white px-3 text-sm font-bold text-[var(--color-ink-soft)] transition-colors hover:border-[var(--color-brand-300)] hover:text-[var(--color-brand-600)] disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:border-[var(--color-line)] disabled:hover:text-[var(--color-ink-soft)] motion-reduce:transition-none"
+            :disabled="currentPage <= 1"
+            @click="goToPage(currentPage - 1)"
+          >
+            <UIcon name="lucide:chevron-left" class="h-4 w-4" aria-hidden="true" />
+            <span class="hidden sm:inline">{{ t('products.prev') }}</span>
+          </button>
+
+          <button
+            v-for="pageNumber in pageWindow"
+            :key="pageNumber"
+            type="button"
+            class="flex h-10 min-w-[44px] cursor-pointer items-center justify-center rounded-full border px-3 text-sm font-bold transition-colors motion-reduce:transition-none"
+            :class="pageNumber === currentPage
+              ? 'border-[var(--color-brand-500)] bg-[var(--color-brand-500)] text-white'
+              : 'border-[var(--color-line)] bg-white text-[var(--color-ink-soft)] hover:border-[var(--color-brand-300)] hover:text-[var(--color-brand-600)]'"
+            :aria-current="pageNumber === currentPage ? 'page' : undefined"
+            @click="goToPage(pageNumber)"
+          >
+            {{ pageNumber }}
+          </button>
+
+          <button
+            type="button"
+            class="flex h-10 min-w-[44px] cursor-pointer items-center justify-center gap-1 rounded-full border border-[var(--color-line)] bg-white px-3 text-sm font-bold text-[var(--color-ink-soft)] transition-colors hover:border-[var(--color-brand-300)] hover:text-[var(--color-brand-600)] disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:border-[var(--color-line)] disabled:hover:text-[var(--color-ink-soft)] motion-reduce:transition-none"
+            :disabled="currentPage >= totalPages"
+            @click="goToPage(currentPage + 1)"
+          >
+            <span class="hidden sm:inline">{{ t('products.next') }}</span>
+            <UIcon name="lucide:chevron-right" class="h-4 w-4" aria-hidden="true" />
+          </button>
+        </nav>
+      </template>
+    </div>
+
+    <!-- Footer：与首页 / 商品列表 / 个人中心保持一致（登录页是唯一不加页脚的页面） -->
+    <SiteFooter />
+  </div>
+</template>
+
 <script setup lang="ts">
 // 某个分类下的商品列表（含子分类的商品——后端按"分类及其后代"匹配）。
 //
@@ -39,6 +169,7 @@ const {
   data: page,
   pending,
   error,
+  refresh,
 } = await useStoreProductList({
   pageNo,
   pageSize,
@@ -49,6 +180,17 @@ const records = computed(() => page.value?.records ?? [])
 const total = computed(() => page.value?.total ?? 0)
 const currentPage = computed(() => page.value?.current || pageNo.value)
 const totalPages = computed(() => Math.max(1, page.value?.pages ?? 0))
+
+/** 页码窗口：最多 5 个，围绕当前页展开（与商品列表页保持一致） */
+const pageWindow = computed(() => {
+  const pages = totalPages.value
+  const current = currentPage.value
+  const size = Math.min(5, pages)
+  let start = Math.max(1, current - Math.floor(size / 2))
+  const end = Math.min(pages, start + size - 1)
+  start = Math.max(1, end - size + 1)
+  return Array.from({ length: end - start + 1 }, (_, index) => start + index)
+})
 
 // 切换分类时回到第 1 页，否则会停留在上一个分类的页码上
 watch(categoryId, () => {
@@ -69,73 +211,3 @@ useSeoMeta({
   description: () => t('categories.description'),
 })
 </script>
-
-<template>
-  <div class="min-h-screen bg-[var(--color-background)] pt-navbar">
-    <div class="mx-auto max-w-7xl px-4 pb-16 sm:px-6 lg:px-8">
-      <header class="mb-8 pt-8 sm:pt-10">
-        <!-- 面包屑：分类总览 → 当前分类 -->
-        <nav class="mb-3 flex items-center gap-2 text-sm text-[var(--color-text-muted)]">
-          <NuxtLinkLocale to="/categories" class="transition-colors hover:text-[var(--color-accent)]">
-            {{ t('categories.title') }}
-          </NuxtLinkLocale>
-          <span>/</span>
-          <span class="text-[var(--color-text)]">{{ currentCategory?.name || categoryId }}</span>
-        </nav>
-        <h1 class="text-3xl font-bold text-[var(--color-primary)] sm:text-4xl">
-          {{ currentCategory?.name || t('categories.title') }}
-        </h1>
-        <p class="mt-2 text-sm text-[var(--color-text-muted)]">
-          {{ t('products.totalProducts', { count: total }) }}
-        </p>
-      </header>
-
-      <p v-if="pending" class="py-16 text-center text-sm text-[var(--color-text-muted)]">
-        {{ t('common.loading') }}
-      </p>
-
-      <p
-        v-else-if="error"
-        class="rounded-xl border border-dashed border-[var(--color-border)] p-12 text-center text-sm text-[var(--color-text-muted)]"
-      >
-        {{ t('products.noProductsDesc') }}
-      </p>
-
-      <p
-        v-else-if="!records.length"
-        class="rounded-xl border border-dashed border-[var(--color-border)] p-12 text-center text-sm text-[var(--color-text-muted)]"
-      >
-        {{ t('products.noProducts') }}
-      </p>
-
-      <template v-else>
-        <div class="grid grid-cols-2 gap-4 sm:gap-6 lg:grid-cols-3 xl:grid-cols-4">
-          <StoreProductCard v-for="product in records" :key="product.id" :product="product" />
-        </div>
-
-        <!-- 分页 -->
-        <nav v-if="totalPages > 1" class="mt-10 flex items-center justify-center gap-2">
-          <button
-            type="button"
-            class="rounded-lg border border-[var(--color-border)] px-3 py-1.5 text-sm disabled:opacity-40"
-            :disabled="currentPage <= 1"
-            @click="goToPage(currentPage - 1)"
-          >
-            {{ t('products.previous') }}
-          </button>
-          <span class="px-2 text-sm text-[var(--color-text-muted)]">
-            {{ currentPage }} / {{ totalPages }}
-          </span>
-          <button
-            type="button"
-            class="rounded-lg border border-[var(--color-border)] px-3 py-1.5 text-sm disabled:opacity-40"
-            :disabled="currentPage >= totalPages"
-            @click="goToPage(currentPage + 1)"
-          >
-            {{ t('products.next') }}
-          </button>
-        </nav>
-      </template>
-    </div>
-  </div>
-</template>

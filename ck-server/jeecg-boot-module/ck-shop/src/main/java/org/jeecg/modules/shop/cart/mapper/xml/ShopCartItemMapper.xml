@@ -1,0 +1,152 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="org.jeecg.modules.shop.cart.mapper.ShopCartItemMapper">
+
+    <!--
+      购物车明细 + 商品 + 翻译 + SKU，一条 SQL 取全。
+
+      刻意不做的事：
+        1. 不 JOIN 时过滤 p.del_flag：商品被软删除时要能查出这一行并标记为"已失效"，
+           直接过滤掉会让用户在购物车里"看不见任何东西却也不知道为什么"。
+        2. 不 JOIN 时过滤 c.del_flag：同理，需要把"SKU 已删除"作为一个明确的失效原因。
+
+      规格值明细不做 JOIN：combination_name 是下单时展示所需的规格文案快照，
+      足够渲染"白色/8G/256G"，少一次关联就少一处性能与口径风险。
+    -->
+    <select id="selectStoreCartItems" resultType="org.jeecg.modules.shop.cart.entity.vo.StoreCartItemVO">
+        SELECT ci.id                      AS id,
+               ci.product_id              AS productId,
+               ci.sku_id                  AS skuId,
+               ci.quantity                AS quantity,
+               ci.create_time             AS createTime,
+               ci.update_time             AS updateTime,
+               p.spu_code                 AS spuCode,
+               p.unit                     AS unit,
+               p.status                   AS productStatus,
+               p.sys_org_code             AS productOrgCode,
+               p.del_flag                 AS productDelFlag,
+               COALESCE(t.title, tz.title, p.spu_code)                                  AS title,
+               COALESCE(NULLIF(t.cover_url, ''), NULLIF(tz.cover_url, ''), p.main_image) AS coverUrl,
+               c.sku_code                 AS skuCode,
+               c.combination_name         AS skuName,
+               c.saleable                 AS skuSaleable,
+               c.del_flag                 AS skuDelFlag,
+               COALESCE(c.price, p.price) AS price,
+               COALESCE(c.stock, p.stock) AS stock,
+               (SELECT COUNT(1)
+                  FROM ck_shop_product_sku_combination x
+                 WHERE x.product_id = ci.product_id
+                   AND x.del_flag = 0)   AS skuTypeCount
+        FROM ck_shop_cart_item ci
+                 LEFT JOIN ck_shop_product p ON p.id = ci.product_id
+                 LEFT JOIN ck_shop_product_translation t
+                           ON t.product_id = ci.product_id AND t.language_code = #{lang}
+                 LEFT JOIN ck_shop_product_translation tz
+                           ON tz.product_id = ci.product_id AND tz.language_code = #{defaultLang}
+                 LEFT JOIN ck_shop_product_sku_combination c
+                           ON c.id = ci.sku_id AND ci.sku_id &lt;&gt; ''
+        WHERE ci.user_id = #{userId}
+          AND ci.store_id = #{storeId}
+          AND ci.del_flag = 0
+        ORDER BY ci.update_time DESC, ci.id DESC
+    </select>
+
+    <!-- 含已软删除的行：重新加购时靠它判断"是插入还是复活旧行" -->
+    <select id="selectAnyBySku" resultType="org.jeecg.modules.shop.cart.entity.ShopCartItem">
+        SELECT *
+        FROM ck_shop_cart_item
+        WHERE user_id = #{userId}
+          AND store_id = #{storeId}
+          AND product_id = #{productId}
+          AND sku_id = #{skuId}
+        LIMIT 1
+    </select>
+
+    <!--
+      写入目标数量并复活（del_flag 置回 0）。
+      直接写入最终值而不是 quantity = quantity + #{quantity}：
+      目标值已在 Service 里按"当前数量 + 新增数量，并封顶库存"算好，
+      由数据库做原子赋值，天然避免"并发加购把数量加到超过库存"。
+    -->
+    <update id="mergeQuantity">
+        UPDATE ck_shop_cart_item
+        SET quantity    = #{quantity},
+            del_flag    = 0,
+            update_by   = #{operator},
+            update_time = NOW()
+        WHERE user_id = #{userId}
+          AND store_id = #{storeId}
+          AND product_id = #{productId}
+          AND sku_id = #{skuId}
+    </update>
+
+    <update id="softDeleteByIds">
+        UPDATE ck_shop_cart_item
+        SET del_flag    = 1,
+            update_by   = #{operator},
+            update_time = NOW()
+        WHERE user_id = #{userId}
+          AND store_id = #{storeId}
+          AND del_flag = 0
+          AND id IN
+        <foreach collection="ids" item="itemId" open="(" separator="," close=")">
+            #{itemId}
+        </foreach>
+    </update>
+
+    <update id="softDeleteAll">
+        UPDATE ck_shop_cart_item
+        SET del_flag    = 1,
+            update_by   = #{operator},
+            update_time = NOW()
+        WHERE user_id = #{userId}
+          AND store_id = #{storeId}
+          AND del_flag = 0
+    </update>
+
+    <select id="countItems" resultType="java.lang.Long">
+        SELECT COUNT(1)
+        FROM ck_shop_cart_item
+        WHERE del_flag = 0
+        <if test="storeIds != null">
+            <choose>
+                <when test="storeIds.size() == 0">AND 1 = 0</when>
+                <otherwise>
+                    AND store_id IN
+                    <foreach collection="storeIds" item="sid" open="(" separator="," close=")">#{sid}</foreach>
+                </otherwise>
+            </choose>
+        </if>
+    </select>
+
+    <select id="sumQuantity" resultType="java.lang.Long">
+        SELECT COALESCE(SUM(quantity), 0)
+        FROM ck_shop_cart_item
+        WHERE del_flag = 0
+        <if test="storeIds != null">
+            <choose>
+                <when test="storeIds.size() == 0">AND 1 = 0</when>
+                <otherwise>
+                    AND store_id IN
+                    <foreach collection="storeIds" item="sid" open="(" separator="," close=")">#{sid}</foreach>
+                </otherwise>
+            </choose>
+        </if>
+    </select>
+
+    <select id="countUsers" resultType="java.lang.Long">
+        SELECT COUNT(DISTINCT user_id)
+        FROM ck_shop_cart_item
+        WHERE del_flag = 0
+        <if test="storeIds != null">
+            <choose>
+                <when test="storeIds.size() == 0">AND 1 = 0</when>
+                <otherwise>
+                    AND store_id IN
+                    <foreach collection="storeIds" item="sid" open="(" separator="," close=")">#{sid}</foreach>
+                </otherwise>
+            </choose>
+        </if>
+    </select>
+
+</mapper>

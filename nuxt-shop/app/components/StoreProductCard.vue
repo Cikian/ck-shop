@@ -1,101 +1,236 @@
 <template>
-  <NuxtLinkLocale
-    :to="`/products/${product.id}`"
-    class="group relative flex flex-col overflow-hidden rounded-[var(--radius-card)] bg-[var(--color-surface)] transition-all duration-500 hover:-translate-y-2 hover:shadow-2xl hover:shadow-[var(--color-primary)]/10 motion-reduce:transition-none motion-reduce:hover:translate-y-0"
-  >
-    <!-- 封面 -->
-    <div class="relative overflow-hidden rounded-t-[var(--radius-card)] bg-[var(--color-surface-secondary)]">
-      <div class="aspect-square">
+  <article class="ui-card ui-card-hover group flex flex-col overflow-hidden">
+    <!-- 封面 + 信息：整块是一个链接，点击进入商品详情 -->
+    <NuxtLinkLocale :to="`/products/${product.id}`" class="flex flex-1 flex-col">
+      <div class="relative aspect-square overflow-hidden bg-[var(--color-surface-secondary)]">
         <img
           v-if="coverUrl"
           :src="coverUrl"
           :alt="product.title"
-          class="h-full w-full object-cover transition-transform duration-700 ease-out group-hover:scale-110 motion-reduce:transition-none motion-reduce:group-hover:scale-100"
+          class="h-full w-full object-cover transition-transform duration-500 ease-out group-hover:scale-105 motion-reduce:transition-none motion-reduce:group-hover:scale-100"
           loading="lazy"
-        />
-        <div v-else class="flex h-full w-full items-center justify-center text-[var(--color-text-muted)]">
-          <UIcon name="lucide:image-off" class="h-10 w-10" />
+        >
+        <div v-else class="flex h-full w-full items-center justify-center text-[var(--color-muted)]">
+          <UIcon name="lucide:image-off" class="h-9 w-9" aria-hidden="true" />
+        </div>
+
+        <!-- 角标：只渲染真实存在的推荐标记与 HOT/SALE/NEW/PICK 标签 -->
+        <div v-if="imageBadges.length" class="absolute left-2.5 top-2.5 flex flex-wrap gap-1.5">
+          <span
+            v-if="product.isRecommend === 'Y'"
+            class="badge badge-new"
+          >
+            {{ t('products.recommended') }}
+          </span>
+          <span
+            v-for="tag in imageBadges"
+            :key="tag.id"
+            class="badge"
+            :class="badgeToneClass(tag.code)"
+          >
+            {{ tag.name }}
+          </span>
+        </div>
+
+        <!-- 无货遮罩 -->
+        <div
+          v-if="!inStock"
+          class="absolute inset-0 flex items-center justify-center bg-white/68 backdrop-blur-[1px]"
+        >
+          <span class="rounded-full bg-[var(--color-ink)]/80 px-3 py-1.5 text-xs font-bold text-white">
+            {{ t('products.stock.outOfStock') }}
+          </span>
         </div>
       </div>
 
-      <!-- 推荐 / 标签 -->
-      <div class="absolute left-3 top-3 flex flex-wrap gap-2">
-        <span
-          v-if="product.isRecommend === 'Y'"
-          class="inline-flex items-center gap-1 rounded-full bg-[var(--color-primary)] px-3 py-1 text-xs font-bold text-white shadow-lg"
-        >
-          <UIcon name="lucide:thumbs-up" class="h-3 w-3" />
-          {{ t('products.recommended') }}
-        </span>
-        <span
-          v-for="tag in visibleTags"
-          :key="tag.id"
-          class="inline-flex items-center gap-1 rounded-full bg-[var(--color-accent)] px-3 py-1 text-xs font-bold text-white shadow-lg shadow-[var(--color-accent)]/30"
-        >
-          {{ tag.name }}
-        </span>
-      </div>
-    </div>
+      <!-- 信息区 -->
+      <div class="flex flex-1 flex-col p-3.5">
+        <h3 class="line-clamp-2 text-[15px] font-bold leading-snug text-[var(--color-ink)] transition-colors group-hover:text-[var(--color-brand-600)]">
+          {{ product.title }}
+        </h3>
 
-    <!-- 信息 -->
-    <div class="flex flex-1 flex-col p-4 sm:p-5">
-      <span
-        v-if="categoryLine"
-        class="text-xs font-medium uppercase tracking-wider text-[var(--color-text-muted)] transition-colors duration-300 group-hover:text-[var(--color-accent)]"
+        <p v-if="product.subTitle" class="mt-1.5 line-clamp-1 text-xs text-[var(--color-muted)]">
+          {{ product.subTitle }}
+        </p>
+
+        <!-- 价格：现价超大 + 划线原价（跨价格区间时展示最低价，区间说明留给详情页） -->
+        <div class="mt-2.5 flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+          <span class="price text-[26px] leading-none">{{ priceText }}</span>
+          <span v-if="priceView.showOriginal" class="price-strike text-xs">{{ originalText }}</span>
+        </div>
+
+        <!-- 统计行：销量为 0 时整行不渲染 -->
+        <p v-if="statsText" class="mt-1.5 text-xs text-[var(--color-muted)]">
+          {{ statsText }}
+        </p>
+
+        <!-- 服务标签 -->
+        <div v-if="serviceTags.length || product.freeShipping" class="mt-2.5 flex flex-wrap gap-1.5">
+          <span v-if="product.freeShipping" class="tag-service">{{ t('shop.freeShipping') }}</span>
+          <span v-for="tag in serviceTags" :key="tag.id" class="tag-service">
+            {{ tag.name }}
+          </span>
+        </div>
+      </div>
+    </NuxtLinkLocale>
+
+    <!--
+      快捷加购。
+      卡片上拿不到规格信息，所以这里**先查一次详情**再决定：
+        - 商品有规格 → 跳到详情页去选规格（绝不替用户随便挑一个 SKU 塞进购物车）；
+        - 无规格商品 → 直接加购，一次点击完成。
+      多花一次请求换来的是"购物车里永远不会有没选规格的东西"，这个交换是划算的。
+    -->
+    <div class="px-3.5 pb-3.5">
+      <button
+        type="button"
+        class="ui-pill ui-pill-brand h-9 w-full text-[13px] disabled:cursor-not-allowed disabled:opacity-45"
+        :disabled="!inStock || adding"
+        :aria-busy="adding"
+        :aria-label="`${t('products.addToCart')} - ${product.title}`"
+        @click="handleQuickAdd"
       >
-        {{ categoryLine }}
-      </span>
-
-      <h3 class="mt-1 line-clamp-2 text-base font-semibold text-[var(--color-primary)] transition-colors duration-300 group-hover:text-[var(--color-accent)] sm:text-lg">
-        {{ product.title }}
-      </h3>
-
-      <p v-if="product.subTitle" class="mt-1 line-clamp-2 text-sm text-[var(--color-text-muted)]">
-        {{ product.subTitle }}
-      </p>
-
-      <div class="mt-auto flex items-end justify-between gap-2 border-t border-[var(--color-border-light)] pt-3">
-        <div class="flex flex-col">
-          <span class="text-xl font-bold text-[var(--color-primary)]">{{ priceText }}</span>
-          <span v-if="product.unit" class="text-xs text-[var(--color-text-muted)]">/ {{ product.unit }}</span>
-        </div>
-        <span
-          class="inline-flex items-center gap-1 text-xs font-medium"
-          :class="inStock ? 'text-[var(--color-success)]' : 'text-[var(--color-error)]'"
-        >
-          <UIcon :name="inStock ? 'lucide:package-check' : 'lucide:package-x'" class="h-3.5 w-3.5" />
-          {{ inStock ? t('products.stock.inStock') : t('products.stock.outOfStock') }}
-        </span>
-      </div>
+        <UIcon
+          :name="adding ? 'lucide:loader-circle' : 'lucide:shopping-cart'"
+          class="h-4 w-4"
+          :class="adding ? 'animate-spin' : ''"
+          aria-hidden="true"
+        />
+        {{ adding ? t('product.adding') : t('products.addToCart') }}
+      </button>
     </div>
-  </NuxtLinkLocale>
+  </article>
 </template>
 
 <script setup lang="ts">
-import type { StoreProductCard } from '~~/types/shop-product'
-import { resolveCoverUrl } from '~~/types/shop-product'
+import type { StoreProductCard, StoreProductDetail, ShopTagRef, BadgeTone } from '~~/types/shop-product'
+import {
+  formatCompactCount,
+  resolveCoverUrl,
+  resolvePriceView,
+  resolveRating,
+  resolveTagTone,
+} from '~~/types/shop-product'
 import { useStorePrice } from '~~/composables/useProducts'
+import { extractCartErrorMessage, useCart } from '~~/composables/useCart'
+import { useAuth } from '~~/composables/useAuth'
 
 /**
- * 店铺端商品卡片：只展示后端真实字段（title / subTitle / coverUrl / mainImage /
- * minPrice / maxPrice / price / stock / tags / categoryName / isRecommend）。
- * 后端没有 rating / reviewCount / 折扣 等概念，这里不做任何伪造。
+ * 店铺端商品卡片（国内电商风格）。
+ *
+ * 只展示后端真实字段，且遵守统一渲染契约：
+ *   salesCount / ratingAvg / reviewCount / favoriteCount 为 0 时，
+ *   对应元素**整块不渲染**，绝不显示 0 或兜底假数据。
+ *   originalPrice 只有在严格高于现价时才显示划线。
+ *
+ * 角标与价格的计算逻辑全部来自 types/shop-product.ts，
+ * 组件里不做第二套判断（避免同类逻辑散落十几处后逐渐不一致）。
  */
 const props = defineProps<{
   product: StoreProductCard
 }>()
 
-const { t } = useI18n()
-const { formatRange } = useStorePrice()
+const { t, locale } = useI18n()
+const { formatCompact } = useStorePrice()
+const { addItem } = useCart()
+const { isLoggedIn } = useAuth()
+const toast = useToast()
+const route = useRoute()
+const localePath = useLocalePath()
+
+const adding = ref(false)
 
 const coverUrl = computed(() => resolveCoverUrl(props.product))
 const inStock = computed(() => props.product.stock > 0)
-const priceText = computed(() => formatRange(props.product.minPrice, props.product.maxPrice, props.product.price))
-const categoryLine = computed(() =>
-  [props.product.categoryName].filter(Boolean).join(' · '),
-)
-const visibleTags = computed(() => {
-  const max = props.product.isRecommend === 'Y' ? 2 : 3
-  return (props.product.tags || []).slice(0, max)
+
+const priceView = computed(() => resolvePriceView(props.product))
+const priceText = computed(() => {
+  const value = priceView.value.price
+  if (value === null) return '--'
+  return formatCompact(value)
 })
+const originalText = computed(() =>
+  priceView.value.originalPrice === null ? '' : formatCompact(priceView.value.originalPrice),
+)
+
+/** 统计行：销量与评分都没有数据时返回空串 → 整行不渲染 */
+const statsText = computed(() => {
+  const parts: string[] = []
+  if (props.product.salesCount > 0) {
+    parts.push(t('shop.sold', { count: formatCompactCount(props.product.salesCount) }))
+  }
+  const rating = resolveRating(props.product)
+  if (rating !== null) {
+    parts.push(`★ ${rating.toFixed(1)}`)
+  }
+  return parts.join(' · ')
+})
+
+/** 封面角标：HOT / SALE / NEW / PICK 最多 3 个 */
+const IMAGE_BADGE_CODES = new Set(['HOT', 'SALE', 'NEW', 'PICK'])
+const imageBadges = computed<ShopTagRef[]>(() => {
+  const limit = props.product.isRecommend === 'Y' ? 2 : 3
+  return (props.product.tags || [])
+    .filter(tag => IMAGE_BADGE_CODES.has((tag.code || '').toUpperCase()))
+    .slice(0, limit)
+})
+
+/** 信息区服务标签：FAST / TOP（其余商品级标签已作为角标展示，不重复） */
+const SERVICE_TAG_CODES = new Set(['FAST', 'TOP'])
+const serviceTags = computed<ShopTagRef[]>(() =>
+  (props.product.tags || [])
+    .filter(tag => SERVICE_TAG_CODES.has((tag.code || '').toUpperCase()))
+    .slice(0, 2),
+)
+
+function badgeToneClass(code: string | null | undefined): string {
+  const tone: BadgeTone = resolveTagTone(code)
+  switch (tone) {
+    case 'hot':
+      return 'badge-hot'
+    case 'sale':
+      return 'badge-sale'
+    case 'new':
+      return 'badge-new'
+    default:
+      return 'badge-soft'
+  }
+}
+
+async function handleQuickAdd() {
+  if (adding.value) return
+
+  if (!isLoggedIn.value) {
+    await navigateTo(localePath({ path: '/login', query: { redirect: route.fullPath } }))
+    return
+  }
+
+  adding.value = true
+  try {
+    // 卡片数据里没有规格，先取详情：只在"点击加购"这一刻多花一次请求
+    const detail = await $fetch<StoreProductDetail>(
+      `/api/products/${encodeURIComponent(props.product.id)}`,
+      { query: { lang: locale.value } },
+    )
+
+    if (detail?.specs?.length) {
+      // 有规格：必须让用户自己选，绝不替他默认一个 SKU
+      toast.add({ title: t('product.selectSpecFirst'), color: 'warning', icon: 'lucide:info' })
+      await navigateTo(localePath(`/products/${props.product.id}`))
+      return
+    }
+
+    await addItem({ productId: props.product.id, skuId: '', quantity: 1, source: 'list' })
+    toast.add({ title: t('product.addedToCart'), color: 'success', icon: 'lucide:check' })
+  } catch (error) {
+    toast.add({
+      title: t('cart.actionFailed'),
+      description: extractCartErrorMessage(error, t('cart.loadErrorDesc')),
+      color: 'error',
+      icon: 'lucide:circle-alert',
+    })
+  } finally {
+    adding.value = false
+  }
+}
 </script>

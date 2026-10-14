@@ -3,6 +3,7 @@ package org.jeecg.modules.shop.product.controller;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.extern.slf4j.Slf4j;
@@ -66,6 +67,8 @@ public class ShopStoreProductController extends JeecgController<ShopProduct, ISh
     public Result<IPage<StoreProductCardVO>> list(@RequestParam(name = "lang", required = false) String lang,
                                                   @RequestParam(name = "categoryId", required = false) String categoryId,
                                                   @RequestParam(name = "keyword", required = false) String keyword,
+                                                  @Parameter(description = "排序方式: sales-销量 / newest-最新上架 / price_asc-价格升序 / price_desc-价格降序，留空或不识别时用默认排序")
+                                                  @RequestParam(name = "sortBy", required = false) String sortBy,
                                                   @RequestParam(name = "pageNo", defaultValue = "1") Integer pageNo,
                                                   @RequestParam(name = "pageSize", defaultValue = "12") Integer pageSize,
                                                   HttpServletRequest req) {
@@ -77,7 +80,7 @@ public class ShopStoreProductController extends JeecgController<ShopProduct, ISh
             return Result.OK(emptyPage(pageNo, pageSize));
         }
         return Result.OK(shopProductService.queryStorePageList(
-                orgCode, language, categoryId, keyword, pageNo, pageSize));
+                orgCode, language, categoryId, keyword, pageNo, pageSize, sortBy));
     }
 
     /** 店铺归属缺失时返回的空分页（与正常分页结构一致，前端无需特殊处理） */

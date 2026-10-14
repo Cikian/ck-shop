@@ -1,0 +1,85 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="org.jeecg.modules.shop.order.mapper.ShopOrderStatsMapper">
+
+    <sql id="cartScopeFilter">
+        <if test="scope != null">
+            <choose>
+                <when test="scope.size() == 0">AND 1 = 0</when>
+                <otherwise>
+                    AND (
+                    <foreach collection="scope" item="code" separator=" OR ">
+                        org_code LIKE CONCAT(#{code}, '%')
+                    </foreach>
+                    )
+                </otherwise>
+            </choose>
+        </if>
+        <if test="storeIds != null">
+            <choose>
+                <when test="storeIds.size() == 0">AND 1 = 0</when>
+                <otherwise>
+                    AND store_id IN
+                    <foreach collection="storeIds" item="sid" open="(" separator="," close=")">#{sid}</foreach>
+                </otherwise>
+            </choose>
+        </if>
+    </sql>
+
+    <sql id="refundScopeFilter">
+        <if test="scope != null">
+            <choose>
+                <when test="scope.size() == 0">AND 1 = 0</when>
+                <otherwise>
+                    AND (
+                    <foreach collection="scope" item="code" separator=" OR ">
+                        store_org_code LIKE CONCAT(#{code}, '%')
+                    </foreach>
+                    )
+                </otherwise>
+            </choose>
+        </if>
+        <if test="storeIds != null">
+            <choose>
+                <when test="storeIds.size() == 0">AND 1 = 0</when>
+                <otherwise>
+                    AND store_id IN
+                    <foreach collection="storeIds" item="sid" open="(" separator="," close=")">#{sid}</foreach>
+                </otherwise>
+            </choose>
+        </if>
+    </sql>
+
+    <!--
+      加购用户数。
+      注意 org_code 可能为空（历史数据）：为空的行在"限定部门"时不会被计入，
+      在"不限部门"（scope = null）时会被计入。这是刻意的——
+      限定某部门统计时，无归属的数据不能算到该部门头上。
+    -->
+    <select id="countCartUsers" resultType="java.lang.Long">
+        SELECT COUNT(DISTINCT user_id)
+        FROM ck_shop_cart_event
+        WHERE event_type IN ('ADD', 'INCR')
+        <if test="start != null">AND create_time &gt;= #{start}</if>
+        <if test="end != null">AND create_time &lt; #{end}</if>
+        <include refid="cartScopeFilter"/>
+    </select>
+
+    <select id="countPendingRefunds" resultType="java.lang.Long">
+        SELECT COUNT(1)
+        FROM ck_shop_order_refund
+        WHERE status = 'APPLYING'
+          AND del_flag = 0
+        <include refid="refundScopeFilter"/>
+    </select>
+
+    <select id="countPendingPayments" resultType="java.lang.Long">
+        SELECT COUNT(1)
+        FROM ck_shop_order_payment
+        WHERE status IN ('INIT', 'PENDING')
+          AND del_flag = 0
+        <if test="createdBefore != null">AND create_time &lt; #{createdBefore}</if>
+        <include refid="refundScopeFilter"/>
+    </select>
+
+</mapper>
