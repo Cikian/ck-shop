@@ -29,6 +29,8 @@ spring:
     # 定时任务发送邮件
     timeJobSend: false
     host: smtp.163.com
+    # 端口：465=SSL，587=STARTTLS。不写默认 25（明文）
+    port: ${MAIL_PORT:465}
     username: jeecgos@163.com
     password: ??
     properties:
@@ -36,7 +38,8 @@ spring:
       mail.smtp.connectiontimeout: 10000  # 连接超时（毫秒）
       mail.smtp.writetimeout: 10000  # 写入超时（毫秒）
       mail.smtp.auth: true
-      smtp.ssl.enable: true
+      # 必须是全限定名 mail.smtp.ssl.enable，漏掉 mail. 前缀会被 JavaMail 静默忽略
+      mail.smtp.ssl.enable: true
       mail.debug: true  # 启用调试模式(查看详细日志)
   ## quartz定时任务,采用数据库方式
   quartz:

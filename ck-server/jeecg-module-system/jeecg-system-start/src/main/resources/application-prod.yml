@@ -31,11 +31,14 @@ spring:
     # 定时任务发送邮件
     timeJobSend: false
     host: smtp.163.com
+    # 端口：465=SSL，587=STARTTLS。不写默认 25（明文）
+    port: ${MAIL_PORT:465}
     username: jeecgos@163.com
     password: ??
     properties:
       mail.smtp.auth: true
-      smtp.ssl.enable: true
+      # 必须是全限定名 mail.smtp.ssl.enable，漏掉 mail. 前缀会被 JavaMail 静默忽略
+      mail.smtp.ssl.enable: true
   ## quartz定时任务,采用数据库方式
   quartz:
     job-store-type: jdbc
@@ -284,7 +287,7 @@ jeecg:
     #webapp文件路径
     webapp: /opt/jeecg-boot/webapp
   shiro:
-    excludeUrls: /test/jeecgDemo/demo3,/test/jeecgDemo/redisDemo/**,/bigscreen/category/**,/bigscreen/visual/**,/bigscreen/map/**,/jmreport/bigscreen2/**,/api/getUserInfo
+    excludeUrls: /test/jeecgDemo/demo3,/test/jeecgDemo/redisDemo/**,/bigscreen/category/**,/bigscreen/visual/**,/bigscreen/map/**,/jmreport/bigscreen2/**,/api/getUserInfo,/shop/account/email/send-code,/shop/account/register,/shop/account/login/**,/shop/account/google/**,/shop/account/password/reset
   # 短信发送方式 aliyun阿里云短信 tencent腾讯云短信
   smsSendType: aliyun
   #阿里云oss存储和大鱼短信秘钥配置
@@ -418,3 +421,14 @@ ck:
     expire: 3600
     object-dir-prefix: dir
     api-domain: TELECOM
+#店铺端 Google 账号登录（C 端买家登录入口，由 ck-shop 的 ShopGoogleOAuthService 实现）
+#  与上面的 justauth/GITHUB 是两套独立实现：justauth 是 JeecgBoot 原生第三方登录，
+#  这里的 google.* 服务于店铺端买家的注册/登录（自动建号或绑定已有账号 + 签发 token）。
+#  ⚠️ redirect-uri 只是兜底：正常流程回调地址由前端站点 origin 推导
+#     （Google 要求授权与换 token 两处 redirect_uri 逐字一致）。
+#     两项留空时后端仍能启动，只是 Google 登录接口返回"尚未配置"的明确错误，
+#     前端据此禁用按钮，不影响邮箱登录。
+google:
+  client-id: ${GOOGLE_CLIENT_ID:}
+  client-secret: ${GOOGLE_CLIENT_SECRET:}
+  redirect-uri: ${GOOGLE_REDIRECT_URI:http://localhost:3000/auth/google/callback}
