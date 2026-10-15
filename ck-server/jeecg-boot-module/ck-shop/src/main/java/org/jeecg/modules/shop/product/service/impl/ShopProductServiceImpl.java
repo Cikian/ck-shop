@@ -14,7 +14,9 @@ import org.jeecg.modules.shop.category.entity.ShopCategory;
 import org.jeecg.modules.shop.category.entity.ShopCategoryTranslation;
 import org.jeecg.modules.shop.category.mapper.ShopCategoryMapper;
 import org.jeecg.modules.shop.category.mapper.ShopCategoryTranslationMapper;
+import org.jeecg.modules.shop.common.ShopOrgUtils;
 import org.jeecg.modules.shop.common.ShopSqlUtils;
+import org.jeecg.modules.shop.common.ShopOrgUtils;
 import org.jeecg.modules.shop.common.util.ShopAuditUtils;
 import org.jeecg.modules.shop.product.entity.ShopProduct;
 import org.jeecg.modules.shop.product.entity.ShopProductImage;
@@ -487,7 +489,7 @@ public class ShopProductServiceImpl extends ServiceImpl<ShopProductMapper, ShopP
         }
         // getById 走 MP 的逻辑删除：已软删除的商品直接查不到
         ShopProduct product = super.getById(productId);
-        if (product == null || !matchesOrg(product.getSysOrgCode(), orgCode)) {
+        if (product == null || !ShopOrgUtils.matchesOrg(product.getSysOrgCode(), orgCode)) {
             throw new JeecgBootException("商品在当前店铺不存在或已下架!");
         }
         if (!"Y".equals(product.getStatus())) {
@@ -585,7 +587,7 @@ public class ShopProductServiceImpl extends ServiceImpl<ShopProductMapper, ShopP
          * 少了这一步，任何人换个 spu_code / 商品 id 就能看到别店的商品详情——
          * 多店铺最典型的事故就是这一类"忘了带店铺条件"。
          */
-        if (!matchesOrg(product.getSysOrgCode(), orgCode)) {
+        if (!ShopOrgUtils.matchesOrg(product.getSysOrgCode(), orgCode)) {
             throw new JeecgBootException("商品在当前店铺不存在或已下架!");
         }
         // 与店铺端列表保持一致：商品总开关下架也不对外暴露详情
@@ -629,11 +631,6 @@ public class ShopProductServiceImpl extends ServiceImpl<ShopProductMapper, ShopP
      * 与后台一致地采用前缀语义："店铺绑定部门"及其下级部门的商品，前台都能看到，
      * 避免"运营把商品挂到子部门后，前台反而什么都看不到"的诡异现象。
      */
-    private boolean matchesOrg(String productOrgCode, String storeOrgCode) {
-        return StringUtils.isNotBlank(productOrgCode)
-                && StringUtils.isNotBlank(storeOrgCode)
-                && productOrgCode.startsWith(storeOrgCode);
-    }
 
     // ==================================================================
     // 子表写入

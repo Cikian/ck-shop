@@ -37,6 +37,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
+import org.jeecg.modules.shop.common.ShopOrgUtils;
 
 /**
  * <p>
@@ -391,7 +392,7 @@ public class ShopCartServiceImpl extends ServiceImpl<ShopCartItemMapper, ShopCar
                 || item.getProductDelFlag() == 1
                 || StringUtils.isBlank(storeOrgCode)
                 || StringUtils.isBlank(item.getProductOrgCode())
-                || !item.getProductOrgCode().startsWith(storeOrgCode)
+                || !ShopOrgUtils.matchesOrg(item.getProductOrgCode(), storeOrgCode)
                 || !"Y".equals(item.getProductStatus())) {
             // 商品被删除 / 不属于当前店铺 / 已下架：统一按"已下架"提示，
             // 不把"别店商品"这种内部细节暴露给前台用户
@@ -499,7 +500,7 @@ public class ShopCartServiceImpl extends ServiceImpl<ShopCartItemMapper, ShopCar
             throw new JeecgBootException("商品已下架，无法加入购物车");
         }
         String productOrgCode = StringUtils.trimToNull(product.getSysOrgCode());
-        if (productOrgCode == null || !productOrgCode.startsWith(ctx.getStoreOrgCode())) {
+        if (!ShopOrgUtils.matchesOrg(productOrgCode, ctx.getStoreOrgCode())) {
             throw new JeecgBootException("商品在当前店铺不存在或已下架");
         }
     }
