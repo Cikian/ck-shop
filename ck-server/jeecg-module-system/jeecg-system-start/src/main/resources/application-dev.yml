@@ -475,10 +475,17 @@ ck:
     # 兜底店铺编码（仅本地开发/直连调试用）
     default-store-code: default
     # 是否允许"解析不到店铺就回退到默认店铺"。
-    # 【生产环境务必设为 false】：某个前台站点漏配 STORE_CODE、或域名没登记到
-    # ck_shop_store.domain 时，回退会让它静默展示默认店铺的商品（页面一切正常、无法察觉）。
+    # 【非 dev 环境必须为 false，其它 profile 已显式写死 false】：
+    # 某个前台站点漏配 STORE_CODE、或域名没登记到 ck_shop_store.domain 时，
+    # 回退会让它静默展示默认店铺的商品（页面一切正常、无法察觉）。
     # 关掉后这种配置错误会直接报错，属"宁可吵也不要错"。
     allow-default-store-fallback: true
+    # 结算价格令牌（防价格篡改/挂旧价）。
+    order:
+      # 签名密钥：dev 留空会退化为"进程内随机密钥"（重启即失效，仅便于本地开发）；
+      # 非 dev 环境留空则**启动直接失败**（见 PriceTokenUtils#validateSecret）。
+      price-token-secret: ${CK_PRICE_TOKEN_SECRET:}
+      price-token-ttl-seconds: ${CK_PRICE_TOKEN_TTL_SECONDS:900}
     # 店铺端验证码邮件发件人兜底。留空时回退 spring.mail.username。
     # 邮箱服务商通常要求 From 与登录账号一致，所以默认就跟 spring.mail.username 走，
     # 只有需要"代发"（如 noreply@ 与登录账号不同）时才显式配置。

@@ -105,11 +105,11 @@ spring:
   datasource:
     druid:
       stat-view-servlet:
-        enabled: true
-        loginUsername: admin
-        # 默认弱口令，部署前务必修改
-        loginPassword: 123456
-        allow:
+        # 监控台关闭：Shiro 对 /druid/** 是 anon（框架默认），且历史上这里带明文弱口令（123456），
+        # 公网可达时等于把连接池监控面板连同数据库连接信息一起送出去。
+        # 排障需临时开启时，必须同时：改成强口令（或用 ${DRUID_STAT_USERNAME}/${DRUID_STAT_PASSWORD} 注入）、
+        # 通过 allow 限制来源 IP、并确认 Shiro 未对 /druid/** 放行。
+        enabled: false
       web-stat-filter:
         enabled: true
     #打开多数据源，加上上面的就可以实现多数据源的配置
@@ -244,7 +244,7 @@ jeecg:
     # 是否开启三级等保强密码校验（true 开启强密码模式，false 使用简单密码规则）
     enableStrongPwd: false
   # 签名密钥串(前后端要一致，正式发布请自行修改)
-  signatureSecret: dd05f1c54d63749eda95f9fa6d49v442a
+  signatureSecret: ${JEECG_SIGNATURE_SECRET}
   #签名拦截接口
   signUrls: /sys/dict/getDictItems/*,/sys/dict/loadDict/*,/sys/dict/loadDictOrderByValue/*,/sys/dict/loadDictItem/*,/sys/dict/loadTreeData,/sys/api/queryTableDictItemsByCode,/sys/api/queryFilterTableDictInfo,/sys/api/queryTableDictByKeys,/sys/api/translateDictFromTable,/sys/api/translateDictFromTableByKeys,/sys/sendChangePwdSms,/sys/user/sendChangePhoneSms,/sys/sms,/desform/api/sendVerifyCode
   # 上传类型：local（本地存储）| minio（MinIO对象存储）| alioss（阿里云OSS）
@@ -291,7 +291,7 @@ jeecg:
     #多租户模式，默认值为空(created:按照创建人隔离、tenant:按照租户隔离)
     saasMode:
     # 签名密钥串(前后端要一致，正式发布请自行修改)
-    signatureSecret: dd05f1c54d63749eda95f9fa6d49v442a
+    signatureSecret: ${JMREPORT_SIGNATURE_SECRET}
     ai:
       # OpenAI 兼容 base 地址（必填）
       base-url: https://api.deepseek.com
@@ -388,3 +388,18 @@ justauth:
     type: default
     prefix: 'demo::'
     timeout: 1h
+
+# ===== 多店铺与结算令牌（ck-shop 模块）=====
+ck:
+  # ===== 多店铺与结算令牌（ck-shop 模块）=====
+  shop:
+    # 兜底店铺编码：仅当 allow-default-store-fallback 为 true 时才会用到
+    default-store-code: ${CK_DEFAULT_STORE_CODE:default}
+    # 【必须保持 false】解析不到店铺就报错，绝不静默回退到默认店铺。
+    # 回退会让漏配 STORE_CODE 的前台站点展示默认店铺的商品（A 店卖 B 店的货，页面毫无报错）。
+    allow-default-store-fallback: false
+    order:
+      # 结算价格令牌签名密钥：非 dev 环境必须配置，否则 PriceTokenUtils 启动即失败；
+      # 多实例部署必须各实例一致，否则 A 实例签发的令牌在 B 实例验签失败，用户无法下单。
+      price-token-secret: ${CK_PRICE_TOKEN_SECRET:}
+      price-token-ttl-seconds: ${CK_PRICE_TOKEN_TTL_SECONDS:900}
