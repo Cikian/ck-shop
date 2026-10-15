@@ -55,6 +55,8 @@
  * 「能不能取消」不由本组件判断：调用方只在列表/详情返回 canCancel === true 时
  * 才让用户打开它，后端也会再校验一次（只允许待支付订单被买家取消）。
  */
+import { readErrorMessage } from '~~/composables/useApiError'
+
 const props = defineProps<{
   open: boolean
   orderNo: string
@@ -78,12 +80,6 @@ watch(() => props.open, (open) => {
   }
 })
 
-/** 从 $fetch 抛出的错误里取出可读文案（后端业务异常 message 是中文，直接展示） */
-function readErrorMessage(error: unknown): string {
-  const err = error as any
-  return err?.data?.statusMessage || err?.data?.message || err?.statusMessage || err?.message || t('order.actionFailed')
-}
-
 async function submit() {
   if (submitting.value) return
   submitting.value = true
@@ -98,7 +94,7 @@ async function submit() {
   } catch (error) {
     toast.add({
       title: t('order.actionFailed'),
-      description: readErrorMessage(error),
+      description: readErrorMessage(error, t('order.actionFailed')),
       color: 'error',
       icon: 'lucide:circle-alert',
     })

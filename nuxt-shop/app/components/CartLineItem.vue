@@ -54,6 +54,8 @@
             v-if="item.coverUrl && !imageFailed"
             :src="item.coverUrl"
             :alt="item.title"
+            width="72"
+            height="72"
             class="h-full w-full object-cover transition-transform duration-300 motion-reduce:transition-none"
             :class="invalid ? 'opacity-40 grayscale' : 'group-hover:scale-105'"
             loading="lazy"

@@ -388,6 +388,7 @@ definePageMeta({ middleware: 'auth' })
 import { extractCartErrorMessage, useCart } from '~~/composables/useCart'
 import { writeCheckoutSnapshot } from '~~/composables/useCheckoutSnapshot'
 import { useStorePrice, useStoreProductList } from '~~/composables/useProducts'
+import { useLoginLink } from '~~/composables/useLoginLink'
 import { toNumberOrNull } from '~~/types/shop-product'
 import type { StoreCartItem } from '~~/types/shop-cart'
 
@@ -407,7 +408,6 @@ import type { StoreCartItem } from '~~/types/shop-cart'
 
 const { t, locale } = useI18n()
 const localePath = useLocalePath()
-const route = useRoute()
 const toast = useToast()
 const { formatCompact } = useStorePrice()
 
@@ -448,10 +448,7 @@ const confirmState = reactive({
   kind: 'clear' as 'clear' | 'remove' | 'invalid',
 })
 
-const loginLink = computed(() => localePath({
-  path: '/login',
-  query: { redirect: route.fullPath },
-}))
+const loginLink = useLoginLink()
 
 /** 登录态下才显示"共 N 件商品"；未登录显示登录引导文案，已登录空车则交给空状态卡片说明 */
 const showSubtitle = computed(() => !unauthorized.value && items.value.length > 0)

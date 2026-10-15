@@ -119,6 +119,8 @@
                     v-if="item.productImage"
                     :src="item.productImage"
                     :alt="item.productName || ''"
+                    width="72"
+                    height="72"
                     class="h-full w-full object-cover"
                     loading="lazy"
                   >
@@ -286,6 +288,9 @@ import { toIntlLocale, toNumberOrNull } from '~~/types/shop-product'
 import { useStorePrice } from '~~/composables/useProducts'
 import { clearCheckoutSnapshot, readCheckoutSnapshot } from '~~/composables/useCheckoutSnapshot'
 import type { CheckoutSnapshotItem } from '~~/composables/useCheckoutSnapshot'
+import { isPositive, isUnauthorizedError, readErrorMessage } from '~~/composables/useApiError'
+import { useIdempotencyKey } from '~~/composables/useIdempotencyKey'
+import { useLoginLink } from '~~/composables/useLoginLink'
 
 /**
  * 结算页（下单闭环第一步）。
@@ -403,18 +408,11 @@ const selectedAddressId = ref<string | null>(null)
 const buyerRemark = ref('')
 
 /**
- * 幂等键：进入结算页时生成一次，所有提交重试复用同一个值。
+ * 幂等键：进入结算页时生成一次（setup 顶层调用一次），所有提交重试复用同一个值。
  * 见文件头注释 —— 这是后端幂等的前提，绝不能每次点击都重新生成。
+ * 生成/降级逻辑在 composables/useIdempotencyKey.ts，prefix 'order' 用于非安全上下文兜底。
  */
-const idempotentKey = ref('')
-
-/** 生成幂等键（非安全上下文下降级，保证 http + 局域网 IP 访问时也能下单） */
-function newIdempotentKey(): string {
-  if (import.meta.client && typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
-    return crypto.randomUUID()
-  }
-  return `order-${Date.now()}-${Math.random().toString(16).slice(2, 10)}`
-}
+const idempotentKey = useIdempotencyKey('order')
 
 const amount = computed(() => preview.value?.amount ?? null)
 
@@ -445,32 +443,11 @@ const tokenExpireText = computed(() => {
   }).format(new Date(expireAt))
 })
 
-const loginLink = computed(() => localePath({
-  path: '/login',
-  query: { redirect: route.fullPath },
-}))
+const loginLink = useLoginLink()
 
 /** 有值（含 0）即 true —— 用于"这一行该不该渲染" */
 function hasNumber(value: unknown): boolean {
   return toNumberOrNull(value) !== null
-}
-
-/** 严格大于 0 —— 只有真的产生了优惠才渲染优惠行，0 元优惠行是噪音 */
-function isPositive(value: unknown): boolean {
-  const num = toNumberOrNull(value)
-  return num !== null && num > 0
-}
-
-/** 从 $fetch 抛出的错误里取出可读文案（后端业务异常 message 是中文，直接展示） */
-function readErrorMessage(error: unknown, fallback: string): string {
-  const err = error as any
-  return err?.data?.statusMessage || err?.data?.message || err?.statusMessage || err?.message || fallback
-}
-
-function isUnauthorizedError(error: unknown): boolean {
-  const err = error as any
-  const code = err?.statusCode ?? err?.status ?? err?.data?.statusCode
-  return code === 401 || code === 403
 }
 
 /** 从 sessionStorage 读购物车页 / 详情页「立即购买」写入的结算快照 */
@@ -651,11 +628,7 @@ async function submitOrder() {
   }
 }
 
-onMounted(async () => {
-  // 幂等键必须在"进入页面"时生成一次，早于任何一次提交
-  idempotentKey.value = newIdempotentKey()
-  await bootstrap()
-})
+onMounted(bootstrap)
 
 useSeoMeta({
   title: () => t('order.checkoutTitle'),

@@ -91,7 +91,11 @@
               :key="mainImage"
               :src="mainImage"
               :alt="product.title"
+              width="600"
+              height="600"
               class="aspect-square w-full object-cover"
+              loading="eager"
+              fetchpriority="high"
             >
             <div v-else class="flex aspect-square w-full items-center justify-center text-[var(--color-muted)]">
               <UIcon name="lucide:image-off" class="h-14 w-14" aria-hidden="true" />
@@ -153,7 +157,7 @@
               :aria-current="activeImageIndex === idx ? 'true' : undefined"
               @click="activeImageIndex = idx"
             >
-              <img :src="img" :alt="`${product.title} ${idx + 1}`" class="aspect-square w-full object-cover" loading="lazy">
+              <img :src="img" :alt="`${product.title} ${idx + 1}`" width="600" height="600" class="aspect-square w-full object-cover" loading="lazy">
             </button>
           </div>
         </div>

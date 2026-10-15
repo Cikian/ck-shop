@@ -179,6 +179,9 @@ definePageMeta({ middleware: 'auth' })
 
 import { toNumberOrNull } from '~~/types/shop-product'
 import { useStorePrice } from '~~/composables/useProducts'
+import { isUnauthorizedError, readErrorMessage } from '~~/composables/useApiError'
+import { createIdempotencyKey } from '~~/composables/useIdempotencyKey'
+import { useLoginLink } from '~~/composables/useLoginLink'
 
 /**
  * 支付页（下单闭环第二步）。
@@ -276,10 +279,7 @@ const remainSeconds = ref(0)
 const nowTick = ref(Date.now())
 let tickTimer: ReturnType<typeof setInterval> | null = null
 
-const loginLink = computed(() => localePath({
-  path: '/login',
-  query: { redirect: route.fullPath },
-}))
+const loginLink = useLoginLink()
 const detailLink = computed(() => localePath({
   path: `/orders/${orderNo.value}`,
 }))
@@ -304,18 +304,6 @@ const payParams = computed(() => {
   if (!params || typeof params !== 'object') return []
   return Object.entries(params).map(([key, value]) => ({ key, value: String(value) }))
 })
-
-/** 从 $fetch 抛出的错误里取出可读文案（后端业务异常 message 是中文，直接展示） */
-function readErrorMessage(error: unknown, fallback: string): string {
-  const err = error as any
-  return err?.data?.statusMessage || err?.data?.message || err?.statusMessage || err?.message || fallback
-}
-
-function isUnauthorizedError(error: unknown): boolean {
-  const err = error as any
-  const code = err?.statusCode ?? err?.status ?? err?.data?.statusCode
-  return code === 401 || code === 403
-}
 
 // ---------------------------------------------------------------------------
 // 倒计时
@@ -535,16 +523,12 @@ async function refreshPaidStatus() {
 }
 
 /**
- * 发起支付的幂等键：进页面时生成一次。
+ * 发起支付的幂等键：进页面时生成一次（setup 顶层），所有重试复用同一个值。
  * 不是 crypto.randomUUID() 会怎样？用户连点「立即支付」时后端可能建多条支付单；
  * 后端虽然用"订单号 + 当前待支付支付单"兜底，但把幂等键交准是调用方的责任。
+ * 生成/降级逻辑在 composables/useIdempotencyKey.ts，prefix 'pay' 用于非安全上下文兜底。
  */
-const prepayRequestId = (() => {
-  if (import.meta.client && typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
-    return crypto.randomUUID()
-  }
-  return `pay-${Date.now()}-${Math.random().toString(16).slice(2, 10)}`
-})()
+const prepayRequestId = createIdempotencyKey('pay')
 
 onMounted(loadOrder)
 onBeforeUnmount(() => {

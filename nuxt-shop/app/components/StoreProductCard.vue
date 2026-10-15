@@ -7,6 +7,8 @@
           v-if="coverUrl"
           :src="coverUrl"
           :alt="product.title"
+          width="600"
+          height="600"
           class="h-full w-full object-cover transition-transform duration-500 ease-out group-hover:scale-105 motion-reduce:transition-none motion-reduce:group-hover:scale-100"
           loading="lazy"
         >

@@ -78,16 +78,27 @@
   --color-info-600: #2563EB;
 
   /* ===== 兼容别名（旧页面引用） ===== */
-  --color-background: #FFF6F2;
-  --color-surface: #FFFFFF;
+  /*
+   * 只保留仍在被引用的：
+   *   --color-surface-secondary   app/** 里有 30 处 var(--color-surface-secondary)
+   *
+   * 已删除（全仓库零引用，grep 证据见本次改动说明）：
+   *   --color-background / --color-surface / --color-text / --color-text-secondary /
+   *   --color-text-muted / --color-border / --color-border-light /
+   *   --color-primary-light / --color-accent-light
+   */
   --color-surface-secondary: #FDF2EE;
-  --color-text: #1F1A1C;
-  --color-text-secondary: #4A4244;
-  --color-text-muted: #8A8189;
-  --color-border: #F0E2E0;
-  --color-border-light: #F7ECEA;
 
-  /* 旧 primary = 深墨色：未重构页面用它做标题与深色按钮，仍然可读 */
+  /*
+   * ⚠️ 旧 primary = 深墨色阶梯，**这一组不要当死代码删掉**。
+   *
+   * @nuxt/ui 会在自己生成的 CSS 里用 `@theme default inline` 定义同名 token
+   *   --color-primary-50..950: var(--ui-color-primary-*)
+   *   --color-primary: var(--ui-primary)
+   * "default" 的语义是"没有被覆盖时才生效"，而 @nuxt/ui 默认 primary = green。
+   * 删掉这里的覆盖，所有走 Nuxt UI primary 的组件样式会从深墨色变成绿色 ——
+   * 那是改视觉，不是删死代码。
+   */
   --color-primary: #1F1A1C;
   --color-primary-50:  #FAF7F7;
   --color-primary-100: #F2EDEE;
@@ -100,10 +111,6 @@
   --color-primary-800: #2A2326;
   --color-primary-900: #1F1A1C;
   --color-primary-950: #131011;
-  --color-primary-light: #3A3134;
-
-  /* 旧 accent = 品牌珊瑚玫红 */
-  --color-accent-light: #FF738C;
 
   /* ===== 圆角 ===== */
   --radius-card: 20px;
@@ -429,97 +436,15 @@ body {
 }
 
 /* ==========================================================================
-   旧工具类：保留以免未重构页面错乱
-   ========================================================================== */
-
-.glass {
-  background: rgba(255, 255, 255, 0.86);
-  backdrop-filter: blur(20px) saturate(160%);
-  -webkit-backdrop-filter: blur(20px) saturate(160%);
-}
-
-.glass-dark {
-  background: rgba(31, 26, 28, 0.72);
-  backdrop-filter: blur(20px) saturate(160%);
-  -webkit-backdrop-filter: blur(20px) saturate(160%);
-}
-
-.glass-nav {
-  background: rgba(255, 255, 255, 0.92);
-  backdrop-filter: blur(20px) saturate(180%);
-  -webkit-backdrop-filter: blur(20px) saturate(180%);
-  box-shadow: 0 1px 0 rgba(31, 26, 28, 0.04);
-}
-
-.text-gradient {
-  background: linear-gradient(120deg, var(--color-brand-600) 0%, var(--color-brand-400) 100%);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
-}
-
-.text-gradient-primary {
-  background: linear-gradient(120deg, var(--color-ink) 0%, var(--color-ink-soft) 100%);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
-}
-
-.bg-hero-gradient {
-  background:
-    radial-gradient(ellipse 70% 55% at 50% 0%, rgba(255, 77, 109, 0.10) 0%, transparent 62%),
-    radial-gradient(ellipse 60% 50% at 10% 15%, rgba(255, 213, 74, 0.12) 0%, transparent 55%),
-    linear-gradient(180deg, #FFF6F2 0%, #FFF1F3 100%);
-}
-
-.bg-accent-gradient {
-  background: linear-gradient(120deg, var(--color-brand-600) 0%, var(--color-brand-400) 100%);
-}
-
-.bg-primary-gradient {
-  background: linear-gradient(120deg, #2A2326 0%, #1F1A1C 100%);
-}
-
-.card-hover {
-  transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-.card-hover:hover {
-  transform: translateY(-4px);
-  box-shadow: var(--shadow-card-hover);
-}
-
-.img-zoom {
-  overflow: hidden;
-}
-
-.img-zoom img {
-  transition: transform 0.6s cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-.img-zoom:hover img {
-  transform: scale(1.08);
-}
-
-.btn-shine {
-  position: relative;
-  overflow: hidden;
-}
-
-.btn-shine::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: -100%;
-  width: 100%;
-  height: 100%;
-  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.32), transparent);
-  transition: left 0.6s ease;
-}
-
-.btn-shine:hover::before {
-  left: 100%;
-}
+   旧工具类
+   ==========================================================================
+ *
+ * 说明：原先这里还留着一批"旧页面兼容"的类（.glass / .glass-dark / .glass-nav /
+ * .text-gradient* / .bg-hero-gradient / .bg-accent-gradient / .bg-primary-gradient /
+ * .card-hover / .img-zoom / .btn-shine），它们在全仓库（app/**、composables/**、
+ * server/**、types/**、public/**）已经**零引用**（grep：`class="..."`、`:class` 数组、
+ * 模板字符串里都没有），本次删除。只保留仍在用的 .pt-navbar。
+ */
 
 /*
  * 固定导航占位。
@@ -540,81 +465,20 @@ body {
 
 /* ==========================================================================
    动画
-   ========================================================================== */
-
-@keyframes float {
-  0%, 100% { transform: translateY(0); }
-  50% { transform: translateY(-12px); }
-}
-
-@keyframes shimmer {
-  0% { background-position: -200% 0; }
-  100% { background-position: 200% 0; }
-}
+   ==========================================================================
+ *
+ * 只保留真正被使用的 .animate-fade-in-up（app/pages/products/index.vue）。
+ * 其余关键帧与动画类（float / shimmer / fadeIn / scaleIn / slideUp / blob /
+ * pulse-glow / marquee 与 .animate-*、.animation-delay-100..800、.reveal）已零引用，本次删除。
+ * ⚠️ 注意 fadeInUp 关键帧**不能删**：它是 .animate-fade-in-up 依赖的那个。
+ */
 
 @keyframes fadeInUp {
   from { opacity: 0; transform: translateY(24px); }
   to { opacity: 1; transform: translateY(0); }
 }
 
-@keyframes fadeIn {
-  from { opacity: 0; }
-  to { opacity: 1; }
-}
-
-@keyframes scaleIn {
-  from { opacity: 0; transform: scale(0.95); }
-  to { opacity: 1; transform: scale(1); }
-}
-
-@keyframes slideUp {
-  from { opacity: 0; transform: translateY(40px); }
-  to { opacity: 1; transform: translateY(0); }
-}
-
-@keyframes blob {
-  0%, 100% { border-radius: 60% 40% 30% 70% / 60% 30% 70% 40%; }
-  50% { border-radius: 30% 60% 70% 40% / 50% 60% 30% 60%; }
-}
-
-@keyframes pulse-glow {
-  0%, 100% { box-shadow: 0 0 20px rgba(255, 77, 109, 0.25); }
-  50% { box-shadow: 0 0 40px rgba(255, 77, 109, 0.45); }
-}
-
-@keyframes marquee {
-  from { transform: translateX(0); }
-  to { transform: translateX(-50%); }
-}
-
-.animate-float { animation: float 6s ease-in-out infinite; }
-.animate-blob { animation: blob 8s ease-in-out infinite; }
 .animate-fade-in-up { animation: fadeInUp 0.6s cubic-bezier(0.2, 0.6, 0.2, 1) forwards; }
-.animate-fade-in { animation: fadeIn 0.5s ease-out forwards; }
-.animate-scale-in { animation: scaleIn 0.4s cubic-bezier(0.2, 0.6, 0.2, 1) forwards; }
-.animate-slide-up { animation: slideUp 0.7s cubic-bezier(0.2, 0.6, 0.2, 1) forwards; }
-.animate-pulse-glow { animation: pulse-glow 3s ease-in-out infinite; }
-
-.animation-delay-100 { animation-delay: 100ms; }
-.animation-delay-200 { animation-delay: 200ms; }
-.animation-delay-300 { animation-delay: 300ms; }
-.animation-delay-400 { animation-delay: 400ms; }
-.animation-delay-500 { animation-delay: 500ms; }
-.animation-delay-600 { animation-delay: 600ms; }
-.animation-delay-700 { animation-delay: 700ms; }
-.animation-delay-800 { animation-delay: 800ms; }
-
-.reveal {
-  opacity: 0;
-  transform: translateY(30px);
-  transition: opacity 0.7s cubic-bezier(0.2, 0.6, 0.2, 1),
-    transform 0.7s cubic-bezier(0.2, 0.6, 0.2, 1);
-}
-
-.reveal.revealed {
-  opacity: 1;
-  transform: translateY(0);
-}
 
 /* ==========================================================================
    可访问性

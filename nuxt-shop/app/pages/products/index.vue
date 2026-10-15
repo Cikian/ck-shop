@@ -149,43 +149,17 @@
         </div>
 
         <!-- 分页：沿用原有的交互与 i18n key，只是换了视觉 -->
-        <nav
-          v-if="!pending && !error && records.length && totalPages > 1"
-          class="mt-10 flex flex-wrap items-center justify-center gap-2"
-          :aria-label="t('products.pagination')"
-        >
-          <button
-            type="button"
-            class="ui-pill ui-pill-ghost h-10 gap-1 px-4 text-[13px] disabled:cursor-not-allowed disabled:opacity-40"
-            :disabled="currentPage <= 1"
-            @click="goToPage(currentPage - 1)"
-          >
-            <UIcon name="lucide:chevron-left" class="h-4 w-4" aria-hidden="true" />
-            <span class="hidden sm:inline">{{ t('products.prev') }}</span>
-          </button>
-
-          <button
-            v-for="pageNumber in pageWindow"
-            :key="pageNumber"
-            type="button"
-            class="chip min-w-[38px] tabular"
-            :class="pageNumber === currentPage ? 'chip-active' : ''"
-            :aria-current="pageNumber === currentPage ? 'page' : undefined"
-            @click="goToPage(pageNumber)"
-          >
-            {{ pageNumber }}
-          </button>
-
-          <button
-            type="button"
-            class="ui-pill ui-pill-ghost h-10 gap-1 px-4 text-[13px] disabled:cursor-not-allowed disabled:opacity-40"
-            :disabled="currentPage >= totalPages"
-            @click="goToPage(currentPage + 1)"
-          >
-            <span class="hidden sm:inline">{{ t('products.next') }}</span>
-            <UIcon name="lucide:chevron-right" class="h-4 w-4" aria-hidden="true" />
-          </button>
-        </nav>
+        <PaginationBar
+          v-if="!pending && !error && records.length"
+          :current="currentPage"
+          :total="totalPages"
+          variant="chip"
+          margin="mt-10"
+          :label="t('products.pagination')"
+          :prev-label="t('products.prev')"
+          :next-label="t('products.next')"
+          @change="goToPage"
+        />
       </section>
     </div>
 
@@ -278,28 +252,18 @@ const sortItems = computed<DropdownMenuItem[]>(() =>
 )
 
 // ===== 真实分类（与 Header / 分类页共用 key，因此不会重复请求） =====
+// key 里已经带 locale：切语言时 key 变化会触发 useFetch 重新请求，
+// 再写 watch: [locale] 只会让同一次切换多打一遍接口（重复请求）。
 const { data: categoryTree } = await useFetch<StoreCategoryNode[]>('/api/categories', {
   query: computed(() => ({ lang: locale.value })),
   key: computed(() => `store-categories-${locale.value}`),
   default: () => [],
-  watch: [locale],
 })
 
 /** /api/categories 返回的就是分类树的根节点数组 */
 const rootCategories = computed(() => categoryTree.value || [])
 /** 相关搜索词：真实分类名，最多 8 个 */
 const relatedCategories = computed(() => rootCategories.value.slice(0, 8))
-
-/** 页码窗口：最多 5 个，围绕当前页展开 */
-const pageWindow = computed(() => {
-  const pages = totalPages.value
-  const current = currentPage.value
-  const size = Math.min(5, pages)
-  let start = Math.max(1, current - Math.floor(size / 2))
-  const end = Math.min(pages, start + size - 1)
-  start = Math.max(1, end - size + 1)
-  return Array.from({ length: end - start + 1 }, (_, index) => start + index)
-})
 
 /**
  * 改写 URL query（唯一的写入口）。

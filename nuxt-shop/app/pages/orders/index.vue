@@ -104,6 +104,8 @@
                       v-if="item.productImage"
                       :src="item.productImage"
                       :alt="item.productName || ''"
+                      width="56"
+                      height="56"
                       class="h-full w-full object-cover"
                       loading="lazy"
                     >
@@ -177,33 +179,17 @@
           </ul>
 
           <!-- 分页 -->
-          <nav
-            v-if="totalPages > 1"
-            class="mt-8 flex flex-wrap items-center justify-center gap-2"
-            :aria-label="t('order.pagination')"
-          >
-            <button
-              type="button"
-              class="ui-pill ui-pill-ghost h-10 gap-1 px-4 text-[13px] disabled:cursor-not-allowed disabled:opacity-40"
-              :disabled="pageNo <= 1 || loading"
-              @click="goToPage(pageNo - 1)"
-            >
-              <UIcon name="lucide:chevron-left" class="h-4 w-4" aria-hidden="true" />
-              <span class="hidden sm:inline">{{ t('order.prev') }}</span>
-            </button>
-            <span class="px-2 text-[13px] tabular text-[var(--color-muted)]">
-              {{ t('order.pageInfo', { current: currentPage, total: totalPages }) }}
-            </span>
-            <button
-              type="button"
-              class="ui-pill ui-pill-ghost h-10 gap-1 px-4 text-[13px] disabled:cursor-not-allowed disabled:opacity-40"
-              :disabled="pageNo >= totalPages || loading"
-              @click="goToPage(pageNo + 1)"
-            >
-              <span class="hidden sm:inline">{{ t('order.next') }}</span>
-              <UIcon name="lucide:chevron-right" class="h-4 w-4" aria-hidden="true" />
-            </button>
-          </nav>
+          <PaginationBar
+            :current="currentPage"
+            :total="totalPages"
+            :disabled="loading"
+            margin="mt-8"
+            :label="t('order.pagination')"
+            :prev-label="t('order.prev')"
+            :next-label="t('order.next')"
+            :info-label="t('order.pageInfo', { current: currentPage, total: totalPages })"
+            @change="goToPage"
+          />
         </template>
       </template>
     </div>
@@ -259,6 +245,8 @@ definePageMeta({ middleware: 'auth' })
 
 import { toNumberOrNull } from '~~/types/shop-product'
 import { useStorePrice } from '~~/composables/useProducts'
+import { isPositive, isUnauthorizedError, readErrorMessage } from '~~/composables/useApiError'
+import { useLoginLink } from '~~/composables/useLoginLink'
 
 /**
  * 我的订单（列表 + 状态筛选 + 分页）。
@@ -329,7 +317,6 @@ const PAGE_SIZE = 10
 
 const { t, locale } = useI18n()
 const localePath = useLocalePath()
-const route = useRoute()
 const toast = useToast()
 const { format } = useStorePrice()
 
@@ -358,30 +345,10 @@ const totalPages = computed(() => {
 const currentPage = computed(() => pageNo.value)
 const currentStatus = computed(() => activeStatus.value || undefined)
 
-/** 严格大于 0：只有真的退过款才显示"已退金额" */
-function isPositive(value: unknown): boolean {
-  const num = toNumberOrNull(value)
-  return num !== null && num > 0
-}
-
-const loginLink = computed(() => localePath({
-  path: '/login',
-  query: { redirect: route.fullPath },
-}))
+const loginLink = useLoginLink()
 const detailLink = (orderNo: string) => localePath({ path: `/orders/${orderNo}` })
 const payLink = (orderNo: string) => localePath({ path: '/checkout/pay', query: { orderNo } })
 
-/** 从 $fetch 抛出的错误里取出可读文案（后端业务异常 message 是中文，直接展示） */
-function readErrorMessage(error: unknown, fallback: string): string {
-  const err = error as any
-  return err?.data?.statusMessage || err?.data?.message || err?.statusMessage || err?.message || fallback
-}
-
-function isUnauthorizedError(error: unknown): boolean {
-  const err = error as any
-  const code = err?.statusCode ?? err?.status ?? err?.data?.statusCode
-  return code === 401 || code === 403
-}
 
 async function loadOrders() {
   loading.value = true

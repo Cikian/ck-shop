@@ -18,6 +18,7 @@
 // 用 #server 而不是 ~：Nuxt 4 下 srcDir 是 app/，`~/*` 指向 app/*，
 // 拿 server 目录里的类型必须走 #server（Nitro 提供的别名，指向 <rootDir>/server）。
 import type { AuthSession } from '#server/api/auth/session.get'
+import { readErrorMessage } from '~~/composables/useApiError'
 
 interface UserInfo {
   realname: string
@@ -41,19 +42,14 @@ interface AuthResult {
 /**
  * BFF 错误里抽出"最像人话"的一句。
  *
- * 优先级：statusMessage > data.message > message。
+ * 优先级：data.statusMessage > data.message > statusMessage > message > ''。
  * 为什么不是 message 优先：ofetch 把非 2xx 的 `message` 固定成
  * "400 Bad Request" 这类 HTTP 短语，真正的业务文案在后端 body 里。
+ *
+ * 实现已收敛到 composables/useApiError.ts（原来的 readErrorMessage 副本与它逐字相同），
+ * 这里保留导出名只是为了不动既有调用点。
  */
-export const resolveAuthErrorMessage = (error: any): string => {
-  return (
-    error?.data?.statusMessage
-    || error?.data?.message
-    || error?.statusMessage
-    || error?.message
-    || ''
-  )
-}
+export const resolveAuthErrorMessage = (error: any): string => readErrorMessage(error, '')
 
 export const useAuth = () => {
   const userInfo = useState<UserInfo | null>('user-info', () => null)

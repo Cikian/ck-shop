@@ -52,6 +52,8 @@
             <img
               :src="value.imageUrl"
               :alt="value.value"
+              width="44"
+              height="44"
               class="h-11 w-11 rounded-[10px] border border-[var(--color-line)] object-cover"
               :class="isDisabled(spec.id, value.id) ? 'grayscale opacity-50' : ''"
               loading="lazy"

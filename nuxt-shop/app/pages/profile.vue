@@ -69,7 +69,10 @@
                       v-if="userInfo?.avatar"
                       :src="userInfo.avatar"
                       :alt="displayName"
+                      width="64"
+                      height="64"
                       class="h-full w-full object-cover"
+                      loading="lazy"
                     >
                     <span
                       v-else-if="avatarInitial"
@@ -510,6 +513,8 @@
                         v-if="favoriteCover(item)"
                         :src="favoriteCover(item)"
                         :alt="item.title"
+                        width="80"
+                        height="80"
                         class="h-full w-full object-cover"
                         loading="lazy"
                       >
@@ -627,6 +632,8 @@
                             v-if="item.productImage"
                             :src="item.productImage"
                             :alt="item.productName || ''"
+                            width="48"
+                            height="48"
                             class="h-full w-full object-cover"
                             loading="lazy"
                           >
@@ -702,29 +709,18 @@
                   </ul>
 
                   <!-- 分页：只有一页时不渲染，避免噪音 -->
-                  <nav v-if="orderTotalPages > 1" class="mt-6 flex flex-wrap items-center justify-center gap-2" :aria-label="t('order.pagination')">
-                    <button
-                      type="button"
-                      class="ui-pill ui-pill-ghost h-9 gap-1 px-4 text-[12px] disabled:cursor-not-allowed disabled:opacity-40"
-                      :disabled="pageNo <= 1 || ordersLoading"
-                      @click="goToOrderPage(pageNo - 1)"
-                    >
-                      <UIcon name="lucide:chevron-left" class="h-4 w-4" aria-hidden="true" />
-                      <span class="hidden sm:inline">{{ t('order.prev') }}</span>
-                    </button>
-                    <span class="px-2 text-[12px] tabular text-[var(--color-muted)]">
-                      {{ t('order.pageInfo', { current: currentOrderPage, total: orderTotalPages }) }}
-                    </span>
-                    <button
-                      type="button"
-                      class="ui-pill ui-pill-ghost h-9 gap-1 px-4 text-[12px] disabled:cursor-not-allowed disabled:opacity-40"
-                      :disabled="pageNo >= orderTotalPages || ordersLoading"
-                      @click="goToOrderPage(pageNo + 1)"
-                    >
-                      <span class="hidden sm:inline">{{ t('order.next') }}</span>
-                      <UIcon name="lucide:chevron-right" class="h-4 w-4" aria-hidden="true" />
-                    </button>
-                  </nav>
+                  <PaginationBar
+                    :current="currentOrderPage"
+                    :total="orderTotalPages"
+                    :disabled="ordersLoading"
+                    size="sm"
+                    margin="mt-6"
+                    :label="t('order.pagination')"
+                    :prev-label="t('order.prev')"
+                    :next-label="t('order.next')"
+                    :info-label="t('order.pageInfo', { current: currentOrderPage, total: orderTotalPages })"
+                    @change="goToOrderPage"
+                  />
 
                   <div class="mt-5 flex justify-center">
                     <!-- NuxtLinkLocale 自己会补 locale 前缀，这里不能再套 localePath（否则会变成 /zh/zh/orders） -->
@@ -1089,9 +1085,10 @@
  */
 definePageMeta({ middleware: 'auth' })
 
-import { useAuth, resolveAuthErrorMessage } from '~~/composables/useAuth'
+import { useAuth } from '~~/composables/useAuth'
 import { useFavoriteList, extractFavoriteErrorMessage } from '~~/composables/useFavorites'
 import { useStorePrice } from '~~/composables/useProducts'
+import { isPositive, isUnauthorizedError, readErrorMessage } from '~~/composables/useApiError'
 import { resolveCoverUrl, resolvePriceView, toNumberOrNull } from '~~/types/shop-product'
 
 /**
@@ -1303,27 +1300,9 @@ const currentOrderPage = computed(() => pageNo.value)
 const orderDetailLink = (orderNo: string) => `/orders/${orderNo}`
 const payLink = (orderNo: string) => ({ path: '/checkout/pay', query: { orderNo } })
 
-/** 严格大于 0：只有真的退过款才显示"已退金额"（也用于地址使用次数） */
-function isPositive(value: unknown): boolean {
-  const num = toNumberOrNull(value)
-  return num !== null && num > 0
-}
-
 /** 明细数组归一化：后端给 null 时不能当数组用，否则模板里 .slice() 会炸 */
 function orderItems(order: OrderListVO): OrderItemVO[] {
   return Array.isArray(order.items) ? order.items : []
-}
-
-/** 从 $fetch 抛出的错误里取出可读文案（后端业务异常 message 是中文，直接展示） */
-function readErrorMessage(error: unknown, fallback: string): string {
-  const err = error as any
-  return err?.data?.statusMessage || err?.data?.message || err?.statusMessage || err?.message || fallback
-}
-
-function isUnauthorizedError(error: unknown): boolean {
-  const err = error as any
-  const code = err?.statusCode ?? err?.status ?? err?.data?.statusCode
-  return code === 401 || code === 403
 }
 
 async function loadOrders() {
@@ -1739,11 +1718,11 @@ async function loadProfile() {
   } catch (error) {
     // 401/403 不弹错：未登录时本页整页已是登录引导（auth 中间件 + isLoggedIn 分支）
     if (isUnauthorizedError(error)) return
-    // 用 useAuth 的 resolveAuthErrorMessage 而不是本页的 readErrorMessage：
-    // 前者把 statusMessage 排在 message 前面 —— ofetch 会把非 2xx 的 message 固定成
-    // "400 Bad Request" 这类 HTTP 短语，真实业务文案在 statusMessage 里。
-    // 本页的 readErrorMessage 是给订单/地址那批老接口用的，刻意不动它们，降低回归面。
-    profileError.value = resolveAuthErrorMessage(error) || t('profile.profileLoadFailed')
+    // 这里原本用的是 useAuth 的 resolveAuthErrorMessage，注释说它"把 statusMessage 排在
+    // message 前面、与本页 readErrorMessage 不同"。实测两份实现的优先级**逐字相同**
+    // （data.statusMessage > data.message > statusMessage > message），只是 fallback 传法不同，
+    // 所以本次统一到 composables/useApiError.ts 的 readErrorMessage（useAuth 那边也已改为委托它）。
+    profileError.value = readErrorMessage(error, t('profile.profileLoadFailed'))
   } finally {
     profileLoading.value = false
   }
@@ -1862,9 +1841,9 @@ async function handlePasswordSubmit() {
   } catch (error) {
     toast.add({
       title: t('profile.passwordSaveFailed'),
-      // 同 loadProfile：密码接口是 BFF 新增的认证接口，错误文案走 resolveAuthErrorMessage，
-      // 才能把后端那句真实的中文/英文提示（如"原密码不正确"）显示出来。
-      description: resolveAuthErrorMessage(error) || t('profile.passwordSaveFailed'),
+      // 同 loadProfile：错误文案统一走 readErrorMessage（useAuth 的 resolveAuthErrorMessage
+      // 现在就是它的一层薄封装），才能把后端那句真实提示（如"原密码不正确"）显示出来。
+      description: readErrorMessage(error, t('profile.passwordSaveFailed')),
       color: 'error',
       icon: 'lucide:circle-alert',
     })

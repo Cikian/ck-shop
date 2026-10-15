@@ -29,8 +29,11 @@
           <img
             :src="slide.pic_url"
             :alt="slide.title || ''"
+            width="1200"
+            height="500"
             class="h-full w-full object-cover"
             :loading="index === 0 ? 'eager' : 'lazy'"
+            :fetchpriority="index === 0 ? 'high' : undefined"
           >
           <!--
             底部渐变 + 文案：图片本身是纯照片，标题来自后端真实 title。
@@ -120,12 +123,33 @@ function goTo(index: number) {
   currentIndex.value = (index + total) % total
 }
 
+/**
+ * 手动「上一张 / 下一张」。
+ *
+ * 切完之后**必须重新计时**：定时器是按"上一次自动切换"起算的，
+ * 用户在第 4.9 秒点了「下一张」，旧的定时器会在 0.1 秒后再切一张 ——
+ * 表现为"点一下跳两张"，像按钮坏了。
+ */
 function goPrev() {
   goTo(currentIndex.value - 1)
+  restartAutoplay()
 }
 
 function goNext() {
   goTo(currentIndex.value + 1)
+  restartAutoplay()
+}
+
+/**
+ * 重新开始自动播放计时（只在**正在自动播放**时生效）。
+ *
+ * 为什么加 timer === null 的判断：悬停 / 聚焦时 pause() 已经把定时器停掉了，
+ * 此时手动切换如果无条件 startTimer()，就等于在用户正看着的时候偷偷恢复自动播放，
+ * 直接违反本组件第 1 条约束（"用户正在看的时候图不该自己跑掉"）。
+ */
+function restartAutoplay() {
+  if (timer === null) return
+  startTimer()
 }
 
 function prefersReducedMotion(): boolean {
@@ -142,7 +166,9 @@ function stopTimer() {
 function startTimer() {
   stopTimer()
   if (slides.value.length <= 1 || prefersReducedMotion()) return
-  timer = setInterval(goNext, AUTOPLAY_MS)
+  // 定时器只做"自动前进"，不走 goNext()：goNext 还要负责重新计时，
+  // 若定时器复用它会变成每 5 秒重建一次定时器（无意义的重建）。
+  timer = setInterval(() => goTo(currentIndex.value + 1), AUTOPLAY_MS)
 }
 
 function pause() {

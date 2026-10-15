@@ -190,11 +190,12 @@ const SKELETON_COUNT = 12
 // ===========================================================================
 // 1. 分类（key 与 Header.vue 完全一致 → 整站分类树只请求一次）
 // ===========================================================================
+// key 里已经带 locale：切语言时 key 变化会触发 useFetch 重新请求，
+// 再写 watch: [locale] 只是让同一次切换多打一遍接口（重复请求）。
 const { data: categoryTree, pending: categoriesPending } = await useFetch<StoreCategoryNode[]>('/api/categories', {
   query: computed(() => ({ lang: locale.value })),
   key: computed(() => `store-categories-${locale.value}`),
   default: () => [],
-  watch: [locale],
 })
 
 const categories = computed(() => categoryTree.value || [])
@@ -206,7 +207,6 @@ const { data: slideData } = await useFetch<SlideItem[]>('/api/home/slide', {
   query: computed(() => ({ lang: locale.value })),
   key: computed(() => `home-slide-${locale.value}`),
   default: () => [],
-  watch: [locale],
 })
 
 const slides = computed(() => slideData.value || [])
@@ -218,7 +218,6 @@ const { data: promotionData } = await useFetch<ShopActivePromotion[]>('/api/prom
   query: computed(() => ({ lang: locale.value })),
   key: computed(() => `store-active-promotions-${locale.value}`),
   default: () => [],
-  watch: [locale],
 })
 
 /**

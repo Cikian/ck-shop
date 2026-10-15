@@ -18,23 +18,14 @@
 import type { StoreCart, StoreCartCount, StoreCartItem } from '~~/types/shop-cart'
 import { emptyCart, normalizeCart, normalizeCartCount, sumSelected } from '~~/types/shop-cart'
 import { useAuth } from '~~/composables/useAuth'
+import { isUnauthorizedError, readErrorMessage } from '~~/composables/useApiError'
 
-/** 后端业务错误的可读文案（JeecgBoot 的中文 message 会透传到 statusMessage） */
+/**
+ * 后端业务错误的可读文案（JeecgBoot 的中文 message 会透传到 statusMessage）。
+ * 实现收敛到 composables/useApiError.ts —— 原来这份与页面里的 readErrorMessage 逐字相同。
+ */
 export function extractCartErrorMessage(error: unknown, fallback: string): string {
-  const err = error as any
-  return (
-    err?.data?.statusMessage
-    || err?.data?.message
-    || err?.statusMessage
-    || err?.message
-    || fallback
-  )
-}
-
-function isUnauthorizedError(error: unknown): boolean {
-  const err = error as any
-  const code = err?.statusCode ?? err?.status ?? err?.data?.statusCode
-  return code === 401 || code === 403
+  return readErrorMessage(error, fallback)
 }
 
 export const useCart = () => {

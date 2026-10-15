@@ -133,6 +133,8 @@
                   v-if="item.productImage"
                   :src="item.productImage"
                   :alt="item.productName || ''"
+                  width="68"
+                  height="68"
                   class="h-full w-full object-cover"
                   loading="lazy"
                 >
@@ -459,6 +461,8 @@ definePageMeta({ middleware: 'auth' })
 
 import { toNumberOrNull } from '~~/types/shop-product'
 import { useStorePrice } from '~~/composables/useProducts'
+import { isPositive, isUnauthorizedError, readErrorMessage } from '~~/composables/useApiError'
+import { useLoginLink } from '~~/composables/useLoginLink'
 
 /**
  * 订单详情。
@@ -628,10 +632,7 @@ const receiverAddressText = computed(() => {
   return [region, source.receiverAddress].filter(Boolean).join(' ')
 })
 
-const loginLink = computed(() => localePath({
-  path: '/login',
-  query: { redirect: route.fullPath },
-}))
+const loginLink = useLoginLink()
 const payLink = computed(() => localePath({ path: '/checkout/pay', query: { orderNo: orderNo.value } }))
 
 /**
@@ -661,26 +662,8 @@ function hasNumber(value: unknown): boolean {
   return num !== null
 }
 
-/** 严格大于 0 */
-function isPositive(value: unknown): boolean {
-  const num = toNumberOrNull(value)
-  return num !== null && num > 0
-}
-
 function isWithdrawable(refund: OrderRefundVO): boolean {
   return String(refund.status ?? '').toUpperCase() === 'APPLYING'
-}
-
-/** 从 $fetch 抛出的错误里取出可读文案（后端业务异常 message 是中文，直接展示） */
-function readErrorMessage(error: unknown, fallback: string): string {
-  const err = error as any
-  return err?.data?.statusMessage || err?.data?.message || err?.statusMessage || err?.message || fallback
-}
-
-function isUnauthorizedError(error: unknown): boolean {
-  const err = error as any
-  const code = err?.statusCode ?? err?.status ?? err?.data?.statusCode
-  return code === 401 || code === 403
 }
 
 function startTicking() {

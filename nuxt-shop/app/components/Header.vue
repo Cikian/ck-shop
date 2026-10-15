@@ -120,7 +120,10 @@
                 v-if="userInfo?.avatar"
                 :src="userInfo.avatar"
                 :alt="userInfo?.realname || t('nav.profile')"
+                width="32"
+                height="32"
                 class="h-full w-full object-cover"
+                loading="lazy"
               >
               <span v-else class="flex h-full w-full items-center justify-center text-[var(--color-brand-600)]">
                 <UIcon name="lucide:user" class="h-4 w-4" aria-hidden="true" />
@@ -307,6 +310,7 @@ import type { DropdownMenuItem } from '@nuxt/ui'
 import type { StoreCategoryNode } from '~~/types/store-category'
 import { useAuth } from '~~/composables/useAuth'
 import { useCart } from '~~/composables/useCart'
+import { useLoginLinkBare } from '~~/composables/useLoginLink'
 
 /**
  * 全局导航。
@@ -345,13 +349,11 @@ const keyword = ref('')
  *     用户点「登录」就会直接 404。
  * 同样的坑在 profile.vue 的「查看全部订单」链接上也踩过一次（/zh/zh/orders），
  * 结论一致：**谁负责补前缀，就只让一方补**，另一方给裸路径。
+ *
+ * 实现已收敛到 composables/useLoginLink.ts 的 useLoginLinkBare()（同样的裸路径 + 同样的
+ * "已在登录页就不带 redirect" 判断），这里只保留上面这段"为什么必须裸路径"的来龙去脉。
  */
-const loginLink = computed(() => {
-  if (route.path.endsWith('/login')) {
-    return '/login'
-  }
-  return { path: '/login', query: { redirect: route.fullPath } }
-})
+const loginLink = useLoginLinkBare()
 
 /**
  * 注册入口链接。
@@ -379,11 +381,12 @@ const registerLink = computed(() => '/register')
  */
 const brandName = computed(() => t('shop.brandName'))
 
+// key 里已经带 locale：切语言时 key 变化会触发 useFetch 重新请求，
+// 再写 watch: [locale] 只会让同一次切换多打一遍接口（重复请求）。
 const { data: categoryTree } = await useFetch<StoreCategoryNode[]>('/api/categories', {
   query: computed(() => ({ lang: locale.value })),
   key: computed(() => `store-categories-${locale.value}`),
   default: () => [],
-  watch: [locale],
 })
 
 /** /api/categories 返回的就是分类树的**根节点数组**，直接取前 7 个即可 */

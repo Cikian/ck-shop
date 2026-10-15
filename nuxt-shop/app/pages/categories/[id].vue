@@ -81,45 +81,16 @@
         </div>
 
         <!-- 分页（后端分页：pageNo / pageSize） -->
-        <nav
-          v-if="totalPages > 1"
-          class="mt-10 flex flex-wrap items-center justify-center gap-2"
-          :aria-label="t('products.pagination')"
-        >
-          <button
-            type="button"
-            class="flex h-10 min-w-[44px] cursor-pointer items-center justify-center gap-1 rounded-full border border-[var(--color-line)] bg-white px-3 text-sm font-bold text-[var(--color-ink-soft)] transition-colors hover:border-[var(--color-brand-300)] hover:text-[var(--color-brand-600)] disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:border-[var(--color-line)] disabled:hover:text-[var(--color-ink-soft)] motion-reduce:transition-none"
-            :disabled="currentPage <= 1"
-            @click="goToPage(currentPage - 1)"
-          >
-            <UIcon name="lucide:chevron-left" class="h-4 w-4" aria-hidden="true" />
-            <span class="hidden sm:inline">{{ t('products.prev') }}</span>
-          </button>
-
-          <button
-            v-for="pageNumber in pageWindow"
-            :key="pageNumber"
-            type="button"
-            class="flex h-10 min-w-[44px] cursor-pointer items-center justify-center rounded-full border px-3 text-sm font-bold transition-colors motion-reduce:transition-none"
-            :class="pageNumber === currentPage
-              ? 'border-[var(--color-brand-500)] bg-[var(--color-brand-500)] text-white'
-              : 'border-[var(--color-line)] bg-white text-[var(--color-ink-soft)] hover:border-[var(--color-brand-300)] hover:text-[var(--color-brand-600)]'"
-            :aria-current="pageNumber === currentPage ? 'page' : undefined"
-            @click="goToPage(pageNumber)"
-          >
-            {{ pageNumber }}
-          </button>
-
-          <button
-            type="button"
-            class="flex h-10 min-w-[44px] cursor-pointer items-center justify-center gap-1 rounded-full border border-[var(--color-line)] bg-white px-3 text-sm font-bold text-[var(--color-ink-soft)] transition-colors hover:border-[var(--color-brand-300)] hover:text-[var(--color-brand-600)] disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:border-[var(--color-line)] disabled:hover:text-[var(--color-ink-soft)] motion-reduce:transition-none"
-            :disabled="currentPage >= totalPages"
-            @click="goToPage(currentPage + 1)"
-          >
-            <span class="hidden sm:inline">{{ t('products.next') }}</span>
-            <UIcon name="lucide:chevron-right" class="h-4 w-4" aria-hidden="true" />
-          </button>
-        </nav>
+        <PaginationBar
+          :current="currentPage"
+          :total="totalPages"
+          variant="outline"
+          margin="mt-10"
+          :label="t('products.pagination')"
+          :prev-label="t('products.prev')"
+          :next-label="t('products.next')"
+          @change="goToPage"
+        />
       </template>
     </div>
 
@@ -148,7 +119,6 @@ const { data: categories } = await useFetch<StoreCategoryNode[]>('/api/categorie
   query: computed(() => ({ lang: locale.value })),
   key: computed(() => `store-categories-${categoryId.value}-${locale.value}`),
   default: () => [],
-  watch: [locale],
 })
 
 /** 在整棵树里找到当前分类节点（分类最多 3 级，遍历成本可忽略） */
@@ -180,17 +150,6 @@ const records = computed(() => page.value?.records ?? [])
 const total = computed(() => page.value?.total ?? 0)
 const currentPage = computed(() => page.value?.current || pageNo.value)
 const totalPages = computed(() => Math.max(1, page.value?.pages ?? 0))
-
-/** 页码窗口：最多 5 个，围绕当前页展开（与商品列表页保持一致） */
-const pageWindow = computed(() => {
-  const pages = totalPages.value
-  const current = currentPage.value
-  const size = Math.min(5, pages)
-  let start = Math.max(1, current - Math.floor(size / 2))
-  const end = Math.min(pages, start + size - 1)
-  start = Math.max(1, end - size + 1)
-  return Array.from({ length: end - start + 1 }, (_, index) => start + index)
-})
 
 // 切换分类时回到第 1 页，否则会停留在上一个分类的页码上
 watch(categoryId, () => {

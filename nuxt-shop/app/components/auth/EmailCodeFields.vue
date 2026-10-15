@@ -79,7 +79,10 @@
             v-if="captchaImage"
             :src="captchaImage"
             :alt="t('login.captcha')"
+            width="104"
+            height="48"
             class="h-full w-full object-cover"
+            loading="lazy"
           >
           <span v-else class="flex h-full w-full items-center justify-center text-[var(--color-muted)]">
             <UIcon

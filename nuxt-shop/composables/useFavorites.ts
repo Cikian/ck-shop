@@ -22,17 +22,14 @@ import type { StoreFavoriteStatus } from '~~/types/shop-favorite'
 import type { StoreProductPage } from '~~/types/shop-product'
 import { normalizeFavoriteStatus } from '~~/types/shop-favorite'
 import { useAuth } from '~~/composables/useAuth'
+import { readErrorMessage } from '~~/composables/useApiError'
 
-/** 从 $fetch 抛出的错误里取出可读文案（后端业务异常 message 是中文，直接展示） */
+/**
+ * 从 $fetch 抛出的错误里取出可读文案（后端业务异常 message 是中文，直接展示）。
+ * 实现收敛到 composables/useApiError.ts —— 原来这份与页面里的 readErrorMessage 逐字相同。
+ */
 export function extractFavoriteErrorMessage(error: unknown, fallback: string): string {
-  const err = error as any
-  return (
-    err?.data?.statusMessage
-    || err?.data?.message
-    || err?.statusMessage
-    || err?.message
-    || fallback
-  )
+  return readErrorMessage(error, fallback)
 }
 
 /** 收藏列表每页条数（与商品列表保持一致的观感） */

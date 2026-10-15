@@ -75,6 +75,8 @@
                 v-if="categoryCover(top)"
                 :src="categoryCover(top)"
                 :alt="top.name"
+                width="1600"
+                height="900"
                 class="h-full w-full object-cover transition-transform duration-500 ease-out group-hover:scale-105 motion-reduce:transition-none motion-reduce:group-hover:scale-100"
                 loading="lazy"
               >
@@ -149,7 +151,6 @@ const { data: categories, pending, error, refresh } = await useFetch<StoreCatego
   query: computed(() => ({ lang: locale.value })),
   key: computed(() => `store-categories-${locale.value}`),
   default: () => [],
-  watch: [locale],
 })
 
 /** 封面优先，没有封面就退回图标；都没有则渲染品牌色占位（不做假图片） */

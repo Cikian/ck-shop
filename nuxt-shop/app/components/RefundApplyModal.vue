@@ -114,6 +114,8 @@
  *      每次点击都新生成的话幂等就失效了。
  *   3) **items 不传 = 整单全退**。所以全部数量为 0 时不下发 items 字段。
  */
+import { readErrorMessage } from '~~/composables/useApiError'
+import { createIdempotencyKey } from '~~/composables/useIdempotencyKey'
 
 /** 退款可选行（直接使用后端 StoreOrderItemVO 的字段名，页面不必再转换一次） */
 interface RefundLine {
@@ -180,22 +182,14 @@ const refundAll = computed(() => (
 ))
 
 /**
- * 生成幂等键。
- * 优先 crypto.randomUUID()；非安全上下文（用 http + 局域网 IP 访问时
- * crypto.randomUUID 不存在）降级为时间戳 + 随机串，保证功能可用。
+ * 每次打开弹层都生成一个**新的**幂等键：同一张退款单的重试复用同一个键，
+ * 但用户重新打开（= 新的一次申请意图）必须换键。
  */
-function newRequestId(): string {
-  if (import.meta.client && typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
-    return crypto.randomUUID()
-  }
-  return `refund-${Date.now()}-${Math.random().toString(16).slice(2, 10)}`
-}
-
 function resetForm() {
   reason.value = ''
   description.value = ''
   submitting.value = false
-  requestId.value = newRequestId()
+  requestId.value = createIdempotencyKey('refund')
   const next: Record<string, number> = {}
   for (const line of lines.value) next[String(line.id)] = 0
   quantities.value = next
@@ -205,12 +199,6 @@ function resetForm() {
 watch(() => props.open, (open) => {
   if (open) resetForm()
 })
-
-/** 从 $fetch 抛出的错误里取出可读文案（后端业务异常 message 是中文，直接展示） */
-function readErrorMessage(error: unknown): string {
-  const err = error as any
-  return err?.data?.statusMessage || err?.data?.message || err?.statusMessage || err?.message || t('order.actionFailed')
-}
 
 async function submit() {
   if (submitting.value) return
@@ -247,7 +235,7 @@ async function submit() {
   } catch (error) {
     toast.add({
       title: t('order.actionFailed'),
-      description: readErrorMessage(error),
+      description: readErrorMessage(error, t('order.actionFailed')),
       color: 'error',
       icon: 'lucide:circle-alert',
     })

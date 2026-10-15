@@ -27,6 +27,8 @@
             v-if="coverOf(product)"
             :src="coverOf(product)"
             :alt="product.title"
+            width="64"
+            height="64"
             class="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105 motion-reduce:transition-none motion-reduce:group-hover:scale-100"
             loading="lazy"
           >

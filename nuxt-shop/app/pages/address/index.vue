@@ -93,7 +93,7 @@
                 {{ address.fullAddress || '—' }}
               </p>
               <!-- 使用次数：有真实数据才显示，没有就不显示（不写死 0 次的噪音） -->
-              <p v-if="isPositiveCount(address.useCount)" class="mt-1.5 text-[12px] tabular text-[var(--color-muted)]">
+              <p v-if="isPositive(address.useCount)" class="mt-1.5 text-[12px] tabular text-[var(--color-muted)]">
                 {{ t('address.useCount', { count: address.useCount }) }}
               </p>
             </div>
@@ -297,7 +297,8 @@
 /** 地址簿是私有页面，未登录 / 登录过期由 auth 中间件重定向到登录页并回跳 */
 definePageMeta({ middleware: 'auth' })
 
-import { toNumberOrNull } from '~~/types/shop-product'
+import { isPositive, isUnauthorizedError, readErrorMessage } from '~~/composables/useApiError'
+import { useLoginLink } from '~~/composables/useLoginLink'
 
 /**
  * 收货地址簿。
@@ -330,8 +331,6 @@ interface AddressVO {
 }
 
 const { t, locale } = useI18n()
-const localePath = useLocalePath()
-const route = useRoute()
 const toast = useToast()
 
 const loading = ref(false)
@@ -355,28 +354,7 @@ const form = reactive({
   isDefault: false,
 })
 
-const loginLink = computed(() => localePath({
-  path: '/login',
-  query: { redirect: route.fullPath },
-}))
-
-/** 使用次数大于 0 才显示（0 次是噪音，不是信息） */
-function isPositiveCount(value: unknown): boolean {
-  const num = toNumberOrNull(value)
-  return num !== null && num > 0
-}
-
-/** 从 $fetch 抛出的错误里取出可读文案（后端业务异常 message 是中文，直接展示） */
-function readErrorMessage(error: unknown, fallback: string): string {
-  const err = error as any
-  return err?.data?.statusMessage || err?.data?.message || err?.statusMessage || err?.message || fallback
-}
-
-function isUnauthorizedError(error: unknown): boolean {
-  const err = error as any
-  const code = err?.statusCode ?? err?.status ?? err?.data?.statusCode
-  return code === 401 || code === 403
-}
+const loginLink = useLoginLink()
 
 function notifyError(error: unknown) {
   toast.add({
