@@ -81,6 +81,8 @@ public class ShopPaymentServiceImpl
         implements IShopPaymentService {
 
     @Autowired
+    private ShopPaymentSupport paymentSupport;
+
     private ShopOrderPaymentMapper paymentMapper;
 
     @Autowired
@@ -222,7 +224,7 @@ public class ShopPaymentServiceImpl
                 .setAmount(amount)
                 .setStatus(PaymentStatus.PENDING.name())
                 .setExpireTime(payment.getExpireTime())
-                .setRemainPaySeconds(remainSeconds(payment.getExpireTime()))
+                .setRemainPaySeconds(paymentSupport.remainSeconds(payment.getExpireTime()))
                 .setPayParams(prepayResult.getPayParams());
     }
 
@@ -287,7 +289,7 @@ public class ShopPaymentServiceImpl
             // 验签失败：落一条流水（内容不可信，只留摘要）后直接拒绝。
             // 绝不能"先看看内容再说"——伪造回调正是这样被放行的。
             saveNotifyLog(channel, "UNKNOWN", null, null, null,
-                    "REJECTED|" + hash(body), body, resolveSignature(headers), null, false,
+                    "REJECTED|" + paymentSupport.hashValue(body), body, paymentSupport.resolveSignature(headers), null, false,
                     "REJECTED", notify.getFailReason(), null, clientIp);
             log.warn("渠道[{}]回调验签失败，已拒绝：{}，clientIp={}", channel, notify.getFailReason(), clientIp);
             return NotifyHandleResult.reject(gateway.failAck("SIGN_INVALID"),
@@ -300,7 +302,7 @@ public class ShopPaymentServiceImpl
 
         ShopPaymentNotifyLog notifyLog = saveNotifyLog(channel, notifyType, notify.getPaymentNo(),
                 notify.getRefundNo(), notify.getChannelTradeNo(), dedupKey, body,
-                resolveSignature(headers), notify, true, "RECEIVED", null,
+                paymentSupport.resolveSignature(headers), notify, true, "RECEIVED", null,
                 notify.getEventTime(), clientIp);
         if (notifyLog == null) {
             // 唯一键冲突 = 重复回调。这是正常现象（渠道本来就会重推），
@@ -385,7 +387,7 @@ public class ShopPaymentServiceImpl
                 return NotifyHandleResult.ok(gateway.successAck(), "重复回调，已忽略");
             }
             refundService.applyChannelRefundResult(refund, true, notify.getChannelTradeNo(),
-                    notify.getEventTime(), null, "CHANNEL:" + paymentChannelOf(refund));
+                    notify.getEventTime(), null, "CHANNEL:" + paymentSupport.channelOfRefund(refund));
             updateNotifyLog(notifyLog, "PROCESSED", "退款成功已结算");
             return NotifyHandleResult.ok(gateway.successAck(), "退款成功");
         }
@@ -393,7 +395,7 @@ public class ShopPaymentServiceImpl
         if (RefundOrderStatus.FAILED.name().equalsIgnoreCase(notify.getEventStatus())) {
             // 退款失败：退款服务会把先前预占的额度还回去，否则额度会被永久占用
             refundService.applyChannelRefundResult(refund, false, null, null,
-                    notify.getFailReason(), "CHANNEL:" + paymentChannelOf(refund));
+                    notify.getFailReason(), "CHANNEL:" + paymentSupport.channelOfRefund(refund));
             updateNotifyLog(notifyLog, "PROCESSED", "退款失败，额度已归还");
             return NotifyHandleResult.ok(gateway.successAck(), "退款失败已记录");
         }
@@ -403,13 +405,6 @@ public class ShopPaymentServiceImpl
     }
 
     /** 退款回调里没有渠道字段，从支付单反查（仅用于操作者标识） */
-    private String paymentChannelOf(ShopOrderRefund refund) {
-        if (refund == null || StringUtils.isBlank(refund.getPaymentId())) {
-            return "UNKNOWN";
-        }
-        ShopOrderPayment payment = paymentMapper.selectById(refund.getPaymentId());
-        return payment == null ? "UNKNOWN" : payment.getChannel();
-    }
 
     // ==================================================================
     // 结算：把"资金事实"落到订单
@@ -717,59 +712,27 @@ public class ShopPaymentServiceImpl
 
     @Override
     public List<ShopOrderPayment> listByOrderId(String orderId) {
-        if (StringUtils.isBlank(orderId)) {
-            return new ArrayList<>();
-        }
-        return list(new LambdaQueryWrapper<ShopOrderPayment>()
-                .eq(ShopOrderPayment::getOrderId, orderId)
-                .orderByAsc(ShopOrderPayment::getCreateTime));
+        return paymentSupport.listByOrderId(orderId);
     }
 
     @Override
     public List<ShopOrderPayment> listSettleable(String orderId) {
-        return paymentMapper.selectList(new LambdaQueryWrapper<ShopOrderPayment>()
-                .eq(ShopOrderPayment::getOrderId, orderId)
-                .in(ShopOrderPayment::getStatus,
-                        java.util.Arrays.asList(PaymentStatus.INIT.name(), PaymentStatus.PENDING.name())));
+        return paymentSupport.listSettleable(orderId);
     }
 
     @Override
     public ShopOrderPayment findRefundablePayment(String orderId) {
-        List<ShopOrderPayment> payments = paymentMapper.selectList(new LambdaQueryWrapper<ShopOrderPayment>()
-                .eq(ShopOrderPayment::getOrderId, orderId)
-                .eq(ShopOrderPayment::getStatus, PaymentStatus.SUCCESS.name())
-                .orderByAsc(ShopOrderPayment::getPayTime));
-        for (ShopOrderPayment payment : payments) {
-            if (MoneyUtils.isPositive(refundableAmount(payment))) {
-                return payment;
-            }
-        }
-        return null;
+        return paymentSupport.findRefundablePayment(orderId);
     }
 
     @Override
     public BigDecimal refundableAmount(ShopOrderPayment payment) {
-        if (payment == null) {
-            return MoneyUtils.zero();
-        }
-        // 以"实收"为上限而不是"应付"：组合支付或部分到账时，
-        // 按应付退会退超出实际收到的钱
-        BigDecimal paid = MoneyUtils.scale(payment.getPaidAmount());
-        if (!MoneyUtils.isPositive(paid)) {
-            paid = MoneyUtils.scale(payment.getAmount());
-        }
-        BigDecimal refundable = MoneyUtils.subtract(paid, payment.getRefundAmount());
-        return refundable.compareTo(BigDecimal.ZERO) < 0 ? MoneyUtils.zero() : refundable;
+        return paymentSupport.refundableAmount(payment);
     }
 
     @Override
     public ShopOrderPayment getByPaymentNo(String paymentNo) {
-        if (StringUtils.isBlank(paymentNo)) {
-            return null;
-        }
-        return paymentMapper.selectOne(new LambdaQueryWrapper<ShopOrderPayment>()
-                .eq(ShopOrderPayment::getPaymentNo, paymentNo)
-                .last("LIMIT 1"));
+        return paymentSupport.findByPaymentNo(paymentNo);
     }
 
     // ==================================================================
@@ -852,13 +815,6 @@ public class ShopPaymentServiceImpl
         }
     }
 
-    private Long remainSeconds(Date deadline) {
-        if (deadline == null) {
-            return null;
-        }
-        long remain = (deadline.getTime() - System.currentTimeMillis()) / 1000L;
-        return Math.max(remain, 0L);
-    }
 
     /**
      * 从回调请求头里取签名原文（落库留证用）。
@@ -868,35 +824,5 @@ public class ShopPaymentServiceImpl
      * 这里统一识别几种常见写法。取不到不影响主流程——
      * 真正的验签由网关实现负责，这只是给人看的证据。
      */
-    private String resolveSignature(Map<String, String> headers) {
-        if (headers == null || headers.isEmpty()) {
-            return null;
-        }
-        String[] candidates = {"mock-signature", "wechatpay-signature", "sign",
-                "signature", "alipay-signature", "x-signature"};
-        for (String candidate : candidates) {
-            for (Map.Entry<String, String> entry : headers.entrySet()) {
-                if (entry.getKey() != null && candidate.equalsIgnoreCase(entry.getKey())) {
-                    return entry.getValue();
-                }
-            }
-        }
-        return null;
-    }
 
-    private String hash(String value) {
-        try {
-            java.security.MessageDigest digest = java.security.MessageDigest.getInstance("SHA-256");
-            byte[] bytes = digest.digest(StringUtils.trimToEmpty(value)
-                    .getBytes(java.nio.charset.StandardCharsets.UTF_8));
-            StringBuilder sb = new StringBuilder(bytes.length * 2);
-            for (byte b : bytes) {
-                sb.append(Character.forDigit((b >> 4) & 0xF, 16));
-                sb.append(Character.forDigit(b & 0xF, 16));
-            }
-            return sb.toString();
-        } catch (Exception e) {
-            return String.valueOf(System.nanoTime());
-        }
-    }
 }
