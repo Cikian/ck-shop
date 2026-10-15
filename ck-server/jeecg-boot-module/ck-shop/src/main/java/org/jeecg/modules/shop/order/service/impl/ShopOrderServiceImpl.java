@@ -995,15 +995,61 @@ public class ShopOrderServiceImpl
                 entityPage.getTotal());
         List<ShopOrder> orders = entityPage.getRecords();
         Map<String, List<ShopOrderItem>> itemMap = loadItems(orders);
+        // 「待处理退款单数」一次性批量查出来。
+        // 下面若每单各查一次就是 N+1：一页 100 单 = 100 次 COUNT，
+        // 这是后台订单列表最容易被压垮的地方。
+        Map<String, Integer> pendingRefundMap = loadPendingRefundCounts(orders);
         List<AdminOrderListVO> records = new ArrayList<>(orders.size());
         for (ShopOrder order : orders) {
-            records.add(toAdminListVO(order, itemMap.get(order.getId())));
+            records.add(toAdminListVO(order, itemMap.get(order.getId()),
+                    pendingRefundMap.getOrDefault(order.getId(), 0)));
         }
         result.setRecords(records);
         return result;
     }
 
+    /**
+     * 批量统计这些订单各自的「待处理（APPLYING）退款单」数量。
+     *
+     * <p>用一条 {@code IN (...)} 查询替代"每单一次 COUNT"，消除后台列表的 N+1；
+     * 只 select order_id，不取整行，进一步减少回传数据量。
+     */
+    private Map<String, Integer> loadPendingRefundCounts(List<ShopOrder> orders) {
+        Map<String, Integer> counts = new HashMap<>();
+        if (orders == null || orders.isEmpty()) {
+            return counts;
+        }
+        List<String> orderIds = new ArrayList<>(orders.size());
+        for (ShopOrder order : orders) {
+            if (order.getId() != null) {
+                orderIds.add(order.getId());
+            }
+        }
+        if (orderIds.isEmpty()) {
+            return counts;
+        }
+        List<ShopOrderRefund> pending = refundMapper.selectList(new LambdaQueryWrapper<ShopOrderRefund>()
+                .select(ShopOrderRefund::getOrderId)
+                .in(ShopOrderRefund::getOrderId, orderIds)
+                .eq(ShopOrderRefund::getStatus,
+                        org.jeecg.modules.shop.order.constant.RefundOrderStatus.APPLYING.name()));
+        for (ShopOrderRefund refund : pending) {
+            counts.merge(refund.getOrderId(), 1, Integer::sum);
+        }
+        return counts;
+    }
+
     private AdminOrderListVO toAdminListVO(ShopOrder order, List<ShopOrderItem> items) {
+        // 单条路径（后台订单详情）走这里：只有一单，查一次不算 N+1
+        Long pending = refundMapper.selectCount(new LambdaQueryWrapper<ShopOrderRefund>()
+                .eq(ShopOrderRefund::getOrderId, order.getId())
+                .eq(ShopOrderRefund::getStatus,
+                        org.jeecg.modules.shop.order.constant.RefundOrderStatus.APPLYING.name()));
+        return toAdminListVO(order, items, pending == null ? 0 : pending.intValue());
+    }
+
+    private AdminOrderListVO toAdminListVO(ShopOrder order, List<ShopOrderItem> items,
+                                           int pendingRefundCount) {
         AdminOrderListVO vo = new AdminOrderListVO();
         copyOrderFields(order, vo);
         vo.setOrderStatusLabel(OrderStatus.labelOf(order.getOrderStatus()))
@@ -1013,11 +1059,7 @@ public class ShopOrderServiceImpl
         // 后台列表脱敏：列表会被投屏、截图、多人查看，完整手机号没有必要出现在这里。
         // 需要完整号码时走"发货详情"，那条路径有权限校验与操作流水。
         vo.setReceiverPhone(ShopMaskUtils.maskPhone(order.getReceiverPhone()));
-        Long pending = refundMapper.selectCount(new LambdaQueryWrapper<ShopOrderRefund>()
-                .eq(ShopOrderRefund::getOrderId, order.getId())
-                .eq(ShopOrderRefund::getStatus,
-                        org.jeecg.modules.shop.order.constant.RefundOrderStatus.APPLYING.name()));
-        vo.setPendingRefundCount(pending == null ? 0 : pending.intValue());
+        vo.setPendingRefundCount(Math.max(pendingRefundCount, 0));
         return vo;
     }
 
