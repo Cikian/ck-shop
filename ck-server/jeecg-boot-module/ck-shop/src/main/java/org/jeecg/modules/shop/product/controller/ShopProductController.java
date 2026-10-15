@@ -9,6 +9,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.shiro.authz.annotation.RequiresPermissions;
 import org.jeecg.common.api.vo.Result;
 import org.jeecg.common.aspect.annotation.AutoLog;
+import org.jeecg.common.exception.JeecgBootException;
 import org.jeecg.common.system.base.controller.JeecgController;
 import org.jeecg.modules.shop.common.util.ShopExportSupport;
 import org.jeecg.modules.shop.product.entity.ShopProduct;
@@ -19,6 +20,8 @@ import org.jeecg.modules.shop.product.entity.vo.ProductListVO;
 import org.jeecg.modules.shop.product.entity.vo.ProductSkuVO;
 import org.jeecg.modules.shop.product.service.IShopProductService;
 import org.jeecg.modules.shop.store.ShopOrgScopeResolver;
+import org.jeecgframework.poi.excel.ExcelImportUtil;
+import org.jeecgframework.poi.excel.entity.ImportParams;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -28,10 +31,14 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestMethod;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.multipart.MultipartFile;
+import org.springframework.web.multipart.MultipartHttpServletRequest;
 import org.springframework.web.servlet.ModelAndView;
 
+import java.io.InputStream;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Map;
 
 /**
  * <p>
@@ -170,11 +177,70 @@ public class ShopProductController extends JeecgController<ShopProduct, IShopPro
 
     /**
      * 通过excel导入数据
+     *
+     * <p><b>刻意不再调用框架的 {@code super.importExcel}</b>：
+     * 它只做 {@code ExcelImportUtil.importExcel} + {@code service.saveBatch(list)}，
+     * 既不校验归属也不落到调用方可写的部门 —— Excel 里的 {@code sys_org_code} 列是
+     * **上传方可控**的，一个门店运营只要把该列填成别家店铺的部门编码，
+     * 就能把商品直接写进别的店铺（多店铺隔离被绕过，且列表里还看不见自己的数据）。
+     *
+     * <p>这里改成手工导入：逐行先把归属收敛成"调用方真正可写的部门"
+     * （{@link ShopOrgScopeResolver#resolveWritableOrgCode}：无权限时直接抛错、
+     * 该部门还必须绑定到启用店铺），再批量落库。行数、返回文案与框架保持一致。
      */
+    @AutoLog(value = "商品-导入")
     @RequiresPermissions("shop-product:importExcel")
     @RequestMapping(value = "/importExcel", method = RequestMethod.POST)
     public Result<?> importExcel(HttpServletRequest request, HttpServletResponse response) {
-        return super.importExcel(request, response, ShopProduct.class);
+        if (!(request instanceof MultipartHttpServletRequest)) {
+            return Result.error("文件导入失败:请使用 multipart/form-data 上传 Excel");
+        }
+        Map<String, MultipartFile> fileMap = ((MultipartHttpServletRequest) request).getFileMap();
+        if (fileMap.isEmpty()) {
+            return Result.error("文件导入失败:未获取到上传文件");
+        }
+
+        int total = 0;
+        try {
+            for (MultipartFile file : fileMap.values()) {
+                // 与框架 super.importExcel 完全相同的解析参数，保证"哪些行会被导入"不变
+                ImportParams params = new ImportParams();
+                params.setTitleRows(2);
+                params.setHeadRows(1);
+                params.setNeedSave(false);
+
+                List<ShopProduct> rows;
+                try (InputStream in = file.getInputStream()) {
+                    rows = ExcelImportUtil.importExcel(in, ShopProduct.class, params);
+                }
+                if (rows == null || rows.isEmpty()) {
+                    continue;
+                }
+
+                for (ShopProduct row : rows) {
+                    if (row == null) {
+                        continue;
+                    }
+                    // 主键交给框架/数据库生成，导入只负责内容
+                    row.setId(null);
+                    row.setDelFlag(null);
+                    // ★ 归属收敛：Excel 里填了别的部门 -> 这里直接抛异常拒绝整批导入
+                    row.setSysOrgCode(orgScopeResolver.resolveWritableOrgCode(row.getSysOrgCode(), null));
+                }
+                shopProductService.saveBatch(rows);
+                total += rows.size();
+            }
+        } catch (JeecgBootException e) {
+            return Result.error("文件导入失败:" + e.getMessage());
+        } catch (Exception e) {
+            log.error("商品导入失败", e);
+            String msg = e.getMessage();
+            if (msg != null && msg.contains("Duplicate entry")) {
+                return Result.error("文件导入失败:有重复数据！");
+            }
+            return Result.error("文件导入失败:" + msg);
+        }
+        return Result.ok("文件导入成功！数据行数：" + total);
     }
 
     /**
