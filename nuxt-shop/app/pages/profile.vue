@@ -199,26 +199,7 @@
               </h2>
 
               <!-- 个人信息：只列真实存在的字段 -->
-              <template v-if="activeTab === 'info'">
-                <dl v-if="infoRows.length" class="mt-5 grid gap-3 sm:grid-cols-2">
-                  <div
-                    v-for="row in infoRows"
-                    :key="row.label"
-                    class="min-w-0 rounded-[var(--radius-card-sm)] bg-[var(--color-line-soft)] px-4 py-3"
-                  >
-                    <dt class="flex items-center gap-2 text-[11px] font-bold uppercase tracking-wider text-[var(--color-muted)]">
-                      <UIcon :name="row.icon" class="h-3.5 w-3.5 shrink-0 text-[var(--color-brand-500)]" aria-hidden="true" />
-                      {{ t(row.label) }}
-                    </dt>
-                    <dd class="mt-1 truncate text-sm font-medium text-[var(--color-ink)]">
-                      {{ row.value }}
-                    </dd>
-                  </div>
-                </dl>
-                <p v-else class="mt-5 text-sm text-[var(--color-muted)]">
-                  {{ t('shop.noData') }}
-                </p>
-              </template>
+              <ProfileInfoPanel v-if="activeTab === 'info'" />
 
               <!-- 账户设置：真实姓名 / 邮箱 / 手机号可编辑，用户名只读 -->
               <ProfileSettingsPanel v-else-if="activeTab === 'settings'" />
@@ -261,7 +242,7 @@ import { useFavoriteList } from '~~/composables/useFavorites'
 import { useOrderList } from '~~/composables/useOrderList'
 import { useAddressBook } from '~~/composables/useAddressBook'
 import { useProfileAccount } from '~~/composables/useProfileAccount'
-import { formatDate } from '~~/composables/useDateTimeFormat'
+import { useProfileFields } from '~~/composables/useProfileFields'
 
 /**
  * 个人中心。
@@ -400,74 +381,13 @@ const { load: loadAddresses } = useAddressBook()
 // 而 SSR 下这个异常会让整页 500。这类"顺序依赖"是巨型单文件组件最难查的坑之一，
 // 所以：任何 immediate watch 都必须写在它所用到的所有声明之后。
 
-const displayName = computed(() => userInfo.value?.realname || userInfo.value?.username || '')
+// 展示派生字段（昵称 / 头像首字母 / 联系方式 / 注册时间）与「个人信息」明细行
+// 都在 composables/useProfileFields.ts —— 左侧资料卡与个人信息面板共用同一套口径。
+const { displayName, avatarInitial, contactRows, memberSinceText } = useProfileFields()
 
-/** 头像兜底：没有头像图时用姓名首字母（中文取第一个字） */
-const avatarInitial = computed(() => {
-  const source = displayName.value.trim()
-  return source ? source.charAt(0).toUpperCase() : ''
-})
-
-const contactRows = computed(() => {
-  const rows: { label: string; value: string; icon: string }[] = []
-  if (userInfo.value?.email) {
-    rows.push({ label: 'profile.email', value: String(userInfo.value.email), icon: 'lucide:mail' })
-  }
-  if (userInfo.value?.phone) {
-    rows.push({ label: 'profile.phone', value: String(userInfo.value.phone), icon: 'lucide:phone' })
-  }
-  return rows
-})
-
-/**
- * 注册时间：userInfo.createTime 是后端 SysUser 真实字段（LoginController 直接返回 SysUser）。
- * 后端可能给 "2024-01-15 10:20:30"，也可能是 ISO，这里两种都能解析；
- * 真的拿不到就返回空串 -> 整块不渲染（绝不写死一个日期）。
- */
-const memberSinceText = computed(() => {
-  const raw = userInfo.value?.createTime
-  if (!raw) return ''
-  // 统一走 composables/useDateTimeFormat.ts：语言码要经 BCP-47 映射（zh -> zh-CN），
-  // 解析规则也要与订单页保持一致（后端给的是 "yyyy-MM-dd HH:mm:ss"）。
-  return formatDate(raw, locale.value)
-})
-
-/** 个人信息面板：只放真实有值的字段，空字段整行不渲染 */
-const infoRows = computed(() => {
-  const rows: { label: string; value: string; icon: string }[] = []
-  if (userInfo.value?.realname) {
-    rows.push({ label: 'profile.realname', value: String(userInfo.value.realname), icon: 'lucide:user-round' })
-  }
-  if (userInfo.value?.username) {
-    rows.push({ label: 'profile.username', value: String(userInfo.value.username), icon: 'lucide:at-sign' })
-  }
-  rows.push(...contactRows.value)
-  if (memberSinceText.value) {
-    rows.push({ label: 'profile.memberSince', value: memberSinceText.value, icon: 'lucide:calendar' })
-  }
-  return rows
-})
-
-// ---------------------------------------------------------------------------
-// 账户密码（设置 / 修改）
-// ---------------------------------------------------------------------------
-
-/**
- * 密码区块要回答两个问题，两个都**不能靠猜**：
- *
- *  1) 用户**有没有**设置过密码？—— 决定标题是「设置密码」还是「修改密码」。
- *     判据是后端 `GET /api/auth/profile` 的 `hasPassword`（契约 2.8），
- *     它读的是 `sys_user.pwd_set`：邮箱验证码 / Google 自动注册的用户为 false
- *     （他们的 password 字段是系统随机占位串，非空但没人知道明文，所以不能拿"password 非空"当判据）。
- *
- *     ⚠️ **不能**用 useAuth().userInfo 里的字段来判断：
- *        userInfo 来自 `/api/auth/session`，契约 3.2 明确规定它的形状 AuthSession 保持不变，
- *        并不保证带 hasPassword。所以这里像上面的收藏/订单一样**显式打一次接口**，
- *        拿到这个页面真正需要的字段，而不是去依赖一个契约没承诺的字段。
- *
- *  2) 当前密码要不要填？—— 已经有密码的用户必须验旧密码；没设过密码的用户
- *     压根没有旧密码，输入框直接不渲染（让用户面对一个必填却填不出的框是纯粹的阻塞）。
- */
+// 账户资料（是否有密码 / 加载状态）与密码表单见：
+//   composables/useProfileAccount.ts + components/profile/SettingsPanel.vue
+// （hasPassword 的判据说明也随实现移到了 composable 里，避免两处解释不一致）
 const { load: loadProfile } = useProfileAccount()
 
 /**
