@@ -287,7 +287,7 @@ jeecg:
     #webapp文件路径
     webapp: /opt/jeecg-boot/webapp
   shiro:
-    excludeUrls: /test/jeecgDemo/demo3,/test/jeecgDemo/redisDemo/**,/bigscreen/category/**,/bigscreen/visual/**,/bigscreen/map/**,/jmreport/bigscreen2/**,/api/getUserInfo,/shop/account/email/send-code,/shop/account/register,/shop/account/login/**,/shop/account/google/**,/shop/account/password/reset
+    excludeUrls: /bigscreen/category/**,/bigscreen/visual/**,/bigscreen/map/**,/jmreport/bigscreen2/**,/api/getUserInfo,/shop/account/email/send-code,/shop/account/register,/shop/account/login/**,/shop/account/google/**,/shop/account/password/reset
   # 短信发送方式 aliyun阿里云短信 tencent腾讯云短信
   smsSendType: aliyun
   #阿里云oss存储和大鱼短信秘钥配置

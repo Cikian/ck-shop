@@ -252,8 +252,8 @@ public class ShopPromotionController extends JeecgController<ShopPromotion, ISho
      * <p>注 2：为什么不用 {@code ShopExportSupport.export(...)}：它只接受"实体 + 参数表"，
      * 而列表的 {@code code}/{@code title} 是**模糊**匹配、实体绑定却是**精确**匹配，
      * 两者相与会让导出结果比列表少（"列表 5 条、导出 1 条"，运营完全无法理解）。
-     * 因此这里按同目录 {@code JeecgOrderMainController} 的既有写法手工组装导出视图，
-     * 用与列表同一套 wrapper 取数。
+     * 因此这里手工组装导出视图（沿用 JeecgBoot 控制器里 ModelAndView + AutoPoi 的常规写法，
+     * 原 {@code JeecgOrderMainController} 示例代码已从本模块移除），用与列表同一套 wrapper 取数。
      */
     @RequiresPermissions("shop-promotion:exportXls")
     @RequestMapping(value = "/exportXls")
