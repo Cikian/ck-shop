@@ -1,10 +1,16 @@
+# ⚠️ 上游遗留文件：本文件描述的是 JeecgBoot 的 **Spring Cloud 微服务**部署
+#    （jeecg-server-cloud/*：gateway / nacos / sentinel / xxl-job …），
+#    但本仓库的 ck-server 是**单体**结构，这些微服务模块在这里并不存在，
+#    构建上下文 ./jeecg-boot/**、./jeecgboot-vue3/** 也都不存在。
+#    保留它只是为了对照上游；请勿在本仓库直接执行。若确认不需要，建议删除。
+# 口令同样改为从环境变量读取（见根目录 .env.example）。
 version: '2'
 services:
   jeecg-boot-mysql:
     build:
       context: ./jeecg-boot/db
     environment:
-      MYSQL_ROOT_PASSWORD: root
+      MYSQL_ROOT_PASSWORD: ${COMPOSE_MYSQL_ROOT_PASSWORD:?请先在 .env 中设置 COMPOSE_MYSQL_ROOT_PASSWORD}
       MYSQL_ROOT_HOST: '%'
       TZ: Asia/Shanghai
     restart: always
@@ -185,7 +191,7 @@ services:
     container_name: jeecg-boot-pgvector
     environment:
       POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
+      POSTGRES_PASSWORD: ${COMPOSE_POSTGRES_PASSWORD:?请先在 .env 中设置 COMPOSE_POSTGRES_PASSWORD}
       POSTGRES_DB: vector_db
 #    ports:
 #      - 5432:5432

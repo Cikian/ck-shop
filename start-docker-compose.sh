@@ -1,4 +1,7 @@
 #!/bin/bash
+# ⚠️ 本脚本目前**无法在本仓库运行**：它 cd 到 ./jeecg-boot 与 ./jeecgboot-vue3，
+#    而本仓库结构是 ck-server / admin-client / nuxt-shop，这两个目录并不存在。
+#    要启用 Docker 部署需先按本仓库布局重写脚本与 compose 上下文。
 # JEECG Boot 一键启动脚本 (Linux Bash 版)
 
 set -e

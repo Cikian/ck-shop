@@ -1,4 +1,7 @@
 @echo off
+:: ⚠️ 本脚本目前**无法在本仓库运行**：它依赖 JeecgBoot 的 Spring Cloud 微服务模块
+::    （./jeecg-boot/jeecg-server-cloud/**）与 ./jeecgboot-vue3，这些在本仓库都不存在
+::    （ck-server 是单体结构）。确认不需要时建议删除。
 :: JEECG Boot 一键启动脚本 (Windows CMD 版)
 chcp 65001 > nul
 set RED=31
