@@ -19,8 +19,9 @@ import { toNumberOrNull } from '~~/types/shop-product'
 import { useStorePrice } from '~~/composables/useProducts'
 import { isUnauthorizedError, readErrorMessage } from '~~/composables/useApiError'
 import { useLoginLink } from '~~/composables/useLoginLink'
+import { hasNumber, isWithdrawable, refundReasonKey } from '~~/utils/orderRefund'
 
-interface OrderItemVO {
+export interface OrderItemVO {
   id?: string | null
   productId?: string | null
   skuName?: string | null
@@ -37,7 +38,7 @@ interface OrderItemVO {
 }
 
 /** 支付单（后端 OrderPaymentVO） */
-interface OrderPaymentVO {
+export interface OrderPaymentVO {
   id?: string | null
   paymentNo?: string | null
   channel?: string | null
@@ -52,7 +53,7 @@ interface OrderPaymentVO {
 }
 
 /** 退款单（后端 OrderRefundVO） */
-interface OrderRefundVO {
+export interface OrderRefundVO {
   id?: string | null
   refundNo?: string | null
   status?: string | null
@@ -70,7 +71,7 @@ interface OrderRefundVO {
 }
 
 /** 订单节点（后端 OrderEventVO） */
-interface OrderEventVO {
+export interface OrderEventVO {
   id?: string | null
   eventType?: string | null
   eventTypeLabel?: string | null
@@ -82,7 +83,7 @@ interface OrderEventVO {
 }
 
 /** 订单详情（后端 StoreOrderDetailVO） */
-interface OrderDetailVO {
+export interface OrderDetailVO {
   orderNo: string
   orderStatus?: string | null
   orderStatusLabel?: string | null
@@ -126,6 +127,12 @@ interface OrderDetailVO {
 export const useOrderDetail = () => {
 
   const { t, locale } = useI18n()
+
+  /** 退款原因 code → 界面文案（映射表在 utils/orderRefund.ts，与后端字典一致） */
+  function refundReasonLabel(reason: string): string {
+    const key = refundReasonKey(reason)
+    return key ? t(key) : reason
+  }
   const localePath = useLocalePath()
   const route = useRoute()
   const toast = useToast()
@@ -176,36 +183,6 @@ export const useOrderDetail = () => {
   const loginLink = useLoginLink()
   const payLink = computed(() => localePath({ path: '/checkout/pay', query: { orderNo: orderNo.value } }))
 
-  /**
-   * 退款原因的中文文案。
-   * 后端字典 shop_refund_reason 只有英文 code，没有随退款单下发中文标签
-   * （退款单出参里 applyReason 是 code，statusLabel / refundTypeLabel 才是中文）。
-   * 所以这里必须做一次 code -> 界面文案的映射，取值集合与后端字典严格一致。
-   */
-  const REFUND_REASON_LABELS: Record<string, string> = {
-    no_need: 'order.reasonNoNeed',
-    duplicate: 'order.reasonDuplicate',
-    mismatch: 'order.reasonMismatch',
-    quality: 'order.reasonQuality',
-    missing: 'order.reasonMissing',
-    logistics: 'order.reasonLogistics',
-    other: 'order.reasonOther',
-  }
-
-  function refundReasonLabel(reason: string): string {
-    const key = REFUND_REASON_LABELS[reason]
-    return key ? t(key) : reason
-  }
-
-  /** 有值（含 0）即 true —— 用于"这一行该不该渲染" */
-  function hasNumber(value: unknown): boolean {
-    const num = toNumberOrNull(value)
-    return num !== null
-  }
-
-  function isWithdrawable(refund: OrderRefundVO): boolean {
-    return String(refund.status ?? '').toUpperCase() === 'APPLYING'
-  }
 
   function startTicking() {
     stopTicking()
