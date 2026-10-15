@@ -101,6 +101,9 @@ public class ShopPromotionServiceImpl extends ServiceImpl<ShopPromotionMapper, S
             new HashSet<>(java.util.Arrays.asList("DIRECT", "PERCENT", "FULL_CUT", "SECKILL"));
 
     private static final String DATE_PATTERN = "yyyy-MM-dd HH:mm:ss";
+    @Autowired
+    private ShopPromotionSupport promotionSupport;
+
 
     @Autowired
     private ShopPromotionProductMapper promotionProductMapper;
@@ -403,24 +406,24 @@ public class ShopPromotionServiceImpl extends ServiceImpl<ShopPromotionMapper, S
         wrapper.eq(StringUtils.isNotBlank(query.getType()), "type", query.getType());
         wrapper.eq(StringUtils.isNotBlank(query.getStatus()), "status", query.getStatus());
         if (StringUtils.isNotBlank(query.getCode())) {
-            wrapper.like("code", escapeSqlLike(query.getCode()));
+            wrapper.like("code", promotionSupport.escapeSqlLike(query.getCode()));
         }
         if (StringUtils.isNotBlank(query.getTitle())) {
             // 列表显示的是 zh 翻译（缺失才回退主表），所以两处都要能搜到：
             // 只搜主表会漏掉"主表还是旧文案、运营只改了翻译"的活动。
             // 用两个 and 包住 OR 组，避免 OR 把前面的可见域条件"吃掉"。
-            String kw = escapeSqlLike(query.getTitle());
+            String kw = promotionSupport.escapeSqlLike(query.getTitle());
             wrapper.and(w -> w.like("title", kw).or().inSql("id",
                     "SELECT promotion_id FROM ck_shop_promotion_translation WHERE title LIKE '%" + kw + "%'"));
         }
         wrapper.ge(StringUtils.isNotBlank(query.getStartTimeBegin()), "start_time",
-                parseDate(query.getStartTimeBegin(), "startTimeBegin"));
+                promotionSupport.parseDate(query.getStartTimeBegin(), "startTimeBegin"));
         wrapper.le(StringUtils.isNotBlank(query.getStartTimeEnd()), "start_time",
-                parseDate(query.getStartTimeEnd(), "startTimeEnd"));
+                promotionSupport.parseDate(query.getStartTimeEnd(), "startTimeEnd"));
         wrapper.ge(StringUtils.isNotBlank(query.getEndTimeBegin()), "end_time",
-                parseDate(query.getEndTimeBegin(), "endTimeBegin"));
+                promotionSupport.parseDate(query.getEndTimeBegin(), "endTimeBegin"));
         wrapper.le(StringUtils.isNotBlank(query.getEndTimeEnd()), "end_time",
-                parseDate(query.getEndTimeEnd(), "endTimeEnd"));
+                promotionSupport.parseDate(query.getEndTimeEnd(), "endTimeEnd"));
     }
 
     /** 空分页（可见域无交集 / 无记录时用），保持与正常分页一致的 current/size */
@@ -503,10 +506,10 @@ public class ShopPromotionServiceImpl extends ServiceImpl<ShopPromotionMapper, S
         String storeId = resolveWritableStoreId(dto.getStoreId(), null);
         // 校验顺序刻意固定：先"缺什么"→ 再"编码占用"→ 再"类型参数"→ 再"多语言"→ 最后"商品归属"。
         // 越靠后的校验越贵（要查库/查商品），先做便宜的校验能让用户一次就看到最该改的那个错。
-        requireNotBlank(dto.getCode(), "活动编码不能为空!");
-        requireNotBlank(dto.getType(), "活动类型不能为空!");
+        promotionSupport.requireNotBlank(dto.getCode(), "活动编码不能为空!");
+        promotionSupport.requireNotBlank(dto.getType(), "活动类型不能为空!");
         requireTitle(dto);
-        validateTimeWindow(dto.getStartTime(), dto.getEndTime());
+        promotionSupport.validateTimeWindow(dto.getStartTime(), dto.getEndTime());
         validateStatus(dto.getStatus());
         checkCodeUnique(dto.getCode(), storeId, null);
         validateTypeFields(dto.getType(), dto.getDiscountValue(), dto.getThresholdAmount(), dto.getSeckillStock());
@@ -542,10 +545,10 @@ public class ShopPromotionServiceImpl extends ServiceImpl<ShopPromotionMapper, S
         }
         ShopPromotion exist = loadAccessible(dto.getId());
         String storeId = resolveWritableStoreId(dto.getStoreId(), exist.getStoreId());
-        requireNotBlank(dto.getCode(), "活动编码不能为空!");
-        requireNotBlank(dto.getType(), "活动类型不能为空!");
+        promotionSupport.requireNotBlank(dto.getCode(), "活动编码不能为空!");
+        promotionSupport.requireNotBlank(dto.getType(), "活动类型不能为空!");
         requireTitle(dto);
-        validateTimeWindow(dto.getStartTime(), dto.getEndTime());
+        promotionSupport.validateTimeWindow(dto.getStartTime(), dto.getEndTime());
         validateStatus(dto.getStatus());
         checkCodeUnique(dto.getCode(), storeId, dto.getId());
         validateTypeFields(dto.getType(), dto.getDiscountValue(), dto.getThresholdAmount(), dto.getSeckillStock());
@@ -759,7 +762,7 @@ public class ShopPromotionServiceImpl extends ServiceImpl<ShopPromotionMapper, S
     @Override
     public List<PromotionConflictVO> checkConflict(String productIds, String startTime, String endTime,
                                                    String excludeId) {
-        List<String> ids = splitIds(productIds);
+        List<String> ids = promotionSupport.splitIds(productIds);
         if (ids.isEmpty()) {
             // 没有商品就没有冲突可言；不报错（前端新建活动时商品还是空的）
             return new ArrayList<>();
@@ -774,9 +777,9 @@ public class ShopPromotionServiceImpl extends ServiceImpl<ShopPromotionMapper, S
             }
             checkProductAccessible(product, visibleStores);
         }
-        Date start = parseDate(startTime, "startTime");
-        Date end = parseDate(endTime, "endTime");
-        validateTimeWindow(start, end);
+        Date start = promotionSupport.parseDate(startTime, "startTime");
+        Date end = promotionSupport.parseDate(endTime, "endTime");
+        promotionSupport.validateTimeWindow(start, end);
 
         // 非管理员：冲突结果只能包含可见店铺的活动，做一层显式收口
         String exclude = StringUtils.trimToNull(excludeId);
@@ -845,20 +848,7 @@ public class ShopPromotionServiceImpl extends ServiceImpl<ShopPromotionMapper, S
     // 校验
     // ==================================================================
 
-    private void requireNotBlank(String value, String message) {
-        if (StringUtils.isBlank(value)) {
-            throw new JeecgBootException(message);
-        }
-    }
 
-    private void validateTimeWindow(Date startTime, Date endTime) {
-        if (startTime == null || endTime == null) {
-            throw new JeecgBootException("活动开始时间与结束时间都不能为空!");
-        }
-        if (!startTime.before(endTime)) {
-            throw new JeecgBootException("活动开始时间必须早于结束时间!");
-        }
-    }
 
     private void validateStatus(String status) {
         if (StringUtils.isBlank(status)) {
@@ -958,7 +948,7 @@ public class ShopPromotionServiceImpl extends ServiceImpl<ShopPromotionMapper, S
                 }
             }
         }
-        requireNotBlank(dto == null ? null : dto.getTitle(),
+        promotionSupport.requireNotBlank(dto == null ? null : dto.getTitle(),
                 "活动名称不能为空!(请在「多语言标题」里填写至少中文标题)");
     }
 
@@ -1031,7 +1021,7 @@ public class ShopPromotionServiceImpl extends ServiceImpl<ShopPromotionMapper, S
             // 管理员能管所有店铺，但一个活动只能挂自己店铺的商品。
             // 判定方式与前台商品可见性一致：sys_org_code 以店铺部门 org_code 为前缀。
             if (!orgScopeResolver.inScope(exist.getSysOrgCode(), Collections.singletonList(storeOrgCode))) {
-                throw new JeecgBootException("商品[" + labelOf(exist) + "]不属于当前活动所在店铺，不能关联");
+                throw new JeecgBootException("商品[" + promotionSupport.labelOf(exist) + "]不属于当前活动所在店铺，不能关联");
             }
             // 再叠加账号可见域：运营不能通过"把活动建到自己店、再挂别店商品"绕过隔离
             checkProductAccessible(exist, visibleStores);
@@ -1045,9 +1035,6 @@ public class ShopPromotionServiceImpl extends ServiceImpl<ShopPromotionMapper, S
         return result;
     }
 
-    private String labelOf(ShopProduct product) {
-        return StringUtils.isNotBlank(product.getSpuCode()) ? product.getSpuCode() : product.getId();
-    }
 
     /**
      * 校验商品可访问（冲突检测入口用）。
@@ -1064,7 +1051,7 @@ public class ShopPromotionServiceImpl extends ServiceImpl<ShopPromotionMapper, S
             return;
         }
         if (StringUtils.isBlank(product.getSysOrgCode())) {
-            throw new JeecgBootException("商品[" + labelOf(product) + "]没有归属部门，无法判断是否越权访问");
+            throw new JeecgBootException("商品[" + promotionSupport.labelOf(product) + "]没有归属部门，无法判断是否越权访问");
         }
         for (ShopStore store : shopStoreMapper.selectEnabledWithDepart()) {
             if (visibleStores.contains(store.getId())
@@ -1201,19 +1188,6 @@ public class ShopPromotionServiceImpl extends ServiceImpl<ShopPromotionMapper, S
     // ==================================================================
 
     /** 逗号分隔 id 串 → 去重后的列表（空串/空白项直接丢弃） */
-    private List<String> splitIds(String ids) {
-        if (StringUtils.isBlank(ids)) {
-            return new ArrayList<>();
-        }
-        List<String> result = new ArrayList<>();
-        for (String item : ids.split(",")) {
-            String trimmed = StringUtils.trimToNull(item);
-            if (trimmed != null && !result.contains(trimmed)) {
-                result.add(trimmed);
-            }
-        }
-        return result;
-    }
 
     /**
      * 解析 {@code yyyy-MM-dd HH:mm:ss}。
@@ -1221,25 +1195,5 @@ public class ShopPromotionServiceImpl extends ServiceImpl<ShopPromotionMapper, S
      * <p>刻意**不**在这里兜"任意格式"：查询参数格式不对时应该明确报错，
      * 而不是静默按别的格式解析出一个用户没预期的区间（那会查出错误的数据还说成功了）。
      */
-    private Date parseDate(String value, String field) {
-        if (StringUtils.isBlank(value)) {
-            return null;
-        }
-        SimpleDateFormat format = new SimpleDateFormat(DATE_PATTERN);
-        // lenient=false：'2026-02-30' 这种非法日期必须报错，不能被"顺延"成 3 月 2 日
-        format.setLenient(false);
-        try {
-            return format.parse(value.trim());
-        } catch (ParseException e) {
-            throw new JeecgBootException("时间格式不正确（" + field + "）：" + value + "，应为 yyyy-MM-dd HH:mm:ss");
-        }
-    }
 
-    private String escapeSqlLike(String keyword) {
-        return keyword.trim()
-                .replace("\\", "\\\\")
-                .replace("'", "''")
-                .replace("%", "\\%")
-                .replace("_", "\\_");
-    }
 }
