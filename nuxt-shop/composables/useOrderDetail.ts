@@ -1,0 +1,389 @@
+// composables/useOrderDetail.ts
+//
+// 订单详情页的数据与操作层：详情加载、四个订单级操作、倒计时、退款单可撤销判断。
+//
+// 为什么抽出来：pages/orders/[orderNo].vue 原先 824 行，模板（状态/金额/商品/收货/物流/时间线）
+// 与这些逻辑混在一起。模板留在页面，逻辑收拢到这里 —— 页面只剩"渲染 + 把这些状态接上"。
+//
+// 三条硬规则的落点（与页面注释一致，勿改）：
+//   1) 操作按钮可见性**只用后端下发的 canPay / canCancel / canReceive / canRefund**；
+//   2) 所有中文标签（订单状态、支付单状态、退款状态与类型、事件类型）都用后端字段；
+//   3) 金额只做两位小数格式化，不做任何运算。
+// 例外：「撤销退款」按钮的可见性由退款单 status 判断（后端没下发标记），
+//      但"是否真的允许撤销"仍由后端裁决，前端只是不发必然失败的请求。
+//
+// ⚠️ 生命周期在本 composable 内注册（onMounted 拉详情 / onBeforeUnmount 停倒计时）：
+//    调用方必须在 setup 顶层**同步**调用它，不要放在 await 之后。
+
+import { toNumberOrNull } from '~~/types/shop-product'
+import { useStorePrice } from '~~/composables/useProducts'
+import { isUnauthorizedError, readErrorMessage } from '~~/composables/useApiError'
+import { useLoginLink } from '~~/composables/useLoginLink'
+
+interface OrderItemVO {
+  id?: string | null
+  productId?: string | null
+  skuName?: string | null
+  productName?: string | null
+  productImage?: string | null
+  price?: number | null
+  quantity?: number | null
+  productAmount?: number | null
+  actualAmount?: number | null
+  promotionTitle?: string | null
+  refundQuantity?: number | null
+  refundAmount?: number | null
+  refundStatus?: string | null
+}
+
+/** 支付单（后端 OrderPaymentVO） */
+interface OrderPaymentVO {
+  id?: string | null
+  paymentNo?: string | null
+  channel?: string | null
+  payType?: string | null
+  status?: string | null
+  statusLabel?: string | null
+  amount?: number | null
+  paidAmount?: number | null
+  refundableAmount?: number | null
+  payTime?: string | null
+  channelTradeNo?: string | null
+}
+
+/** 退款单（后端 OrderRefundVO） */
+interface OrderRefundVO {
+  id?: string | null
+  refundNo?: string | null
+  status?: string | null
+  statusLabel?: string | null
+  refundType?: string | null
+  refundTypeLabel?: string | null
+  refundAmount?: number | null
+  totalQuantity?: number | null
+  applyReason?: string | null
+  applyDesc?: string | null
+  applyTime?: string | null
+  auditRemark?: string | null
+  rejectReason?: string | null
+  refundTime?: string | null
+}
+
+/** 订单节点（后端 OrderEventVO） */
+interface OrderEventVO {
+  id?: string | null
+  eventType?: string | null
+  eventTypeLabel?: string | null
+  operatorTypeLabel?: string | null
+  amount?: number | null
+  remark?: string | null
+  occurredTime?: string | null
+  createTime?: string | null
+}
+
+/** 订单详情（后端 StoreOrderDetailVO） */
+interface OrderDetailVO {
+  orderNo: string
+  orderStatus?: string | null
+  orderStatusLabel?: string | null
+  payStatus?: string | null
+  refundStatus?: string | null
+  storeName?: string | null
+  payAmount?: number | null
+  paidAmount?: number | null
+  refundAmount?: number | null
+  discountAmount?: number | null
+  freightAmount?: number | null
+  totalAmount?: number | null
+  productAmount?: number | null
+  promotionDiscount?: number | null
+  totalQuantity?: number | null
+  createTime?: string | null
+  payDeadline?: string | null
+  remainPaySeconds?: number | null
+  logisticsCompany?: string | null
+  logisticsNo?: string | null
+  cancelReason?: string | null
+  receiverName?: string | null
+  receiverPhone?: string | null
+  receiverProvince?: string | null
+  receiverCity?: string | null
+  receiverDistrict?: string | null
+  receiverAddress?: string | null
+  receiverPostalCode?: string | null
+  receiverTag?: string | null
+  buyerRemark?: string | null
+  items?: OrderItemVO[] | null
+  payments?: OrderPaymentVO[] | null
+  refunds?: OrderRefundVO[] | null
+  events?: OrderEventVO[] | null
+  canPay?: boolean | null
+  canCancel?: boolean | null
+  canReceive?: boolean | null
+  canRefund?: boolean | null
+}
+
+export const useOrderDetail = () => {
+
+  const { t, locale } = useI18n()
+  const localePath = useLocalePath()
+  const route = useRoute()
+  const toast = useToast()
+  const { format } = useStorePrice()
+
+  const orderNo = computed(() => String(route.params.orderNo ?? '').trim())
+
+  const loading = ref(false)
+  const loadError = ref('')
+  const unauthorized = ref(false)
+  const detail = ref<OrderDetailVO | null>(null)
+
+  const receiveState = reactive({ open: false, pending: false })
+  const cancelState = reactive({ open: false })
+  const refundState = reactive({ open: false })
+  const withdrawState = reactive({ open: false, pending: false, refundNo: '' })
+
+  /** 倒计时（与支付页同口径：用 remainPaySeconds 本地锚定，避免时区解析问题） */
+  const deadlineAt = ref<number | null>(null)
+  const remainSeconds = ref(0)
+  const nowTick = ref(Date.now())
+  let tickTimer: ReturnType<typeof setInterval> | null = null
+
+  const items = computed(() => (Array.isArray(detail.value?.items) ? detail.value!.items! : []))
+  const payments = computed(() => (Array.isArray(detail.value?.payments) ? detail.value!.payments! : []))
+  const refunds = computed(() => (Array.isArray(detail.value?.refunds) ? detail.value!.refunds! : []))
+  const events = computed(() => (Array.isArray(detail.value?.events) ? detail.value!.events! : []))
+
+  const expired = computed(() => remainSeconds.value <= 0 && deadlineAt.value !== null)
+
+  const countdownText = computed(() => {
+    const total = Math.max(0, remainSeconds.value)
+    const hours = Math.floor(total / 3600)
+    const minutes = Math.floor((total % 3600) / 60)
+    const seconds = total % 60
+    const pad = (value: number) => String(value).padStart(2, '0')
+    return hours > 0 ? `${pad(hours)}:${pad(minutes)}:${pad(seconds)}` : `${pad(minutes)}:${pad(seconds)}`
+  })
+
+  /** 完整收货地址：后端把省市区与详细地址分开给，这里只做拼接展示 */
+  const receiverAddressText = computed(() => {
+    const source = detail.value
+    if (!source) return ''
+    const region = [source.receiverProvince, source.receiverCity, source.receiverDistrict].filter(Boolean).join(' ')
+    return [region, source.receiverAddress].filter(Boolean).join(' ')
+  })
+
+  const loginLink = useLoginLink()
+  const payLink = computed(() => localePath({ path: '/checkout/pay', query: { orderNo: orderNo.value } }))
+
+  /**
+   * 退款原因的中文文案。
+   * 后端字典 shop_refund_reason 只有英文 code，没有随退款单下发中文标签
+   * （退款单出参里 applyReason 是 code，statusLabel / refundTypeLabel 才是中文）。
+   * 所以这里必须做一次 code -> 界面文案的映射，取值集合与后端字典严格一致。
+   */
+  const REFUND_REASON_LABELS: Record<string, string> = {
+    no_need: 'order.reasonNoNeed',
+    duplicate: 'order.reasonDuplicate',
+    mismatch: 'order.reasonMismatch',
+    quality: 'order.reasonQuality',
+    missing: 'order.reasonMissing',
+    logistics: 'order.reasonLogistics',
+    other: 'order.reasonOther',
+  }
+
+  function refundReasonLabel(reason: string): string {
+    const key = REFUND_REASON_LABELS[reason]
+    return key ? t(key) : reason
+  }
+
+  /** 有值（含 0）即 true —— 用于"这一行该不该渲染" */
+  function hasNumber(value: unknown): boolean {
+    const num = toNumberOrNull(value)
+    return num !== null
+  }
+
+  function isWithdrawable(refund: OrderRefundVO): boolean {
+    return String(refund.status ?? '').toUpperCase() === 'APPLYING'
+  }
+
+  function startTicking() {
+    stopTicking()
+    if (deadlineAt.value === null) return
+    tickTimer = setInterval(() => {
+      nowTick.value = Date.now()
+      const remain = Math.round((deadlineAt.value! - nowTick.value) / 1000)
+      remainSeconds.value = remain > 0 ? remain : 0
+    }, 1000)
+  }
+
+  function stopTicking() {
+    if (tickTimer) {
+      clearInterval(tickTimer)
+      tickTimer = null
+    }
+  }
+
+  function anchorDeadline(order: OrderDetailVO) {
+    const remain = toNumberOrNull(order.remainPaySeconds)
+    if (remain !== null && remain >= 0) {
+      remainSeconds.value = Math.trunc(remain)
+      deadlineAt.value = Date.now() + remainSeconds.value * 1000
+      return
+    }
+    const raw = order.payDeadline ? String(order.payDeadline).replace(' ', 'T') : ''
+    const parsed = raw ? new Date(raw) : null
+    if (parsed && !Number.isNaN(parsed.getTime())) {
+      deadlineAt.value = parsed.getTime()
+      remainSeconds.value = Math.max(0, Math.round((deadlineAt.value - Date.now()) / 1000))
+      return
+    }
+    deadlineAt.value = null
+    remainSeconds.value = 0
+  }
+
+  async function loadDetail() {
+    if (!orderNo.value) {
+      loadError.value = t('order.notFoundDesc')
+      return
+    }
+    loading.value = true
+    loadError.value = ''
+    try {
+      const result = await $fetch<OrderDetailVO>('/api/order/detail', {
+        query: { orderNo: orderNo.value, lang: locale.value },
+      })
+      detail.value = result
+      // 只有待支付订单需要倒计时
+      if (result?.canPay) {
+        anchorDeadline(result)
+        startTicking()
+      } else {
+        stopTicking()
+        deadlineAt.value = null
+        remainSeconds.value = 0
+      }
+      unauthorized.value = false
+    } catch (error) {
+      if (isUnauthorizedError(error)) {
+        unauthorized.value = true
+        return
+      }
+      loadError.value = readErrorMessage(error, t('order.loadErrorDesc'))
+    } finally {
+      loading.value = false
+    }
+  }
+
+  async function confirmReceive() {
+    receiveState.pending = true
+    try {
+      await $fetch('/api/order/confirm-receive', {
+        method: 'POST',
+        body: { orderNo: orderNo.value, lang: locale.value },
+      })
+      toast.add({ title: t('order.receivedToast'), color: 'success', icon: 'lucide:check' })
+      receiveState.open = false
+      await loadDetail()
+    } catch (error) {
+      toast.add({
+        title: t('order.actionFailed'),
+        description: readErrorMessage(error, t('order.loadErrorDesc')),
+        color: 'error',
+        icon: 'lucide:circle-alert',
+      })
+    } finally {
+      receiveState.pending = false
+    }
+  }
+
+  function askWithdraw(refund: OrderRefundVO) {
+    withdrawState.refundNo = String(refund.refundNo ?? '')
+    withdrawState.open = true
+  }
+
+  async function confirmWithdraw() {
+    if (!withdrawState.refundNo) return
+    withdrawState.pending = true
+    try {
+      // refundNo 走查询参数（后端方法签名没有 @RequestBody），BFF 已按这个位置转发
+      await $fetch('/api/order/refund/withdraw', {
+        method: 'POST',
+        query: { refundNo: withdrawState.refundNo, lang: locale.value },
+      })
+      toast.add({ title: t('order.withdrawnToast'), color: 'success', icon: 'lucide:check' })
+      withdrawState.open = false
+      await loadDetail()
+    } catch (error) {
+      toast.add({
+        title: t('order.actionFailed'),
+        description: readErrorMessage(error, t('order.loadErrorDesc')),
+        color: 'error',
+        icon: 'lucide:circle-alert',
+      })
+    } finally {
+      withdrawState.pending = false
+    }
+  }
+
+  /**
+   * 退款申请成功后的刷新。
+   *
+   * 这里走**独立的退款单接口**（GET /api/order/refund/list?orderNo=）而不是重新拉整个详情：
+   * 退款审核状态是变化最快的数据，单独刷新它更省带宽，也让"刚提交的退款单"立刻可见。
+   * 详情里的其它字段（状态、金额）也顺手刷新一次，避免订单状态已变而页面还停在旧值。
+   */
+  async function onRefundApplied() {
+    // 顺序很重要：先刷新订单主体（订单状态 / refundStatus / canRefund 都会变），
+    // 再用独立的退款单接口覆盖退款单列表 —— 审核状态是变化最快的数据，
+    // 它拿到的必然不比详情旧，放在后面就不会被详情里的旧列表盖回去。
+    await loadDetail()
+    try {
+      const list = await $fetch<OrderRefundVO[]>('/api/order/refund/list', {
+        query: { orderNo: orderNo.value, lang: locale.value },
+      })
+      if (detail.value && Array.isArray(list)) {
+        detail.value = { ...detail.value, refunds: list }
+      }
+    } catch (error) {
+      toast.add({
+        title: t('order.refundsTitle'),
+        description: readErrorMessage(error, t('order.loadErrorDesc')),
+        color: 'error',
+        icon: 'lucide:circle-alert',
+      })
+    }
+  }
+  onMounted(loadDetail)
+  onBeforeUnmount(stopTicking)
+
+  return {
+    orderNo,
+    loading,
+    loadError,
+    unauthorized,
+    detail,
+    receiveState,
+    cancelState,
+    refundState,
+    withdrawState,
+    items,
+    payments,
+    refunds,
+    events,
+    expired,
+    countdownText,
+    receiverAddressText,
+    loginLink,
+    payLink,
+    refundReasonLabel,
+    hasNumber,
+    isWithdrawable,
+    loadDetail,
+    confirmReceive,
+    askWithdraw,
+    confirmWithdraw,
+    onRefundApplied,
+  }
+}
+
