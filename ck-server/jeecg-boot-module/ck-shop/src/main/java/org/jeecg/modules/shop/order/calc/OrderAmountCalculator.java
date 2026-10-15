@@ -25,6 +25,7 @@ import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import org.jeecg.modules.shop.common.ShopOrgUtils;
 
 /**
  * <p>
@@ -205,7 +206,7 @@ public class OrderAmountCalculator {
         // 归属校验：商品必须落在当前店铺的部门可见域内。
         // 少了这条，构造一个别店的 productId 就能在 A 店下单买 B 店的货。
         String productOrg = StringUtils.trimToNull(product.getSysOrgCode());
-        if (productOrg == null || !productOrg.startsWith(context.getStoreOrgCode())) {
+        if (productOrg == null || !ShopOrgUtils.matchesOrg(productOrg, context.getStoreOrgCode())) {
             return markInvalid(line, "商品在当前店铺不存在或已下架");
         }
         if (!"Y".equals(product.getStatus())) {
