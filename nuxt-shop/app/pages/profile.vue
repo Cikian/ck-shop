@@ -1089,6 +1089,7 @@ import { useAuth } from '~~/composables/useAuth'
 import { useFavoriteList, extractFavoriteErrorMessage } from '~~/composables/useFavorites'
 import { useStorePrice } from '~~/composables/useProducts'
 import { isPositive, isUnauthorizedError, readErrorMessage } from '~~/composables/useApiError'
+import { formatDate, formatDateTime } from '~~/composables/useDateTimeFormat'
 import { resolveCoverUrl, resolvePriceView, toNumberOrNull } from '~~/types/shop-product'
 
 /**
@@ -1594,25 +1595,13 @@ async function confirmDeleteAddress() {
   }
 }
 
-/**
- * 订单、地址与账户资料都在**登录态恢复后立刻各拉一次**（不是等用户切到对应标签页）：
- * 顶部「订单数」统计卡要立即显示真实数量，否则用户会看到"订单数 0"却明明下过单。
- *   - 未登录不打接口（个人中心未登录时走的是登录引导，不该产生必然 401 的请求）；
- *   - 三个接口都只在登录态**首次**变为 true 时拉一次，避免重试/翻页后被 watch 冲掉。
- *
- * /api/auth/profile 同样在这里拉：密码区块要靠它的 hasPassword 决定标题，
- * 等用户点到「账户设置」再拉会让标题先空一下再跳变；顺手也让资料表单
- * 在有真实资料时更早拿到数据（契约 3 节新增的 profile.get.ts）。
- */
-const privateDataLoaded = ref(false)
-
-watch(isLoggedIn, () => {
-  if (!isLoggedIn.value || privateDataLoaded.value) return
-  privateDataLoaded.value = true
-  void loadOrders()
-  void loadAddresses()
-  void loadProfile()
-}, { immediate: true })
+// 注意：「订单/地址/账户资料首次登录后各拉一次」的那个 immediate watch 放在本文件
+// setup 的**末尾**（见 loadProfile 定义之后）—— immediate watch 的回调会在 setup
+// 期间**同步**执行，如果它被放在 profileLoading / ordersLoading 等 ref 声明之前，
+// 回调里访问这些 const 会直接抛
+//   ReferenceError: Cannot access 'profileLoading' before initialization
+// 而 SSR 下这个异常会让整页 500。这类"顺序依赖"是巨型单文件组件最难查的坑之一，
+// 所以：任何 immediate watch 都必须写在它所用到的所有声明之后。
 
 const displayName = computed(() => userInfo.value?.realname || userInfo.value?.username || '')
 
@@ -1727,6 +1716,31 @@ async function loadProfile() {
     profileLoading.value = false
   }
 }
+
+/**
+ * 订单、地址与账户资料都在**登录态恢复后立刻各拉一次**（不是等用户切到对应标签页）：
+ * 顶部「订单数」统计卡要立即显示真实数量，否则用户会看到"订单数 0"却明明下过单。
+ *   - 未登录不打接口（个人中心未登录时走的是登录引导，不该产生必然 401 的请求）；
+ *   - 三个接口都只在登录态**首次**变为 true 时拉一次，避免重试/翻页后被 watch 冲掉。
+ *
+ * /api/auth/profile 同样在这里拉：密码区块要靠它的 hasPassword 决定标题，
+ * 等用户点到「账户设置」再拉会让标题先空一下再跳变；顺手也让资料表单
+ * 在有真实资料时更早拿到数据（契约 3 节新增的 profile.get.ts）。
+ *
+ * ⚠️ 位置要求：`immediate: true` 的回调会在 setup 期间**同步**执行，因此本段必须放在
+ * ordersLoading / addressesLoading / profileLoading 以及 loadOrders/loadAddresses/loadProfile
+ * 的声明**之后**。放在前面会抛 "Cannot access 'profileLoading' before initialization"，
+ * SSR 下表现为 /profile 整页 500 —— 这是本页真实踩过的线上故障，不要为了"代码好读"把它上移。
+ */
+const privateDataLoaded = ref(false)
+
+watch(isLoggedIn, () => {
+  if (!isLoggedIn.value || privateDataLoaded.value) return
+  privateDataLoaded.value = true
+  void loadOrders()
+  void loadAddresses()
+  void loadProfile()
+}, { immediate: true })
 
 /**
  * 密码强度：与后端规则一致（8-32 位，至少含字母和数字，契约 2.2）。

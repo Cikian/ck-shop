@@ -246,6 +246,7 @@ definePageMeta({ middleware: 'auth' })
 import { toNumberOrNull } from '~~/types/shop-product'
 import { useStorePrice } from '~~/composables/useProducts'
 import { isPositive, isUnauthorizedError, readErrorMessage } from '~~/composables/useApiError'
+import { formatDateTime } from '~~/composables/useDateTimeFormat'
 import { useLoginLink } from '~~/composables/useLoginLink'
 
 /**
