@@ -480,94 +480,7 @@
                 我的收藏：真实数据（GET /api/favorite，商品信息由后端实时读取，
                 已下架/已删除的商品不会出现在这里）。支持在本页直接取消收藏。
               -->
-              <template v-else-if="activeTab === 'favorites'">
-                <p v-if="favoritesLoaded && favoriteTotal > 0" class="mt-1.5 text-[13px] text-[var(--color-muted)]">
-                  {{ t('shop.profileFavoritesTotal', { count: favoriteTotal }) }}
-                </p>
-
-                <!-- 加载中：骨架屏（不写死行数，固定 3 行即可，避免猜测每页条数） -->
-                <ul v-if="favoritesLoading" class="mt-4 space-y-3" aria-busy="true">
-                  <li v-for="index in 3" :key="`fav-skeleton-${index}`" class="flex gap-4">
-                    <span class="h-20 w-20 shrink-0 animate-pulse rounded-[var(--radius-tile)] bg-[var(--color-line-soft)]"></span>
-                    <span class="flex-1 space-y-2 py-1">
-                      <span class="block h-4 w-2/3 animate-pulse rounded bg-[var(--color-line-soft)]"></span>
-                      <span class="block h-4 w-1/3 animate-pulse rounded bg-[var(--color-line-soft)]"></span>
-                    </span>
-                  </li>
-                </ul>
-
-                <!-- 加载失败：把后端/网络的原话展示出来，用户才知道是重试还是先别管 -->
-                <div v-else-if="favoritesError" class="mt-5 flex items-start gap-2 rounded-[var(--radius-card-sm)] bg-[var(--color-error-50)] px-4 py-3 text-[13px] font-medium text-[var(--color-error-600)]">
-                  <UIcon name="lucide:circle-alert" class="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
-                  <span>{{ t('shop.profileFavoritesLoadError') }}：{{ favoritesError }}</span>
-                </div>
-
-                <!-- 有收藏：紧凑列表（封面 + 标题 + 价格 + 取消收藏），点封面/标题进详情 -->
-                <ul v-else-if="favoriteItems.length" class="mt-4 divide-y divide-[var(--color-line-soft)]">
-                  <li v-for="item in favoriteItems" :key="item.id" class="flex items-center gap-4 py-4">
-                    <NuxtLinkLocale
-                      :to="`/products/${item.id}`"
-                      class="block h-20 w-20 shrink-0 overflow-hidden rounded-[var(--radius-tile)] bg-[var(--color-line-soft)]"
-                    >
-                      <img
-                        v-if="favoriteCover(item)"
-                        :src="favoriteCover(item)"
-                        :alt="item.title"
-                        width="80"
-                        height="80"
-                        class="h-full w-full object-cover"
-                        loading="lazy"
-                      >
-                      <span v-else class="flex h-full w-full items-center justify-center">
-                        <UIcon name="lucide:image-off" class="h-6 w-6 text-[var(--color-muted)]" aria-hidden="true" />
-                      </span>
-                    </NuxtLinkLocale>
-
-                    <div class="min-w-0 flex-1">
-                      <NuxtLinkLocale
-                        :to="`/products/${item.id}`"
-                        class="line-clamp-2 text-[14px] font-bold text-[var(--color-ink)] transition-colors hover:text-[var(--color-brand-600)]"
-                      >
-                        {{ item.title }}
-                      </NuxtLinkLocale>
-                      <p v-if="item.subTitle" class="mt-1 truncate text-[12px] text-[var(--color-muted)]">
-                        {{ item.subTitle }}
-                      </p>
-                      <p class="price mt-1.5 text-[16px] leading-none">{{ favoritePrice(item) }}</p>
-                    </div>
-
-                    <button
-                      type="button"
-                      class="ui-pill ui-pill-ghost h-9 shrink-0 px-4 text-[13px] disabled:cursor-not-allowed disabled:opacity-45"
-                      :disabled="favoriteRemovingId === item.id"
-                      :aria-label="`${t('product.removeFromWishlist')} - ${item.title}`"
-                      @click="handleRemoveFavorite(item.id)"
-                    >
-                      <UIcon
-                        :name="favoriteRemovingId === item.id ? 'lucide:loader-circle' : 'lucide:heart-off'"
-                        class="h-4 w-4"
-                        :class="favoriteRemovingId === item.id ? 'animate-spin' : ''"
-                        aria-hidden="true"
-                      />
-                      {{ t('product.removeFromWishlist') }}
-                    </button>
-                  </li>
-                </ul>
-
-                <!-- 真的没有收藏 -->
-                <div v-else class="flex flex-col items-center justify-center py-14 text-center">
-                  <span class="flex h-20 w-20 items-center justify-center rounded-full bg-[var(--color-brand-50)] text-[var(--color-brand-400)]">
-                    <UIcon name="lucide:heart-off" class="h-9 w-9" aria-hidden="true" />
-                  </span>
-                  <p class="mt-5 text-sm font-bold text-[var(--color-ink)]">
-                    {{ t('shop.profileFavoritesEmpty') }}
-                  </p>
-                  <NuxtLinkLocale to="/products" class="ui-pill ui-pill-brand mt-5 h-10 px-6 text-[13px]">
-                    <UIcon name="lucide:arrow-right" class="h-4 w-4" aria-hidden="true" />
-                    {{ t('shop.profileFavoritesAction') }}
-                  </NuxtLinkLocale>
-                </div>
-              </template>
+              <ProfileFavoritesPanel v-else-if="activeTab === 'favorites'" />
 
               <!--
                 我的订单：真实数据（GET /api/order）。
@@ -1086,11 +999,11 @@
 definePageMeta({ middleware: 'auth' })
 
 import { useAuth } from '~~/composables/useAuth'
-import { useFavoriteList, extractFavoriteErrorMessage } from '~~/composables/useFavorites'
+import { useFavoriteList } from '~~/composables/useFavorites'
 import { useStorePrice } from '~~/composables/useProducts'
 import { isPositive, isUnauthorizedError, readErrorMessage } from '~~/composables/useApiError'
 import { formatDate, formatDateTime } from '~~/composables/useDateTimeFormat'
-import { resolveCoverUrl, resolvePriceView, toNumberOrNull } from '~~/types/shop-product'
+import { toNumberOrNull } from '~~/types/shop-product'
 
 /**
  * 个人中心。
@@ -1111,7 +1024,7 @@ const { userInfo, isLoggedIn, logout, changePassword } = useAuth()
 const localePath = useLocalePath()
 const route = useRoute()
 const toast = useToast()
-const { format, formatCompact } = useStorePrice()
+const { format } = useStorePrice()
 
 type TabKey = 'info' | 'orders' | 'favorites' | 'addresses' | 'settings'
 
@@ -1171,14 +1084,14 @@ const activeTabMeta = computed(
 // 我的收藏（真实数据）
 // ---------------------------------------------------------------------------
 
+// 页面只保留「统计卡要用的 total」和「登录后预加载的 load」；
+// 列表渲染与取消收藏已搬进 components/profile/FavoritesPanel.vue ——
+// 它调用同一个 composable（内部是 useState），拿到的是同一份数据，
+// 所以在面板里取消收藏后，顶部统计卡会一起更新。
 const {
-  items: favoriteItems,
   total: favoriteTotal,
-  loading: favoritesLoading,
   loaded: favoritesLoaded,
-  error: favoritesError,
   load: loadFavorites,
-  remove: removeFavorite,
 } = useFavoriteList()
 
 /**
@@ -1192,36 +1105,6 @@ const stats = computed(() => [
   { label: 'shop.profileCoupons', value: 0, icon: 'lucide:ticket', iconClass: 'bg-[var(--color-warning-50)] text-[var(--color-warning-600)]' },
   { label: 'shop.profilePoints', value: 0, icon: 'lucide:gift', iconClass: 'bg-[var(--color-success-50)] text-[var(--color-success-600)]' },
 ])
-
-/** 正在取消收藏的那一行 id（按钮转圈 + 防重复点击） */
-const favoriteRemovingId = ref('')
-
-function favoriteCover(item: { coverUrl: string | null; mainImage: string | null }): string {
-  return resolveCoverUrl(item)
-}
-
-/** 收藏列表里的价格：与商品卡片同一套口径（minPrice 优先、整数不带小数） */
-function favoritePrice(item: Parameters<typeof resolvePriceView>[0]): string {
-  return formatCompact(resolvePriceView(item).price)
-}
-
-async function handleRemoveFavorite(productId: string) {
-  if (favoriteRemovingId.value) return
-  favoriteRemovingId.value = productId
-  try {
-    await removeFavorite(productId)
-    toast.add({ title: t('product.removedFromWishlist'), color: 'success', icon: 'lucide:heart-off' })
-  } catch (error) {
-    toast.add({
-      title: t('product.wishlistFailed'),
-      description: extractFavoriteErrorMessage(error, t('shop.profileFavoritesLoadError')),
-      color: 'error',
-      icon: 'lucide:circle-alert',
-    })
-  } finally {
-    favoriteRemovingId.value = ''
-  }
-}
 
 /**
  * 收藏数据在**登录态恢复后立刻拉一次**（不是等用户切到收藏标签页）：
