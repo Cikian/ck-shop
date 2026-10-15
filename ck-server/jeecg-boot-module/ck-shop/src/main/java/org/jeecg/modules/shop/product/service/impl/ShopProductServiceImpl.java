@@ -14,6 +14,7 @@ import org.jeecg.modules.shop.category.entity.ShopCategory;
 import org.jeecg.modules.shop.category.entity.ShopCategoryTranslation;
 import org.jeecg.modules.shop.category.mapper.ShopCategoryMapper;
 import org.jeecg.modules.shop.category.mapper.ShopCategoryTranslationMapper;
+import org.jeecg.modules.shop.common.ShopSqlUtils;
 import org.jeecg.modules.shop.common.util.ShopAuditUtils;
 import org.jeecg.modules.shop.product.entity.ShopProduct;
 import org.jeecg.modules.shop.product.entity.ShopProductImage;
@@ -151,7 +152,7 @@ public class ShopProductServiceImpl extends ServiceImpl<ShopProductMapper, ShopP
         String keyword = query == null ? null : query.getKeyword();
         String tagId = query == null ? null : query.getTagId();
         if (StringUtils.isNotBlank(keyword)) {
-            String kw = escapeSqlLike(keyword);
+            String kw = ShopSqlUtils.escapeLike(keyword);
             wrapper.inSql("id", "SELECT product_id FROM ck_shop_product_translation WHERE title LIKE '%" + kw + "%'");
         }
         if (StringUtils.isNotBlank(tagId)) {
@@ -448,7 +449,7 @@ public class ShopProductServiceImpl extends ServiceImpl<ShopProductMapper, ShopP
             wrapper.in("category_id", categoryIds);
         }
         if (StringUtils.isNotBlank(keyword)) {
-            String kw = escapeSqlLike(keyword);
+            String kw = ShopSqlUtils.escapeLike(keyword);
             wrapper.inSql("id", "SELECT product_id FROM ck_shop_product_translation WHERE title LIKE '%" + kw + "%'");
         }
         // 排序：只按白名单映射到固定列，未知取值回落到原有默认排序（详见 applyStoreSort）
@@ -1548,11 +1549,4 @@ public class ShopProductServiceImpl extends ServiceImpl<ShopProductMapper, ShopP
         return StringUtils.isBlank(language) ? DEFAULT_LANGUAGE : language;
     }
 
-    private String escapeSqlLike(String keyword) {
-        return keyword.trim()
-                .replace("\\", "\\\\")
-                .replace("'", "''")
-                .replace("%", "\\%")
-                .replace("_", "\\_");
-    }
 }

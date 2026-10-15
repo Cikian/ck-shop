@@ -1,6 +1,7 @@
 package org.jeecg.modules.shop.promotion.service.impl;
 
 import org.apache.commons.lang3.StringUtils;
+import org.jeecg.modules.shop.common.ShopSqlUtils;
 import org.jeecg.common.exception.JeecgBootException;
 import org.jeecg.modules.shop.product.entity.ShopProduct;
 import org.springframework.stereotype.Component;
@@ -88,10 +89,6 @@ public class ShopPromotionSupport {
 
     /** 关键字进 LIKE 前的转义（反斜杠、单引号、通配符） */
     public String escapeSqlLike(String keyword) {
-        return keyword.trim()
-                .replace("\\", "\\\\")
-                .replace("'", "''")
-                .replace("%", "\\%")
-                .replace("_", "\\_");
+        return ShopSqlUtils.escapeLike(keyword);
     }
 }

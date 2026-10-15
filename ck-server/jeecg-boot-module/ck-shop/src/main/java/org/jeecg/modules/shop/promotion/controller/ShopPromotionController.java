@@ -10,11 +10,17 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.shiro.SecurityUtils;
 import org.apache.shiro.authz.annotation.RequiresPermissions;
+import org.jeecg.modules.shop.common.ShopSqlUtils;
 import org.jeecg.common.api.vo.Result;
+import org.jeecg.modules.shop.common.ShopSqlUtils;
 import org.jeecg.common.aspect.annotation.AutoLog;
+import org.jeecg.modules.shop.common.ShopSqlUtils;
 import org.jeecg.common.exception.JeecgBootException;
+import org.jeecg.modules.shop.common.ShopSqlUtils;
 import org.jeecg.common.system.base.controller.JeecgController;
+import org.jeecg.modules.shop.common.ShopSqlUtils;
 import org.jeecg.common.system.query.QueryGenerator;
+import org.jeecg.modules.shop.common.ShopSqlUtils;
 import org.jeecg.common.system.vo.LoginUser;
 import org.jeecg.config.JeecgBaseConfig;
 import org.jeecg.modules.shop.promotion.entity.ShopPromotion;
@@ -317,10 +323,10 @@ public class ShopPromotionController extends JeecgController<ShopPromotion, ISho
         wrapper.eq(StringUtils.isNotBlank(type), "type", type);
         wrapper.eq(StringUtils.isNotBlank(status), "status", status);
         if (StringUtils.isNotBlank(code)) {
-            wrapper.like("code", escapeSqlLike(code));
+            wrapper.like("code", ShopSqlUtils.escapeLike(code));
         }
         if (StringUtils.isNotBlank(title)) {
-            String kw = escapeSqlLike(title);
+            String kw = ShopSqlUtils.escapeLike(title);
             wrapper.and(w -> w.like("title", kw).or().inSql("id",
                     "SELECT promotion_id FROM ck_shop_promotion_translation WHERE title LIKE '%" + kw + "%'"));
         }
@@ -353,13 +359,6 @@ public class ShopPromotionController extends JeecgController<ShopPromotion, ISho
         return StringUtils.isNotBlank(first) ? first : second;
     }
 
-    private String escapeSqlLike(String keyword) {
-        return keyword.trim()
-                .replace("\\", "\\\\")
-                .replace("'", "''")
-                .replace("%", "\\%")
-                .replace("_", "\\_");
-    }
 
     /**
      * 通过excel导入数据
