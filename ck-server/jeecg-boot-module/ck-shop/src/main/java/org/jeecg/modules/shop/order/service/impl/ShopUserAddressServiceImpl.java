@@ -165,12 +165,55 @@ public class ShopUserAddressServiceImpl
     public void remove(String userId, String addressId) {
         requireUser(userId);
         ShopUserAddress exists = requireOwned(userId, addressId, true);
+        boolean wasDefault = exists.getIsDefault() != null && exists.getIsDefault() == 1;
+
         // 软删除：订单快照引用了地址 ID，硬删会让"当时用的哪个地址"无法回答
         update(new LambdaUpdateWrapper<ShopUserAddress>()
                 .eq(ShopUserAddress::getId, exists.getId())
                 .eq(ShopUserAddress::getUserId, userId)
                 .set(ShopUserAddress::getDelFlag, 1)
                 .set(ShopUserAddress::getUpdateTime, new Date()));
+
+        if (!wasDefault) {
+            // 删的不是默认地址，默认项没受影响。
+            // 此时"顺手"改任何 is_default 都是错的：用户只是想删掉一条旁支地址，
+            // 系统不该借机动他当前选中的默认项。
+            return;
+        }
+
+        // 删掉的正是默认地址：必须补一个，否则该用户变成"一条默认地址都没有"，
+        // 结算页要用户每次手动选地址（见文件头"默认地址唯一"纪律）。
+        // 这与 update() 里"不能取消唯一默认"是同一条不变量的两面：
+        // 那里拒绝把用户显式取消的默认删空，这里则不允许删除动作留下空默认。
+        ShopUserAddress candidate = getOne(new LambdaQueryWrapper<ShopUserAddress>()
+                .eq(ShopUserAddress::getUserId, userId)
+                .eq(ShopUserAddress::getDelFlag, 0)
+                // 排序口径与 listMine 一致（去掉 is_default 这一层，待补的那条此时还不是默认）：
+                // 先看最近用过的，再看最近建的。两者都相同/为空时也必须有确定顺序，
+                // 否则同一份数据在两次删除中可能补出不同的默认地址，问题难以复现。
+                .orderByDesc(ShopUserAddress::getLastUsedTime)
+                .orderByDesc(ShopUserAddress::getCreateTime)
+                .orderByDesc(ShopUserAddress::getId)
+                .last("LIMIT 1"), false);
+
+        if (candidate == null) {
+            // 删掉的是最后一条地址：地址簿为空是合法状态，没有可提升的对象，
+            // 静默返回即可——这里报错只会让用户"删不掉最后一条地址"。
+            return;
+        }
+
+        // 上面已先软删，candidate 必然是"剩下的"地址；
+        // 同一 @Transactional 内完成补位，中途失败会整体回滚，不会留下无默认的中间态。
+        update(new LambdaUpdateWrapper<ShopUserAddress>()
+                .eq(ShopUserAddress::getId, candidate.getId())
+                .eq(ShopUserAddress::getUserId, userId)
+                .eq(ShopUserAddress::getDelFlag, 0)
+                .set(ShopUserAddress::getIsDefault, 1)
+                .set(ShopUserAddress::getUpdateTime, new Date()));
+        // 兜底清掉其它残留的默认标记。正常数据下这里影响 0 行，
+        // 但历史数据可能因本次修复前的缺陷留下了多条 is_default=1，
+        // 不清理的话结算页"默认选中哪一个"会重新变成随机行为。
+        clearOtherDefault(userId, candidate.getId());
     }
 
     @Override

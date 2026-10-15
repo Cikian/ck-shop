@@ -40,7 +40,14 @@ public interface IShopUserAddressService extends IService<ShopUserAddress> {
     /** 编辑地址（含归属校验） */
     AddressVO update(String userId, String username, AddressDTO dto);
 
-    /** 删除地址（软删除；归属校验） */
+    /**
+     * 删除地址（软删除；归属校验）。
+     *
+     * <p>删除的若正好是当前默认地址，会在同一事务里把剩下的某条（最近使用优先、
+     * 其次最近创建）重新设为默认，保证"只要地址簿非空就一定有默认地址"；
+     * 删除非默认地址不做任何额外改动；删掉最后一条时地址簿为空，
+     * 此时 0 条默认是合法状态。
+     */
     void remove(String userId, String addressId);
 
     /** 设为默认地址（会清掉该用户其它地址的默认标记，保证有且只有一个默认） */
