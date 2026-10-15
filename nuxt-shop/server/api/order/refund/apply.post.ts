@@ -20,6 +20,15 @@ import { resolveStoreLang } from '~~/types/store-locale'
 /** 后端字典 shop_refund_reason 的合法取值（前端下拉只提供这几项，不自由发挥） */
 const REFUND_REASONS = ['no_need', 'duplicate', 'mismatch', 'quality', 'missing', 'logistics', 'other']
 
+/**
+ * 单次退款申请的明细行上限与凭证图片上限。
+ *
+ * 不设上限时，超大数组会被原样转发给后端（逐行写退款明细 + 占额度），
+ * 属于"一个请求放大成上万次写库"的入口。正常订单不会有几十行明细。
+ */
+const MAX_REFUND_ITEMS = 50
+const MAX_REFUND_IMAGES = 9
+
 interface RefundItemBody {
   orderItemId?: string
   quantity?: number
@@ -51,12 +60,27 @@ export default defineEventHandler(async (event): Promise<unknown> => {
   // items 缺省 / 空数组都表示「整单全退」：此时**不带** items 字段，
   // 因为后端把「不传」当作整单退款的信号。
   const rawItems = Array.isArray(body?.items) ? body.items : []
+  if (rawItems.length > MAX_REFUND_ITEMS) {
+    throw createError({
+      statusCode: 400,
+      statusMessage: `一次最多提交 ${MAX_REFUND_ITEMS} 行退款明细，请分批申请`,
+    })
+  }
   const items = rawItems
     .map(item => ({
       orderItemId: String(item?.orderItemId ?? '').trim(),
       quantity: Math.trunc(Number(item?.quantity)),
     }))
     .filter(item => item.orderItemId && Number.isFinite(item.quantity) && item.quantity > 0)
+
+  // 凭证图片同样要有上限：数组越长后端要存的 URL 越多，也是放大攻击的入口
+  const rawImages = Array.isArray(body?.images) ? body.images : []
+  if (rawImages.length > MAX_REFUND_IMAGES) {
+    throw createError({
+      statusCode: 400,
+      statusMessage: `最多上传 ${MAX_REFUND_IMAGES} 张凭证图片`,
+    })
+  }
 
   const reason = String(body?.reason ?? '').trim()
   if (reason && !REFUND_REASONS.includes(reason)) {
@@ -78,8 +102,8 @@ export default defineEventHandler(async (event): Promise<unknown> => {
   if (items.length) {
     payload.items = items
   }
-  if (Array.isArray(body?.images) && body.images.length) {
-    payload.images = body.images.map(url => String(url)).filter(Boolean)
+  if (rawImages.length) {
+    payload.images = rawImages.map(url => String(url)).filter(Boolean)
   }
 
   try {

@@ -10,15 +10,19 @@
 // 所以这里不需要"失效条目"的额外处理。
 
 import type { StoreProductPage } from '~~/types/shop-product'
-import { normalizePage } from '~~/types/shop-product'
+import { clampInt, normalizePage, toPositiveInt } from '~~/types/shop-product'
 import { resolveStoreLang } from '~~/types/store-locale'
+
+// 与商品列表、订单列表保持同一套口径：默认 12、上限 60。
+// 这里此前只校验了「>= 1」，没有上限 —— 调用方传 pageSize=100000
+// 就能让后端一次性把整张收藏表拉出来（DoS 与慢查询的入口）。
+const DEFAULT_PAGE_SIZE = 12
+const MAX_PAGE_SIZE = 60
 
 export default defineEventHandler(async (event): Promise<StoreProductPage> => {
   const query = getQuery(event)
-  const pageNo = Number(query.pageNo ?? 1)
-  const pageSize = Number(query.pageSize ?? 12)
-  const safePageNo = Number.isFinite(pageNo) && pageNo >= 1 ? Math.trunc(pageNo) : 1
-  const safePageSize = Number.isFinite(pageSize) && pageSize >= 1 ? Math.trunc(pageSize) : 12
+  const safePageNo = toPositiveInt(query.pageNo, 1)
+  const safePageSize = clampInt(toPositiveInt(query.pageSize, DEFAULT_PAGE_SIZE), 1, MAX_PAGE_SIZE)
 
   const contextLocale = (event.context as Record<string, unknown>).locale
   const lang = resolveStoreLang(query.lang ?? contextLocale, 'en')

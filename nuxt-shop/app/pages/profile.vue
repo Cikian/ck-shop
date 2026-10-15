@@ -618,7 +618,7 @@
                           <!-- 状态文字用后端 orderStatusLabel；status 只决定配色，前端不自建映射 -->
                           <OrderStatusTag :label="order.orderStatusLabel || order.orderStatus || ''" :status="order.orderStatus" />
                         </div>
-                        <span class="text-[12px] tabular text-[var(--color-muted)]">{{ order.createTime || '' }}</span>
+                        <span class="text-[12px] tabular text-[var(--color-muted)]">{{ formatDateTime(order.createTime, locale) }}</span>
                       </div>
 
                       <!-- 商品缩略图条：只展示后端返回的快照图，没有就留空位（不塞占位图） -->
@@ -1641,9 +1641,9 @@ const contactRows = computed(() => {
 const memberSinceText = computed(() => {
   const raw = userInfo.value?.createTime
   if (!raw) return ''
-  const parsed = new Date(String(raw).replace(' ', 'T'))
-  if (Number.isNaN(parsed.getTime())) return String(raw)
-  return new Intl.DateTimeFormat(locale.value, { year: 'numeric', month: 'short', day: 'numeric' }).format(parsed)
+  // 统一走 composables/useDateTimeFormat.ts：语言码要经 BCP-47 映射（zh -> zh-CN），
+  // 解析规则也要与订单页保持一致（后端给的是 "yyyy-MM-dd HH:mm:ss"）。
+  return formatDate(raw, locale.value)
 })
 
 /** 个人信息面板：只放真实有值的字段，空字段整行不渲染 */

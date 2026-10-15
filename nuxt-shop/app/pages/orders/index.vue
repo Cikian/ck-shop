@@ -93,7 +93,7 @@
                   <!-- 状态文字用后端 orderStatusLabel；status 只决定配色 -->
                   <OrderStatusTag :label="order.orderStatusLabel || order.orderStatus || ''" :status="order.orderStatus" />
                 </div>
-                <span class="text-[12px] tabular text-[var(--color-muted)]">{{ order.createTime || '' }}</span>
+                <span class="text-[12px] tabular text-[var(--color-muted)]">{{ formatDateTime(order.createTime, locale) }}</span>
               </header>
 
               <!-- 商品明细：只展示后端返回的快照，缩略图 + 名称 + 规格 + 单价×数量 -->

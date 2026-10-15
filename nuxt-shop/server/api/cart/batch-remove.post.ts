@@ -16,13 +16,28 @@ interface BatchBody {
   lang?: string
 }
 
+/**
+ * 单次批量删除的条目上限。
+ *
+ * 不设上限时，请求体里塞几万个 id 会被原样转发给后端：拼接成超长 IN / foreach，
+ * 轻则一次慢查询，重则打满数据库连接。正常用户一次最多也就选几十条，
+ * 200 已经非常宽松。
+ */
+const MAX_BATCH_IDS = 200
+
 export default defineEventHandler(async (event): Promise<StoreCart> => {
   const body = await readBody<BatchBody>(event)
   const ids = Array.isArray(body?.ids)
-    ? body!.ids!.map(id => String(id).trim()).filter(Boolean)
+    ? body.ids.map(id => String(id).trim()).filter(Boolean)
     : []
   if (!ids.length) {
     throw createError({ statusCode: 400, statusMessage: '请先选择要删除的商品' })
+  }
+  if (ids.length > MAX_BATCH_IDS) {
+    throw createError({
+      statusCode: 400,
+      statusMessage: `一次最多删除 ${MAX_BATCH_IDS} 项，请分批操作`,
+    })
   }
 
   const query = getQuery(event)
