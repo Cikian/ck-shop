@@ -244,6 +244,7 @@
 definePageMeta({ middleware: 'auth' })
 
 import { toNumberOrNull } from '~~/types/shop-product'
+import type { OrderItemVO, OrderListVO, OrderPageResult } from '~~/types/shop-order'
 import { useStorePrice } from '~~/composables/useProducts'
 import { isPositive, isUnauthorizedError, readErrorMessage } from '~~/composables/useApiError'
 import { formatDateTime } from '~~/composables/useDateTimeFormat'
@@ -260,48 +261,7 @@ import { useLoginLink } from '~~/composables/useLoginLink'
  *      顶部的筛选 tab 是本页的固定筛选项文案（不是状态码到中文的映射）。
  */
 
-/** 订单明细（后端 StoreOrderItemVO 的子集） */
-interface OrderItemVO {
-  id?: string | null
-  productId?: string | null
-  productName?: string | null
-  skuName?: string | null
-  productImage?: string | null
-  price?: number | null
-  quantity?: number | null
-  actualAmount?: number | null
-  refundQuantity?: number | null
-  refundAmount?: number | null
-}
 
-/** 订单列表项（后端 StoreOrderListVO） */
-interface OrderListVO {
-  orderNo: string
-  orderStatus?: string | null
-  orderStatusLabel?: string | null
-  payStatus?: string | null
-  refundStatus?: string | null
-  payAmount?: number | null
-  paidAmount?: number | null
-  refundAmount?: number | null
-  totalQuantity?: number | null
-  itemCount?: number | null
-  createTime?: string | null
-  items?: OrderItemVO[] | null
-  canPay?: boolean | null
-  canCancel?: boolean | null
-  canReceive?: boolean | null
-  canRefund?: boolean | null
-}
-
-/** MyBatis-Plus Page 出参 */
-interface PageResult<T> {
-  records?: T[] | null
-  total?: number | null
-  size?: number | null
-  current?: number | null
-  pages?: number | null
-}
 
 /** 筛选 tab：value 必须是后端 OrderQuery.orderStatus 的合法取值，空串表示不筛选 */
 const STATUS_TABS: { value: string, label: string }[] = [
@@ -355,7 +315,7 @@ async function loadOrders() {
   loading.value = true
   loadError.value = ''
   try {
-    const page = await $fetch<PageResult<OrderListVO>>('/api/order', {
+    const page = await $fetch<OrderPageResult<OrderListVO>>('/api/order', {
       query: {
         pageNo: pageNo.value,
         pageSize: PAGE_SIZE,
