@@ -97,9 +97,21 @@ public class ShopCartServiceImpl extends ServiceImpl<ShopCartItemMapper, ShopCar
     @Override
     public StoreCartCountVO countCart(CartContext ctx) {
         requireContext(ctx);
-        StoreCartCountVO vo = new StoreCartCountVO();
-        vo.setTotalItems(cartItemMapper.countItems(Collections.singletonList(ctx.getStoreId())));
-        vo.setTotalQuantity(cartItemMapper.sumQuantity(Collections.singletonList(ctx.getStoreId())));
+        // 必须是"当前用户在当前店铺"的口径。
+        // 历史缺陷：这里曾调用 cartItemMapper.countItems/sumQuantity，
+        // 而那两个方法是**后台统计口径**（只按 store_id 聚合，统计全店所有买家），
+        // 于是每个买家看到的角标都是全店总量，顺带把经营数据暴露给了任意登录用户。
+        StoreCartCountVO vo = cartItemMapper.countUserCart(ctx.getUserId(), ctx.getStoreId());
+        if (vo == null) {
+            vo = new StoreCartCountVO();
+        }
+        // SUM 在没有行时是 NULL（SQL 里已 COALESCE，这里再兜一层，避免前端收到 null）
+        if (vo.getTotalItems() == null) {
+            vo.setTotalItems(0L);
+        }
+        if (vo.getTotalQuantity() == null) {
+            vo.setTotalQuantity(0L);
+        }
         return vo;
     }
 

@@ -104,6 +104,21 @@
           AND del_flag = 0
     </update>
 
+    <!--
+      买家本人的购物车角标。
+      注意 user_id 条件**必须**在：下面的 countItems/sumQuantity 是后台统计口径
+      （只按 store_id 聚合，统计全店所有买家的购物车），一旦被买家接口复用，
+      角标会显示全店数字并泄露经营数据。
+    -->
+    <select id="countUserCart" resultType="org.jeecg.modules.shop.cart.entity.vo.StoreCartCountVO">
+        SELECT COUNT(1)                    AS totalItems,
+               COALESCE(SUM(quantity), 0)  AS totalQuantity
+        FROM ck_shop_cart_item
+        WHERE del_flag = 0
+          AND user_id = #{userId}
+          AND store_id = #{storeId}
+    </select>
+
     <select id="countItems" resultType="java.lang.Long">
         SELECT COUNT(1)
         FROM ck_shop_cart_item

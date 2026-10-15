@@ -3,9 +3,11 @@ package org.jeecg.modules.shop.order.util;
 import lombok.Data;
 import lombok.experimental.Accessors;
 import lombok.extern.slf4j.Slf4j;
+import jakarta.annotation.PostConstruct;
 import org.apache.commons.lang3.StringUtils;
 import org.jeecg.common.exception.JeecgBootException;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.core.env.Environment;
 import org.springframework.stereotype.Component;
 
 import javax.crypto.Mac;
@@ -14,6 +16,7 @@ import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.SecureRandom;
+import java.util.Arrays;
 import java.util.Base64;
 
 /**
@@ -46,9 +49,11 @@ import java.util.Base64;
  * </ul>
  *
  * <h3>密钥</h3>
- * 从 {@code ck.shop.order.price-token-secret} 读取。**生产必须显式配置**：
- * 未配置时会随机生成一个（仅让本地开发能跑通），并打 WARN；
- * 多实例部署且未配置时，A 实例签的令牌在 B 实例必然验签失败，所以这个警告不能被忽略。
+ * 从 {@code ck.shop.order.price-token-secret} 读取。**非 dev 环境必须显式配置**：
+ * 未配置时启动即失败（见 {@link #validateSecret()}）；
+ * 只有 dev 环境才允许退化为进程内随机密钥（仅让本地开发能跑通，并打 WARN）。
+ * 多实例部署且未配置时，A 实例签的令牌在 B 实例必然验签失败，用户下单直接报错，
+ * 这种故障必须在启动时暴露，而不是等第一位顾客下单才发现。
  *
  * @author Cikian
  * @since 2026-10-14
@@ -61,6 +66,8 @@ public class PriceTokenUtils {
     private static final String DIGEST_ALGORITHM = "SHA-256";
     private static final String FIELD_SEPARATOR = "\u0001";
 
+    private final Environment environment;
+
     @Value("${ck.shop.order.price-token-secret:}")
     private String configuredSecret;
 
@@ -69,6 +76,37 @@ public class PriceTokenUtils {
 
     /** 实际使用的密钥：配置为空时退化为进程内随机密钥（重启即失效，仅开发可用） */
     private volatile byte[] secretBytes;
+
+    public PriceTokenUtils(Environment environment) {
+        this.environment = environment;
+    }
+
+    /**
+     * 启动即校验密钥，避免"配置漏了"这类问题被拖到用户下单时才以
+     * "结算令牌校验失败"的形式暴露出来（那时候排查成本高得多）。
+     */
+    @PostConstruct
+    void validateSecret() {
+        if (StringUtils.isNotBlank(configuredSecret)) {
+            return;
+        }
+        if (!isDevProfile()) {
+            throw new IllegalStateException(
+                    "未配置 ck.shop.order.price-token-secret（当前 profile="
+                            + Arrays.toString(environment.getActiveProfiles()) + "）。"
+                            + "该密钥用于结算价格令牌签名，多实例部署必须各实例一致，"
+                            + "否则 A 实例签发的令牌在 B 实例验签失败、用户无法下单。"
+                            + "请在 .env 中设置后重启（本地开发可切换到 dev profile）。");
+        }
+        log.warn("未配置 ck.shop.order.price-token-secret，dev 环境将使用进程内随机密钥："
+                + "重启后此前签发的结算令牌全部失效，属预期行为。");
+    }
+
+    /** dev / local 之类的开发 profile 才允许随机密钥兜底 */
+    private boolean isDevProfile() {
+        String[] profiles = environment.getActiveProfiles();
+        return Arrays.stream(profiles).anyMatch(p -> p.contains("dev") || p.contains("local"));
+    }
 
     /**
      * 结算令牌载荷。

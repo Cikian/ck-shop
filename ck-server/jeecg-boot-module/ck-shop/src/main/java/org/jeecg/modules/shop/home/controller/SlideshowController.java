@@ -16,7 +16,6 @@ import org.jeecg.modules.shop.home.service.CommonMongoService;
 import org.jeecg.modules.shop.store.ShopOrgScopeResolver;
 import org.jeecg.modules.shop.store.StoreResolver;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.util.MultiValueMap;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.ArrayList;
@@ -230,10 +229,9 @@ public class SlideshowController {
     @IgnoreAuth
     @GetMapping("/store")
     @Operation(summary = "获取对应语言的轮播图（店铺端）")
-    public Result<?> storeList(HttpServletRequest request, @RequestHeader MultiValueMap<String, String> headers) {
+    public Result<?> storeList(HttpServletRequest request) {
         String lang = resolveLanguage(request);
         // 店铺 → 店铺绑定部门 → 轮播图归属；解析失败直接报错，绝不返回别的店铺的轮播图
-        System.out.println(headers);
         String orgCode = orgScopeResolver.resolveStoreOrgCodeOrNull(storeResolver.resolve(request));
         if (orgCode == null) {
             // 店铺没绑部门属于数据缺失：返回空轮播（首页还能打开），日志里已 warn

@@ -896,6 +896,16 @@ public class ShopRefundServiceImpl
     }
 
     @Override
+    public BigDecimal adminRefundableAmount(String orderNo) {
+        // 历史缺陷：后台 /refund/refundable 直接调用 refundableAmount(orderNo)，
+        // 而那个方法只按 orderNo 查订单、**不做任何归属校验** ——
+        // 任何持有 shop-refund:list 的运营都能用别人的订单号读到"已付/可退金额"，
+        // 顺带把订单号是否存在也探测出来（adminDetail 是校验的，这里漏了）。
+        ShopOrder order = requireAdminOrder(orderNo);
+        return refundableAmount(order.getOrderNo());
+    }
+
+    @Override
     public BigDecimal refundableAmount(String orderNo) {
         ShopOrder order = orderMapper.selectOne(new LambdaQueryWrapper<ShopOrder>()
                 .eq(ShopOrder::getOrderNo, orderNo)
@@ -973,6 +983,21 @@ public class ShopRefundServiceImpl
         }
         orgScopeResolver.checkAccessible(refund.getStoreOrgCode(), "退款单");
         return refund;
+    }
+
+    /**
+     * 后台口径的订单归属校验：与 adminDetail / 后台订单接口使用同一套
+     * 「可见组织范围」规则（见 ShopOrgScopeResolver#checkAccessible）。
+     */
+    private ShopOrder requireAdminOrder(String orderNo) {
+        ShopOrder order = orderMapper.selectOne(new LambdaQueryWrapper<ShopOrder>()
+                .eq(ShopOrder::getOrderNo, orderNo)
+                .last("LIMIT 1"));
+        if (order == null) {
+            throw new JeecgBootException("订单不存在：" + orderNo);
+        }
+        orgScopeResolver.checkAccessible(order.getStoreOrgCode(), "订单");
+        return order;
     }
 
     /** 重新计算并回写订单的售后状态（拒绝/撤销/失败之后要还原） */

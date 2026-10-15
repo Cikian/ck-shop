@@ -88,7 +88,9 @@ public class ShopAdminRefundController {
     @RequiresPermissions("shop-refund:list")
     @GetMapping(value = "/refundable")
     public Result<Map<String, Object>> refundable(@RequestParam(name = "orderNo") String orderNo) {
-        BigDecimal amount = refundService.refundableAmount(orderNo);
+        // 走后台口径：内部先校验该订单在当前登录人的可见组织范围内，
+        // 否则任何有 shop-refund:list 的运营都能读别的店铺/别的商家的订单金额。
+        BigDecimal amount = refundService.adminRefundableAmount(orderNo);
         Map<String, Object> data = new LinkedHashMap<>();
         data.put("orderNo", orderNo);
         data.put("refundableAmount", amount);

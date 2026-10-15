@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.core.mapper.BaseMapper;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 import org.jeecg.modules.shop.cart.entity.ShopCartItem;
+import org.jeecg.modules.shop.cart.entity.vo.StoreCartCountVO;
 import org.jeecg.modules.shop.cart.entity.vo.StoreCartItemVO;
 
 import java.util.List;
@@ -93,10 +94,22 @@ public interface ShopCartItemMapper extends BaseMapper<ShopCartItem> {
     // 后台统计用的"当前购物车快照"（轻量聚合，不加载明细）
     // ------------------------------------------------------------------
 
-    /** 当前购物车条目数；storeIds 为 null 表示不限店铺 */
+    /**
+     * <b>买家本人</b>在当前店铺的购物车角标（条目数 + 件数），一条 SQL 出两个聚合值。
+     *
+     * <p>为什么必须单独有这个方法：下面的 countItems/sumQuantity 是**后台统计口径** ——
+     * 它们只按 store_id 聚合，统计的是"整个店铺所有买家的购物车"。买家接口
+     * （/shop/cart/store/count）如果调用它们，得到的是全店数字：角标显示错误，
+     * 同时把"本店当前有多少购物车条目/件商品"这个经营数据泄露给任意登录用户。
+     * 两个口径互相独立，不能复用。
+     */
+    StoreCartCountVO countUserCart(@Param("userId") String userId,
+                                   @Param("storeId") String storeId);
+
+    /** 当前购物车条目数；storeIds 为 null 表示不限店铺（**后台统计口径**，按店铺聚合） */
     Long countItems(@Param("storeIds") List<String> storeIds);
 
-    /** 当前购物车件数；storeIds 为 null 表示不限店铺 */
+    /** 当前购物车件数；storeIds 为 null 表示不限店铺（**后台统计口径**，按店铺聚合） */
     Long sumQuantity(@Param("storeIds") List<String> storeIds);
 
     /** 当前购物车涉及的用户数；storeIds 为 null 表示不限店铺 */

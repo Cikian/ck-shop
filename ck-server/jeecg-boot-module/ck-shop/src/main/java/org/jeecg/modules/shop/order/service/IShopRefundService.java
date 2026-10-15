@@ -62,8 +62,17 @@ public interface IShopRefundService extends IService<ShopOrderRefund> {
     /** 按退款单号查询 */
     ShopOrderRefund getByRefundNo(String refundNo);
 
-    /** 该订单当前还可退多少（人民币） */
+    /** 该订单当前还可退多少（人民币）。**不含归属校验**：买家侧申请退款也走这个计算 */
     BigDecimal refundableAmount(String orderNo);
+
+    /**
+     * 后台口径的"该订单还可退多少"：先校验该订单在当前登录人的可见组织范围内。
+     *
+     * <p>为什么单独给一个方法而不是直接给 refundableAmount 加校验：
+     * 买家侧「申请退款」也调用同一个金额计算，那里的归属规则是"订单属于当前会员"，
+     * 与后台的「可见组织范围」不是一回事。混在一起必然有一边被破坏。
+     */
+    BigDecimal adminRefundableAmount(String orderNo);
 
     /**
      * 把渠道退款结果落到退款单与订单上。

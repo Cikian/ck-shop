@@ -45,13 +45,17 @@ public class StoreResolver {
     /**
      * 是否允许"解析不到店铺就回退到默认店铺"。
      *
-     * 本地开发/直连调试需要它（省得每次带请求头）；但**生产环境必须设为 false**：
-     * 某个前台站点漏配 STORE_CODE、或者域名没登记到 ck_shop_store.domain 时，
-     * 回退会让它**静默展示默认店铺的商品**——这正是"A 店展示 B 店数据"最隐蔽的一种，
-     * 页面一切正常、没有任何报错，只有人工比对才能发现。
-     * 关掉之后这种配置错误会直接报错，属于"宁可吵也不要错"。
+     * <b>默认 false（fail-closed）</b>：没配置就等于不允许回退。
+     * 本地开发需要在 application-dev.yml 里显式打开（那里已经写了 true）。
+     *
+     * 为什么默认值必须是 false：以前的默认是 true，而 application-prod.yml /
+     * docker / test 这些 profile **都没有覆盖**这个键 —— 于是生产环境实际生效的
+     * 就是"回退到默认店铺"。后果是某个前台站点漏配 STORE_CODE、或域名没登记到
+     * ck_shop_store.domain 时，它会**静默**展示默认店铺的商品：页面一切正常、
+     * 没有任何报错，只有人工比对才能发现 A 店在卖 B 店的货。
+     * 配置类的默认值应当朝"报错"而不是"猜一个"的方向偏，所以这里翻转为 false。
      */
-    @Value("${ck.shop.allow-default-store-fallback:true}")
+    @Value("${ck.shop.allow-default-store-fallback:false}")
     private boolean allowDefaultStoreFallback;
 
     public StoreResolver(ShopStoreMapper shopStoreMapper) {

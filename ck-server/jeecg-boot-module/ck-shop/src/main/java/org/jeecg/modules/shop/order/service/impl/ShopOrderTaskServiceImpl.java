@@ -16,6 +16,7 @@ import org.jeecg.modules.shop.order.service.IShopOrderEventService;
 import org.jeecg.modules.shop.order.service.IShopOrderService;
 import org.jeecg.modules.shop.order.service.IShopOrderTaskService;
 import org.jeecg.modules.shop.order.service.IShopPaymentService;
+import org.jeecg.modules.shop.store.ShopOrgScopeResolver;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
@@ -63,6 +64,9 @@ public class ShopOrderTaskServiceImpl implements IShopOrderTaskService {
 
     @Autowired
     private IShopOrderEventService eventService;
+
+    @Autowired
+    private ShopOrgScopeResolver orgScopeResolver;
 
     /** 补单只处理创建超过该分钟数的支付单：太新的单渠道可能还没落账，查了也是"查无此单" */
     @Value("${ck.shop.order.compensate.min-age-minutes:2}")
@@ -156,6 +160,10 @@ public class ShopOrderTaskServiceImpl implements IShopOrderTaskService {
         if (order == null) {
             throw new JeecgBootException("订单不存在：" + orderNo);
         }
+        // 归属校验：这个方法是**后台手动补偿**入口（定时任务走的是另两个批量方法），
+        // 之前只按 orderNo 查订单就动手，等于任何持有 shop-order:compensate 的运营
+        // 都能对别家店铺的订单触发渠道查询与补正。校验规则与后台其它接口一致。
+        orgScopeResolver.checkAccessible(order.getStoreOrgCode(), "订单");
         result.scanned(1);
 
         // 手动补偿的三步：先查渠道、再尝试补正、最后给出结论

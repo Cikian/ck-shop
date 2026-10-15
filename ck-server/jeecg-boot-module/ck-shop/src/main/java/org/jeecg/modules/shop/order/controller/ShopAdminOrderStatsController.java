@@ -5,6 +5,7 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.shiro.authz.annotation.RequiresPermissions;
 import org.jeecg.common.api.vo.Result;
+import org.jeecg.common.exception.JeecgBootException;
 import org.jeecg.modules.shop.order.entity.dto.OrderQuery;
 import org.jeecg.modules.shop.order.entity.vo.OrderStatsOverviewVO;
 import org.jeecg.modules.shop.order.entity.vo.OrderStatsRankVO;
@@ -12,6 +13,7 @@ import org.jeecg.modules.shop.order.entity.vo.OrderStatsStatusVO;
 import org.jeecg.modules.shop.order.entity.vo.OrderStatsTrendVO;
 import org.jeecg.modules.shop.order.service.IShopOrderStatsService;
 import org.jeecg.modules.shop.order.service.IShopOrderTaskService;
+import org.jeecg.modules.shop.store.ShopOrgScopeResolver;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -57,6 +59,9 @@ public class ShopAdminOrderStatsController {
     @Autowired
     private IShopOrderTaskService taskService;
 
+    @Autowired
+    private ShopOrgScopeResolver orgScopeResolver;
+
     @Operation(summary = "统计-总览(GMV/实收/退款/净收入/转化率/风险指标)")
     @RequiresPermissions("shop-order:stats")
     @GetMapping(value = "/overview")
@@ -99,6 +104,7 @@ public class ShopAdminOrderStatsController {
     @PostMapping(value = "/task/close-timeout")
     public Result<Map<String, Object>> runCloseTimeout(
             @RequestParam(name = "batchSize", required = false, defaultValue = "200") Integer batchSize) {
+        requireGlobalTaskPermission();
         return Result.OK(toMap(taskService.closeTimeoutOrders(batchSize)));
     }
 
@@ -107,7 +113,25 @@ public class ShopAdminOrderStatsController {
     @PostMapping(value = "/task/compensate")
     public Result<Map<String, Object>> runCompensate(
             @RequestParam(name = "batchSize", required = false, defaultValue = "200") Integer batchSize) {
+        requireGlobalTaskPermission();
         return Result.OK(toMap(taskService.compensatePendingPayments(batchSize)));
+    }
+
+    /**
+     * 这两个运维接口会**扫描并处理所有店铺**的订单（它们的 SQL 不带店铺/组织条件，
+     * 因为定时任务本身是平台级的）。所以手动触发的门槛必须高于单店运营：
+     * 只有拥有 {@code shop-store:manage-all} 的账号（总部/平台管理员）才能执行，
+     * 否则 A 店运营可以用它把 B 店的超时订单批量关掉、或触发 B 店的补单。
+     *
+     * <p>校验放在 Controller 而不是 Service：Service 里的这两个方法同时被
+     * Quartz 定时任务调用，那里没有登录用户，加在 Service 会让定时任务直接失败。
+     */
+    private void requireGlobalTaskPermission() {
+        if (!orgScopeResolver.canManageAll()) {
+            throw new JeecgBootException(
+                    "该接口会处理全部店铺的订单，仅限拥有 " + ShopOrgScopeResolver.MANAGE_ALL_PERM
+                            + " 权限的账号执行。单店订单请使用「人工补偿」（按订单号）。");
+        }
     }
 
     private Map<String, Object> toMap(IShopOrderTaskService.TaskResult result) {
