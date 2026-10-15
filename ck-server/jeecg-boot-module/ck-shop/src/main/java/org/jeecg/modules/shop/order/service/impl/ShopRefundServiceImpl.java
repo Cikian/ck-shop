@@ -81,6 +81,9 @@ import java.util.Map;
 public class ShopRefundServiceImpl
         extends ServiceImpl<ShopOrderRefundMapper, ShopOrderRefund>
         implements IShopRefundService {
+    @Autowired
+    private ShopRefundSupport refundSupport;
+
 
     @Autowired
     private ShopOrderRefundMapper refundMapper;
@@ -138,7 +141,7 @@ public class ShopRefundServiceImpl
             if (!existed.getUserId().equals(context.getUserId())) {
                 throw new JeecgBootException("退款申请异常，请刷新页面后重试");
             }
-            return toVO(existed, listItems(existed.getId()));
+            return refundSupport.toVO(existed, refundSupport.listItems(existed.getId()));
         }
 
         ShopOrder order = requireOwnedOrder(context, dto.getOrderNo());
@@ -210,7 +213,7 @@ public class ShopRefundServiceImpl
             if (concurrent == null) {
                 throw e;
             }
-            return toVO(concurrent, listItems(concurrent.getId()));
+            return refundSupport.toVO(concurrent, refundSupport.listItems(concurrent.getId()));
         }
 
         List<ShopOrderRefundItem> savedItems = new ArrayList<>();
@@ -246,7 +249,7 @@ public class ShopRefundServiceImpl
                 "{\"refundNo\":\"" + refund.getRefundNo() + "\",\"amount\":\""
                         + plan.refundAmount.toPlainString() + "\"}");
 
-        return toVO(refund, savedItems);
+        return refundSupport.toVO(refund, savedItems);
     }
 
     @Override
@@ -606,7 +609,7 @@ public class ShopRefundServiceImpl
     }
 
     private void restoreStockByRefundLines(ShopOrderRefund refund, ShopOrder order) {
-        List<ShopOrderRefundItem> refundItems = listItems(refund.getId());
+        List<ShopOrderRefundItem> refundItems = refundSupport.listItems(refund.getId());
         if (refundItems.isEmpty()) {
             return;
         }
@@ -648,7 +651,7 @@ public class ShopRefundServiceImpl
     }
 
     private void updateOrderItemRefunded(ShopOrderRefund refund) {
-        List<ShopOrderRefundItem> refundItems = listItems(refund.getId());
+        List<ShopOrderRefundItem> refundItems = refundSupport.listItems(refund.getId());
         for (ShopOrderRefundItem refundItem : refundItems) {
             ShopOrderItem orderItem = orderItemMapper.selectById(refundItem.getOrderItemId());
             if (orderItem == null) {
@@ -727,7 +730,7 @@ public class ShopRefundServiceImpl
                 if (remain <= 0) {
                     continue;
                 }
-                BigDecimal lineRefundable = lineRefundable(item);
+                BigDecimal lineRefundable = refundSupport.lineRefundable(item);
                 RefundLine line = new RefundLine();
                 line.orderItem = item;
                 line.quantity = remain;
@@ -754,7 +757,7 @@ public class ShopRefundServiceImpl
                     throw new JeecgBootException("商品[" + item.getProductName() + "]最多还能退 "
                             + remain + " 件（已退 " + refunded + " 件）");
                 }
-                BigDecimal lineRefundable = lineRefundable(item);
+                BigDecimal lineRefundable = refundSupport.lineRefundable(item);
                 // 按"本次退的数量 / 剩余可退数量"分摊，保证不丢分也不多退
                 BigDecimal[] allocated = MoneyUtils.allocate(lineRefundable,
                         new BigDecimal[]{BigDecimal.valueOf(want), BigDecimal.valueOf(remain - want)});
@@ -800,11 +803,6 @@ public class ShopRefundServiceImpl
     }
 
     /** 某行还能退多少钱 = 实付金额 − 已退金额 */
-    private BigDecimal lineRefundable(ShopOrderItem item) {
-        BigDecimal refundable = MoneyUtils.subtract(
-                MoneyUtils.scale(item.getActualAmount()), MoneyUtils.scale(item.getRefundAmount()));
-        return refundable.compareTo(BigDecimal.ZERO) < 0 ? MoneyUtils.zero() : refundable;
-    }
 
     private ShopOrderPayment findRefundablePayment(String orderId) {
         List<ShopOrderPayment> payments = paymentMapper.selectList(new LambdaQueryWrapper<ShopOrderPayment>()
@@ -836,7 +834,7 @@ public class ShopRefundServiceImpl
     @Override
     public List<OrderRefundVO> listByOrderNo(OrderContext context, String orderNo) {
         ShopOrder order = requireOwnedOrder(context, orderNo);
-        return toVOs(refundMapper.selectList(new LambdaQueryWrapper<ShopOrderRefund>()
+        return refundSupport.toVOs(refundMapper.selectList(new LambdaQueryWrapper<ShopOrderRefund>()
                 .eq(ShopOrderRefund::getOrderId, order.getId())
                 .orderByDesc(ShopOrderRefund::getCreateTime)));
     }
@@ -875,24 +873,19 @@ public class ShopRefundServiceImpl
         Page<ShopOrderRefund> entityPage = refundMapper.selectPage(new Page<>(pageNo, pageSize), wrapper);
         Page<OrderRefundVO> result = new Page<>(entityPage.getCurrent(), entityPage.getSize(),
                 entityPage.getTotal());
-        result.setRecords(toVOs(entityPage.getRecords()));
+        result.setRecords(refundSupport.toVOs(entityPage.getRecords()));
         return result;
     }
 
     @Override
     public OrderRefundVO adminDetail(String refundNo) {
         ShopOrderRefund refund = requireAdminRefund(refundNo);
-        return toVO(refund, listItems(refund.getId()));
+        return refundSupport.toVO(refund, refundSupport.listItems(refund.getId()));
     }
 
     @Override
     public ShopOrderRefund getByRefundNo(String refundNo) {
-        if (StringUtils.isBlank(refundNo)) {
-            return null;
-        }
-        return refundMapper.selectOne(new LambdaQueryWrapper<ShopOrderRefund>()
-                .eq(ShopOrderRefund::getRefundNo, refundNo)
-                .last("LIMIT 1"));
+        return refundSupport.getByRefundNo(refundNo);
     }
 
     @Override
@@ -1035,36 +1028,8 @@ public class ShopRefundServiceImpl
                 new LambdaUpdateWrapper<ShopOrder>().eq(ShopOrder::getId, orderId));
     }
 
-    private List<ShopOrderRefundItem> listItems(String refundId) {
-        if (StringUtils.isBlank(refundId)) {
-            return new ArrayList<>();
-        }
-        return refundItemMapper.selectList(new LambdaQueryWrapper<ShopOrderRefundItem>()
-                .eq(ShopOrderRefundItem::getRefundId, refundId));
-    }
 
-    private List<OrderRefundVO> toVOs(List<ShopOrderRefund> refunds) {
-        List<OrderRefundVO> list = new ArrayList<>();
-        if (refunds == null) {
-            return list;
-        }
-        for (ShopOrderRefund refund : refunds) {
-            list.add(toVO(refund, null));
-        }
-        return list;
-    }
 
-    private OrderRefundVO toVO(ShopOrderRefund refund, List<ShopOrderRefundItem> items) {
-        if (refund == null) {
-            return null;
-        }
-        OrderRefundVO vo = new OrderRefundVO();
-        org.springframework.beans.BeanUtils.copyProperties(refund, vo);
-        vo.setStatusLabel(RefundOrderStatus.of(refund.getStatus()).getLabel());
-        vo.setRefundTypeLabel("FULL".equals(refund.getRefundType()) ? "全额退款" : "部分退款");
-        vo.setItems(items == null ? listItems(refund.getId()) : items);
-        return vo;
-    }
 
     private List<String> resolveScope(String storeId) {
         List<String> visible = orgScopeResolver.resolveVisibleOrgCodes();
