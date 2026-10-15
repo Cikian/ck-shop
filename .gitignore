@@ -21,3 +21,30 @@ derby.log
 .cursor
 .history
 .claude
+
+## 本地排查/验证探针脚本目录（含 nuxt-shop/.probe）。
+## 注意：只影响新增文件；基线里已入库的 .probe/*.probe.mjs 仍被 git 跟踪。
+.probe/
+
+## 依赖与构建产物（各子项目本地生成，不入库）
+node_modules/
+**/node_modules/
+.nuxt/
+**/.nuxt/
+.output/
+**/.output/
+.nitro/
+**/.nitro/
+dist/
+**/dist/
+.cache/
+**/.cache/
+
+## 编译 / 备份 / 补丁残留
+*.class
+*.orig
+*.bak
+
+## AI 生成的设计物料与设计稿（体积大，只在本地保留）
+saved-images/
+design-references/

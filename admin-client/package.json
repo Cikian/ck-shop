@@ -15,7 +15,7 @@
     "build:dockercloud": "cross-env NODE_ENV=dockercloud NODE_OPTIONS=--max-old-space-size=8192 vite build --mode dockercloud && esno ./build/script/postBuild.ts && esno ./build/script/copyChat.ts",
     "build:report": "pnpm clean:cache && cross-env REPORT=true npm run build",
     "preview": "npm run build && vite preview",
-    "reinstall": "rimraf pnpm-lock.yaml && rimraf yarn.lock && rimraf package.lock.json && rimraf node_modules && npm run install",
+    "reinstall": "rimraf pnpm-lock.yaml && rimraf yarn.lock && rimraf package-lock.json && rimraf node_modules && npm run install",
     "clean:lib": "rimraf node_modules",
     "gen:icon": "esno ./build/generate/icon/index.ts",
     "batch:prettier": "prettier --write  \"src/**/*.{js,json,tsx,css,less,scss,vue,html,md}\"",

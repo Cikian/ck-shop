@@ -124,6 +124,10 @@
 <script>
 const PA = ['#FFF6F2', '#FFFFFF', '#FF4D6D', '#FFD54A'];
 
+// 设计稿图片已统一收敛到仓库根目录的 design-references/（该目录被 .gitignore 忽略，不入库）。
+// 本页保留在 docs/store-redesign/ 作为在线看板，因此图片走相对路径 ../design-references/。
+const IMG_DIR = '../design-references/';
+
 const roundE = [
   { file: '23-home-browse.png', zh: '首页（浏览型）', en: 'Home · Browse-first', hi: true,
     desc: '分类卡片区从左上角起 4×2 排布，每张卡含分类图 + 分类名 + 商品数；下方秒杀条 + 「为你推荐」4×3 商品流（12 张卡，含角标/划线价/已售/包邮/七天无理由）+ 排序 chips。首页即浏览主战场，不需要单独的列表页。',
@@ -207,7 +211,7 @@ function render(list, mountId) {
       return `<span class="tag${cls}">${t}</span>`;
     }).join(' ');
     card.innerHTML = `
-      <span class="shot"><img src="${it.file}" alt="${it.zh} ${it.en}" loading="lazy"></span>
+      <span class="shot"><img src="${IMG_DIR}${it.file}" alt="${it.zh} ${it.en}" loading="lazy"></span>
       <div class="meta">
         <h3>${it.zh}</h3>
         <div class="en">${it.en}</div>
@@ -216,7 +220,7 @@ function render(list, mountId) {
         <div>${tg}</div>
       </div>`;
     card.querySelector('.shot').addEventListener('click', () => {
-      viewerImg.src = it.file;
+      viewerImg.src = IMG_DIR + it.file;
       viewerImg.alt = `${it.zh} ${it.en}`;
       viewer.showModal();
     });
