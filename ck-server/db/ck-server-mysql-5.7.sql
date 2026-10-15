@@ -8774,6 +8774,8 @@ INSERT INTO `sys_role` VALUES ('1996463539853824001', 'AI应用角色', 'aiadmin
 INSERT INTO `sys_role` VALUES ('2031673997199233025', 'Chat2BI', 'chat2bi', NULL, 'admin', '2026-03-11 18:10:02', NULL, NULL, 0);
 INSERT INTO `sys_role` VALUES ('ee8626f80f7c2619917b6236f3a7f02b', '系统用户标配角色', 'test', '系统所有用户拥有的最小权限角色，默认都分配这个角色', NULL, '2018-12-20 10:59:04', 'admin', '2025-08-12 18:39:54', 0);
 INSERT INTO `sys_role` VALUES ('f6817f48af4fb3af11b9e8bf182f618b', '管理员', 'admin', '管理员', NULL, '2020-12-21 18:03:39', 'admin', '2025-07-30 15:17:55', 0);
+-- 店铺端（C 端买家）角色，见 flyway V3.9.5_12__shop_customer_account.sql
+INSERT INTO `sys_role` VALUES ('7c1e4a0f9b2d4c8e8f6a1d3b5c7e9a20', '前台买家', 'shop_customer', '店铺端注册用户（C 端买家）', NULL, '2026-10-15 00:00:00', NULL, NULL, 0);
 
 -- ----------------------------
 -- Table structure for sys_role_index
@@ -10643,11 +10645,16 @@ CREATE TABLE `sys_user`  (
   `last_pwd_update_time` datetime NULL DEFAULT NULL COMMENT '上一次修改密码的时间',
   `sort` int(6) NULL DEFAULT NULL COMMENT '排序',
   `iz_hide_contact` varchar(1) CHARACTER SET utf8 COLLATE utf8_general_ci NULL DEFAULT NULL COMMENT '是否隐藏联系方式（0 否 1是）',
+  `register_store_code` varchar(64) CHARACTER SET utf8 COLLATE utf8_general_ci NULL DEFAULT NULL COMMENT '注册来源店铺编码',
+  `register_store_id` varchar(32) CHARACTER SET utf8 COLLATE utf8_general_ci NULL DEFAULT NULL COMMENT '注册来源店铺ID',
+  `google_sub` varchar(64) CHARACTER SET utf8 COLLATE utf8_general_ci NULL DEFAULT NULL COMMENT 'Google 账号唯一标识(sub)',
+  `pwd_set` tinyint(1) NULL DEFAULT 1 COMMENT '是否由用户设置过密码: 1-是, 0-系统随机占位',
   PRIMARY KEY (`id`) USING BTREE,
   UNIQUE INDEX `uniq_sys_user_work_no`(`work_no`) USING BTREE,
   UNIQUE INDEX `uniq_sys_user_username`(`username`) USING BTREE,
   UNIQUE INDEX `uniq_sys_user_phone`(`phone`) USING BTREE,
   UNIQUE INDEX `uniq_sys_user_email`(`email`) USING BTREE,
+  UNIQUE INDEX `uniq_sys_user_google_sub`(`google_sub`) USING BTREE,
   INDEX `idx_su_status`(`status`) USING BTREE,
   INDEX `idx_su_del_flag`(`del_flag`) USING BTREE,
   INDEX `idx_su_del_username`(`username`, `del_flag`) USING BTREE,
@@ -11071,6 +11078,30 @@ INSERT INTO `test_shoptype_tree` VALUES ('1923190583678107649', 'admin', '2025-0
 INSERT INTO `test_shoptype_tree` VALUES ('1923190611448594433', 'admin', '2025-05-16 09:35:47', NULL, NULL, 'A01', '苹果', NULL, '1923190583678107649', '0');
 INSERT INTO `test_shoptype_tree` VALUES ('2049391879883100161', 'admin', '2026-04-29 15:34:34', NULL, NULL, 'A01A03', '苹果MAC', NULL, '1833472226709086209', '0');
 INSERT INTO `test_shoptype_tree` VALUES ('2049391939916173313', 'admin', '2026-04-29 15:34:49', NULL, NULL, 'A01A03', '游戏本', NULL, '1833472226709086209', '0');
+
+-- ----------------------------
+-- Table structure for ck_shop_login_log
+-- 店铺端登录来源流水，见 flyway V3.9.5_12__shop_customer_account.sql
+-- ----------------------------
+DROP TABLE IF EXISTS `ck_shop_login_log`;
+CREATE TABLE `ck_shop_login_log`  (
+  `id` varchar(32) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL COMMENT '主键',
+  `user_id` varchar(32) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NULL DEFAULT NULL COMMENT '用户ID',
+  `username` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NULL DEFAULT NULL COMMENT '用户账号(冗余)',
+  `email` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NULL DEFAULT NULL COMMENT '登录邮箱(冗余)',
+  `login_type` varchar(20) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NULL DEFAULT NULL COMMENT '登录方式: PASSWORD/EMAIL_CODE/GOOGLE',
+  `store_code` varchar(64) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NULL DEFAULT NULL COMMENT '登录来源店铺编码',
+  `store_id` varchar(32) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NULL DEFAULT NULL COMMENT '登录来源店铺ID',
+  `client_ip` varchar(64) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NULL DEFAULT NULL COMMENT '客户端IP',
+  `user_agent` varchar(500) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NULL DEFAULT NULL COMMENT 'User-Agent',
+  `login_time` datetime NULL DEFAULT NULL COMMENT '登录时间',
+  `success` tinyint(1) NULL DEFAULT NULL COMMENT '是否成功: 1-成功, 0-失败',
+  `fail_reason` varchar(200) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NULL DEFAULT NULL COMMENT '失败原因',
+  PRIMARY KEY (`id`) USING BTREE,
+  INDEX `idx_sll_user_id`(`user_id`) USING BTREE,
+  INDEX `idx_sll_email`(`email`) USING BTREE,
+  INDEX `idx_sll_time`(`login_time`) USING BTREE
+) ENGINE = InnoDB CHARACTER SET = utf8mb4 COLLATE = utf8mb4_general_ci COMMENT = '店铺端登录来源流水' ROW_FORMAT = DYNAMIC;
 
 -- ----------------------------
 -- Procedure structure for insert_200_records
