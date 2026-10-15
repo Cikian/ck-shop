@@ -11,7 +11,7 @@
 // 目前唯一消费者是该页面，因此用普通 ref（非 useState）即可；若将来拆出的子组件也需要
 // 这些状态，再按需把共享的那几个提升为 useState 或改为 props 传递。
 
-import type { BadgeTone, ShopTagRef, SpecSelection, StoreSkuCombination } from '~~/types/shop-product'
+import type { ShopTagRef, SpecSelection, StoreSkuCombination } from '~~/types/shop-product'
 import {
   findSelectedCombination,
   formatCompactCount,
@@ -22,7 +22,6 @@ import {
   resolvePriceView,
   resolveRating,
   resolveSkuPrice,
-  resolveTagTone,
 } from '~~/types/shop-product'
 import { useStorePrice, useStoreProductDetail } from '~~/composables/useProducts'
 import { useProductFavorite } from '~~/composables/useFavorites'
@@ -224,19 +223,6 @@ export const useProductDetail = async () => {
       .slice(0, limit)
   })
 
-  function badgeToneClass(code: string | null | undefined): string {
-    const tone: BadgeTone = resolveTagTone(code)
-    switch (tone) {
-      case 'hot':
-        return 'badge-hot'
-      case 'sale':
-        return 'badge-sale'
-      case 'new':
-        return 'badge-new'
-      default:
-        return 'badge-soft'
-    }
-  }
 
   /** 服务标签：FAST / TOP 来自真实 tag code，包邮来自 detail.freeShipping */
   const tagCodes = computed(
@@ -294,7 +280,6 @@ export const useProductDetail = async () => {
     canBuyNow,
     buyNowLabel,
     imageBadges,
-    badgeToneClass,
     tagCodes,
     hasFastTag,
     hasTopTag,

@@ -83,85 +83,19 @@
 
       <!-- ===================== 上半部：左图右信息 ===================== -->
       <div class="grid gap-8 lg:grid-cols-2 lg:gap-12">
-        <!-- 左：图集 -->
-        <div class="space-y-4">
-          <div class="ui-card relative overflow-hidden">
-            <img
-              v-if="mainImage"
-              :key="mainImage"
-              :src="mainImage"
-              :alt="product.title"
-              width="600"
-              height="600"
-              class="aspect-square w-full object-cover"
-              loading="eager"
-              fetchpriority="high"
-            >
-            <div v-else class="flex aspect-square w-full items-center justify-center text-[var(--color-muted)]">
-              <UIcon name="lucide:image-off" class="h-14 w-14" aria-hidden="true" />
-            </div>
-
-            <!-- 角标：只渲染真实存在的推荐标记与 HOT/SALE/NEW/PICK 标签 -->
-            <div v-if="imageBadges.length" class="absolute left-4 top-4 flex flex-wrap gap-1.5">
-              <span v-if="product.isRecommend === 'Y'" class="badge badge-new">
-                {{ t('products.recommended') }}
-              </span>
-              <span
-                v-for="tag in imageBadges"
-                :key="tag.id"
-                class="badge"
-                :class="badgeToneClass(tag.code)"
-              >
-                {{ tag.name }}
-              </span>
-            </div>
-
-            <!-- 分享（复制链接）/ 收藏：收藏是真实写入后端的关系，不是本地开关 -->
-            <div class="absolute right-4 top-4 flex flex-col gap-2">
-              <button
-                type="button"
-                class="flex h-10 w-10 cursor-pointer items-center justify-center rounded-full bg-white/92 text-[var(--color-ink-soft)] shadow-[var(--shadow-md)] backdrop-blur-sm transition-colors duration-200 hover:bg-[var(--color-brand-500)] hover:text-white motion-reduce:transition-none"
-                :aria-label="t('product.share')"
-                @click="handleShare"
-              >
-                <UIcon name="lucide:share-2" class="h-[18px] w-[18px]" aria-hidden="true" />
-              </button>
-              <button
-                type="button"
-                class="flex h-10 w-10 cursor-pointer items-center justify-center rounded-full bg-white/92 shadow-[var(--shadow-md)] backdrop-blur-sm transition-colors duration-200 disabled:cursor-wait motion-reduce:transition-none"
-                :class="favorited
-                  ? 'bg-[var(--color-brand-500)] text-white'
-                  : 'text-[var(--color-ink-soft)] hover:bg-[var(--color-brand-500)] hover:text-white'"
-                :aria-label="favorited ? t('product.removeFromWishlist') : t('product.addToWishlist')"
-                :aria-pressed="favorited"
-                :aria-busy="favoritePending"
-                :disabled="favoritePending"
-                @click="handleToggleFavorite"
-              >
-                <UIcon name="lucide:heart" class="h-[18px] w-[18px]" :class="{ 'fill-current': favorited }" aria-hidden="true" />
-              </button>
-            </div>
-          </div>
-
-          <!-- 缩略图：选中带图 SKU 时该 SKU 图已在 gallery 首位 -->
-          <div v-if="gallery.length > 1" class="grid grid-cols-5 gap-3">
-            <button
-              v-for="(img, idx) in gallery"
-              :key="`${img}-${idx}`"
-              type="button"
-              class="cursor-pointer overflow-hidden rounded-[var(--radius-tile)] border-2 transition-all duration-200 motion-reduce:transition-none"
-              :class="activeImageIndex === idx
-                ? 'border-[var(--color-brand-500)]'
-                : 'border-transparent opacity-60 hover:opacity-100'"
-              :aria-label="t('product.galleryItem', { index: idx + 1 })"
-              :aria-current="activeImageIndex === idx ? 'true' : undefined"
-              @click="activeImageIndex = idx"
-            >
-              <img :src="img" :alt="`${product.title} ${idx + 1}`" width="600" height="600" class="aspect-square w-full object-cover" loading="lazy">
-            </button>
-          </div>
-        </div>
-
+        <!-- 左：图集（组件见 components/product/Gallery.vue；当前图下标仍由本页持有，切规格时会重置） -->
+        <ProductGallery
+          v-model:active-index="activeImageIndex"
+          :main-image="mainImage"
+          :gallery="gallery"
+          :title="product.title"
+          :is-recommend="product.isRecommend === 'Y'"
+          :badges="imageBadges"
+          :favorited="favorited"
+          :favorite-pending="favoritePending"
+          @share="handleShare"
+          @toggle-favorite="handleToggleFavorite"
+        />
         <!-- 右：商品信息（保持原有全部功能） -->
         <div class="flex flex-col">
           <!-- 分类 + 商品编码 -->
@@ -622,7 +556,6 @@ const {
   canBuyNow,
   buyNowLabel,
   imageBadges,
-  badgeToneClass,
   tagCodes,
   hasFastTag,
   hasTopTag,
