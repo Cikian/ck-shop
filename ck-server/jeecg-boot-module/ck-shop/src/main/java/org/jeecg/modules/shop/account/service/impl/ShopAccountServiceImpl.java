@@ -105,13 +105,16 @@ public class ShopAccountServiceImpl implements IShopAccountService {
      */
     private final JeecgBaseConfig jeecgBaseConfig;
 
+    private final ShopAccountSupport accountSupport;
+
     public ShopAccountServiceImpl(ShopAccountMapper shopAccountMapper,
                                   ShopEmailCodeService emailCodeService,
                                   ShopGoogleOAuthService googleOAuthService,
                                   ShopLoginLogRecorder loginLogRecorder,
                                   StoreResolver storeResolver,
                                   RedisUtil redisUtil,
-                                  JeecgBaseConfig jeecgBaseConfig) {
+                                  JeecgBaseConfig jeecgBaseConfig,
+                                  ShopAccountSupport accountSupport) {
         this.shopAccountMapper = shopAccountMapper;
         this.emailCodeService = emailCodeService;
         this.googleOAuthService = googleOAuthService;
@@ -119,6 +122,7 @@ public class ShopAccountServiceImpl implements IShopAccountService {
         this.storeResolver = storeResolver;
         this.redisUtil = redisUtil;
         this.jeecgBaseConfig = jeecgBaseConfig;
+        this.accountSupport = accountSupport;
     }
 
     // ==================================================================
@@ -134,7 +138,7 @@ public class ShopAccountServiceImpl implements IShopAccountService {
         if (StringUtils.isBlank(email)) {
             throw new JeecgBootException("请填写邮箱");
         }
-        if (!isValidEmail(email)) {
+        if (!accountSupport.isValidEmail(email)) {
             throw new JeecgBootException("邮箱格式不正确");
         }
         String scene = StringUtils.trimToNull(dto.getScene());
@@ -163,7 +167,7 @@ public class ShopAccountServiceImpl implements IShopAccountService {
             throw new JeecgBootException("该邮箱尚未注册");
         }
 
-        return emailCodeService.sendCode(email, scene, resolveClientIp(request));
+        return emailCodeService.sendCode(email, scene, accountSupport.resolveClientIp(request));
     }
 
     // ==================================================================
@@ -180,7 +184,7 @@ public class ShopAccountServiceImpl implements IShopAccountService {
         if (StringUtils.isBlank(email)) {
             throw new JeecgBootException("请填写邮箱");
         }
-        if (!isValidEmail(email)) {
+        if (!accountSupport.isValidEmail(email)) {
             throw new JeecgBootException("邮箱格式不正确");
         }
         String password = resolvePassword(dto.getPassword());
@@ -203,7 +207,7 @@ public class ShopAccountServiceImpl implements IShopAccountService {
 
         loginLogRecorder.record(user.getId(), user.getUsername(), email,
                 ShopAccountConstant.LOGIN_TYPE_PASSWORD, store,
-                resolveClientIp(request), resolveUserAgent(request), true, null);
+                accountSupport.resolveClientIp(request), accountSupport.resolveUserAgent(request), true, null);
 
         String token = issueToken(user);
         return new LoginResultVO()
@@ -232,8 +236,8 @@ public class ShopAccountServiceImpl implements IShopAccountService {
         }
 
         ShopStore store = resolveStoreQuietly(request);
-        String clientIp = resolveClientIp(request);
-        String userAgent = resolveUserAgent(request);
+        String clientIp = accountSupport.resolveClientIp(request);
+        String userAgent = accountSupport.resolveUserAgent(request);
 
         // step.1 失败次数（key 用 email，与 LoginController 同一套机制与阈值）
         if (isLoginFailOvertimes(email)) {
@@ -303,13 +307,13 @@ public class ShopAccountServiceImpl implements IShopAccountService {
         if (StringUtils.isBlank(email)) {
             throw new JeecgBootException("请填写邮箱");
         }
-        if (!isValidEmail(email)) {
+        if (!accountSupport.isValidEmail(email)) {
             throw new JeecgBootException("邮箱格式不正确");
         }
 
         ShopStore store = resolveStoreQuietly(request);
-        String clientIp = resolveClientIp(request);
-        String userAgent = resolveUserAgent(request);
+        String clientIp = accountSupport.resolveClientIp(request);
+        String userAgent = accountSupport.resolveUserAgent(request);
 
         // 先消费验证码：验证码不对就不该建号（否则一个打错的验证码会留下垃圾账号）
         emailCodeService.consumeCode(email, ShopAccountConstant.SCENE_LOGIN, dto.getEmailCode());
@@ -352,8 +356,8 @@ public class ShopAccountServiceImpl implements IShopAccountService {
             throw new JeecgBootException("请求参数不能为空");
         }
         ShopStore store = resolveStoreQuietly(request);
-        String clientIp = resolveClientIp(request);
-        String userAgent = resolveUserAgent(request);
+        String clientIp = accountSupport.resolveClientIp(request);
+        String userAgent = accountSupport.resolveUserAgent(request);
 
         String email = null;
         boolean isNewUser = false;
@@ -545,7 +549,7 @@ public class ShopAccountServiceImpl implements IShopAccountService {
         // 自动注册也必须写一个非空密码哈希：JwtUtil.sign 把它纳入签名，
         // 为空签不出 token。明文取 32 位随机串并**立刻丢弃**——
         // 谁也不知道它，等于这个账号没有可用的密码。
-        String rawPassword = StringUtils.isNotBlank(password) ? password : randomLowerAlnum(
+        String rawPassword = StringUtils.isNotBlank(password) ? password : accountSupport.randomLowerAlnum(
                 ShopAccountConstant.PLACEHOLDER_PASSWORD_LENGTH);
         String encrypted = PasswordUtil.encrypt(username, rawPassword, salt);
 
@@ -553,7 +557,7 @@ public class ShopAccountServiceImpl implements IShopAccountService {
         ShopAccountUser user = new ShopAccountUser()
                 .setId(UUIDGenerator.generate())
                 .setUsername(username)
-                .setRealname(defaultRealname(email))
+                .setRealname(accountSupport.defaultRealname(email))
                 .setEmail(email)
                 .setPassword(encrypted)
                 .setSalt(salt)
@@ -611,7 +615,7 @@ public class ShopAccountServiceImpl implements IShopAccountService {
     private String generateUniqueUsername() {
         for (int i = 0; i < ShopAccountConstant.USERNAME_MAX_RETRY; i++) {
             String candidate = ShopAccountConstant.USERNAME_PREFIX
-                    + randomLowerAlnum(ShopAccountConstant.USERNAME_RANDOM_LENGTH);
+                    + accountSupport.randomLowerAlnum(ShopAccountConstant.USERNAME_RANDOM_LENGTH);
             if (shopAccountMapper.selectIdByUsernameAny(candidate) == null) {
                 return candidate;
             }
@@ -622,15 +626,6 @@ public class ShopAccountServiceImpl implements IShopAccountService {
     }
 
     /** 指定长度的小写字母 + 数字随机串 */
-    private String randomLowerAlnum(int length) {
-        final String alphabet = "abcdefghijklmnopqrstuvwxyz0123456789";
-        StringBuilder sb = new StringBuilder(length);
-        ThreadLocalRandom random = ThreadLocalRandom.current();
-        for (int i = 0; i < length; i++) {
-            sb.append(alphabet.charAt(random.nextInt(alphabet.length())));
-        }
-        return sb.toString();
-    }
 
     /** 按邮箱查用户（仅未删除） */
     private ShopAccountUser findByEmail(String email) {
@@ -716,9 +711,6 @@ public class ShopAccountServiceImpl implements IShopAccountService {
      * （+tag、多级域名、长 TLD），而真正的验证手段是"能不能收到验证码"。
      * 这里只挡明显不是邮箱的输入（没有 @、没有点）。
      */
-    private boolean isValidEmail(String email) {
-        return email != null && email.matches("^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$");
-    }
 
     /**
      * 账号是否有效 —— {@code SysUserServiceImpl#checkUserIsEffective} 的等价实现。
@@ -946,35 +938,7 @@ public class ShopAccountServiceImpl implements IShopAccountService {
      * 从代理链里取**最后一个**非空段，而不是 X-Forwarded-For 的第一段 ——
      * 第一段是客户端可伪造的，拿它做限流等于把限流开关交给攻击者。
      */
-    private String resolveClientIp(HttpServletRequest request) {
-        if (request == null) {
-            return null;
-        }
-        String[] candidates = {
-                request.getHeader("X-Forwarded-For"),
-                request.getHeader("X-Real-IP"),
-                request.getHeader("Proxy-Client-IP"),
-                request.getHeader("WL-Proxy-Client-IP"),
-                request.getRemoteAddr()
-        };
-        for (String candidate : candidates) {
-            if (StringUtils.isBlank(candidate) || "unknown".equalsIgnoreCase(candidate)) {
-                continue;
-            }
-            String[] parts = candidate.split(",");
-            for (int i = parts.length - 1; i >= 0; i--) {
-                String ip = parts[i].trim();
-                if (StringUtils.isNotBlank(ip)) {
-                    return StringUtils.left(ip, 64);
-                }
-            }
-        }
-        return null;
-    }
 
-    private String resolveUserAgent(HttpServletRequest request) {
-        return request == null ? null : StringUtils.left(request.getHeader("User-Agent"), 500);
-    }
 
     // ==================================================================
     // VO 转换 / 小工具
@@ -997,14 +961,6 @@ public class ShopAccountServiceImpl implements IShopAccountService {
      * <p>截断到 100 字符：{@code sys_user.realname} 是 varchar(100)，
      * 超长邮箱前缀会在严格模式下报错（用户看到"注册失败"却不知道原因）。
      */
-    private String defaultRealname(String email) {
-        if (StringUtils.isBlank(email)) {
-            return "用户";
-        }
-        int at = email.indexOf('@');
-        String prefix = at > 0 ? email.substring(0, at) : email;
-        return StringUtils.left(prefix, 100);
-    }
 
     private String formatDate(Date date) {
         return date == null ? null : new SimpleDateFormat(DATE_TIME_PATTERN).format(date);
