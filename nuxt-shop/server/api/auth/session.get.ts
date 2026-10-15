@@ -66,22 +66,19 @@ export default defineEventHandler(async (event): Promise<AuthSession> => {
     }
     return { authenticated: true, userInfo: result }
   } catch (error: any) {
-    // 判据不能只看 statusCode，这里踩过一个坑，务必保持现状：
-    // 后端对失效 token 回的是 HTTP 401 + body {success:false, message:"Token非法无效!"}，
-    // 而 apiClient 的 onResponse 拦截器看到 success:false 会**先**抛一个 statusCode=400 的错误，
-    // onResponseError（那里面才带真实的 401）根本没机会执行。
-    // 所以只认 401/403 会导致"token 失效却不清 cookie"，cookie 就一直留在浏览器里。
-    // 于是这里把 400 也纳入，并用后端文案兜底判定。
+    // 判据只用**状态码**，不再去正则匹配错误文案。
+    //
+    // 历史坑（现已修掉）：apiClient 的 onResponse 曾经对 success:false 一律抛
+    // statusCode=400，把后端真实的 401/403 吞掉，于是这里只能靠
+    // /token|令牌/i 去猜"这是不是登录失效"。现在 apiClient 会保留真实状态码
+    // （HTTP 状态优先，其次用 body.code，code=401 也会映射成 401），
+    // 所以这里可以干净地按 401/403 判断。
     const statusCode = error?.statusCode ?? error?.status
-    const message = String(error?.statusMessage || error?.message || '')
-    // 只匹配后端明确的 token 失效文案，避免把"参数错误"这类 400 误判成登录失效：
-    // JeecgBoot 侧对应 CommonConstant.TOKEN_IS_INVALID_MSG("Token非法无效!") 和 "token为空!"
-    const tokenRejected = /token|令牌/i.test(message)
 
-    if (statusCode === 401 || statusCode === 403 || (statusCode === 400 && tokenRejected)) {
+    if (statusCode === 401 || statusCode === 403) {
       // cookie 已经是一张废票，删掉它：否则每次读 session 都要白发一次请求到后端，
       // 而且浏览器会一直带着这个死 cookie。
-      deleteCookie(event, 'access-token', { path: '/' })
+      clearAccessTokenCookie(event)
       return UNAUTHENTICATED
     }
 
@@ -90,7 +87,10 @@ export default defineEventHandler(async (event): Promise<AuthSession> => {
     // 若把 500 抛给前端，后端抖一下会把所有在线用户弹下线；
     // 若删掉 cookie，用户就得重新登录。所以这里安全降级为未登录（调用方会引导去登录页），
     // 但保留 cookie —— 后端恢复后用户刷新页面就能自动回到登录态。
-    console.warn(`[/api/auth/session] 校验登录态失败（非鉴权错误，已降级）: ${message || error}`)
+    console.warn(
+      `[/api/auth/session] 校验登录态失败（非鉴权错误，已降级）: `
+      + `${error?.statusMessage || error?.message || error}`,
+    )
     return UNAUTHENTICATED
   }
 })

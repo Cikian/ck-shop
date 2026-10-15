@@ -28,6 +28,15 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 400, statusMessage: '请输入邮箱' })
   }
 
+  // 限流：这是撞库/密码喷洒的主要入口，此前完全没有任何节流。
+  // 维度取「IP + 邮箱」，既挡住单 IP 扫多账号，也挡住分布式轮换 IP 打同一账号。
+  enforceRateLimit(event, {
+    key: 'auth:login-password',
+    limit: 10,
+    windowMs: 60_000,
+    extra: email,
+  })
+
   // 密码明文透传，由服务端 encryptPassword() 加密后再发给后端
   // （AES key 在 runtimeConfig，不会暴露给浏览器）。
   const password = String(body?.password ?? '')
@@ -66,14 +75,12 @@ export default defineEventHandler(async (event) => {
   //   比存 localStorage 安全得多（localStorage 里的东西任何脚本都能读）
   // - 之后每次调用需要登录态的接口，server/api 里直接从 cookie 读 token，
   //   自动拼到 x-access-token 请求头发给 Java 后端，前端页面代码完全不用管 token
+  //
+  // Secure / SameSite / 有效期由 server/utils/authCookie.ts 统一决定，
+  // 不要在业务文件里各写一份（历史缺陷：各写一份后 secure 依赖 NODE_ENV，
+  // 而生产启动命令没设 NODE_ENV，线上 cookie 全程不带 Secure）。
   // ============================================================
-  setCookie(event, 'access-token', result.token, {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === 'production', // 本地 http 开发时关掉，线上 https 打开
-    sameSite: 'lax',
-    path: '/',
-    maxAge: 60 * 60 * 24 * 7, // 7 天，可以按后端 token 有效期调整
-  })
+  setAccessTokenCookie(event, result.token)
 
   // userInfo 不算敏感数据（不含密码、token），可以直接返回给前端存起来，
   // 用来在页面上显示"你好，XXX"这种。token 只活在 httpOnly cookie 里。

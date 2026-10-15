@@ -27,6 +27,14 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 400, statusMessage: '请输入邮箱' })
   }
 
+  // 限流：未登录接口，且验证码可被暴力猜，10 分钟 5 次（按 IP + 邮箱）。
+  enforceRateLimit(event, {
+    key: 'auth:reset-password',
+    limit: 5,
+    windowMs: 10 * 60_000,
+    extra: email,
+  })
+
   // 验证码是 scene=reset 的那个（契约 2.6），后端校验后立即删除（一次性）。
   const emailCode = String(body?.emailCode ?? '').trim()
   if (!emailCode) {

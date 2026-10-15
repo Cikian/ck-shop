@@ -41,6 +41,15 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 400, statusMessage: '验证码场景不合法' })
   }
 
+  // 限流：本接口会真的发邮件（有成本、也会被用来轰炸他人邮箱）。
+  // 后端自己还有图形验证码 + 冷却，这里是更靠前的一道闸。
+  enforceRateLimit(event, {
+    key: `auth:send-code:${scene}`,
+    limit: 5,
+    windowMs: 60_000,
+    extra: email,
+  })
+
   const captcha = String(body?.captcha ?? '').trim()
   const checkKey = String(body?.checkKey ?? '').trim()
   if (!captcha || !checkKey) {

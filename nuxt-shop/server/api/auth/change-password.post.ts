@@ -42,6 +42,13 @@ export default defineEventHandler(async (event) => {
   // "提供了一个旧密码"去做比对，反而破坏了"无密码账号首次设密码"的路径。
   const encryptedOld = oldPassword ? encryptPassword(oldPassword) : ''
 
+  // 限流：改密码接口会校验旧密码，属于可被暴力尝试的凭据校验点。
+  enforceRateLimit(event, {
+    key: 'auth:change-password',
+    limit: 10,
+    windowMs: 10 * 60_000,
+  })
+
   // withAuth: true —— apiClient 会从 httpOnly cookie 读 token 并拼 X-Access-Token；
   // 读不到时它自己抛 401「未登录或登录已过期」，前端据此引导去登录页。
   const api = createApiClient(event, { withAuth: true, lang: resolveStoreLang(body?.lang, 'en') })

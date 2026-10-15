@@ -10,13 +10,51 @@
 
 import type { H3Event } from 'h3'
 import { signMd5Utils } from './signMd5'
+import { STORE_INTL_LOCALE_TAGS } from '~~/types/store-locale'
 
-interface BackendEnvelope<T = any> {
+interface BackendEnvelope<T = unknown> {
   code: number
   message: string
   result: T
   success: boolean
   timestamp: number
+}
+
+/**
+ * 哪些业务 code 值得**原样**变成 HTTP 状态码。
+ *
+ * 只放行这三个：它们表达的是"调用方该换个身份/该慢下来"，前端据此走登录引导或退避。
+ *
+ * 特别注意**不能**放行 500：JeecgBoot 的 {@code Result.error(msg)} 把
+ * "邮箱或密码错误""库存不足""优惠券已失效"这类**业务失败**也标成 code=500，
+ * 但 HTTP 状态是 200。如果照搬成 HTTP 500：
+ *   · 监控/告警会把用户输错密码当成服务端故障；
+ *   · 任何"5xx 才重试"的客户端逻辑会对业务错误反复重试。
+ * 所以业务失败统一回落成 400（与改造前的行为一致），语义是"请求本身没成事"，
+ * 真正的 HTTP 5xx 仍然由 httpStatus 优先级兜住。
+ */
+const FORWARDABLE_CODES = new Set([401, 403, 429])
+
+/**
+ * 把「后端业务失败」翻译成**正确的 HTTP 状态码**。
+ *
+ * 以前这里不分青红皂白一律抛 400，导致调用方（以及前端页面）完全无法区分
+ * 「参数错了」和「登录已失效」：
+ *   · 后端对失效 token 回的是 HTTP 401 + body{success:false, code:401}；
+ *   · 而拦截器看到 success:false 就先抛 400，onResponseError 里那个真实状态
+ *     根本没机会执行；
+ *   · 结果 server/api/auth/session.get.ts 只能用正则去猜错误文案里有没有
+ *     "token/令牌"，其他所有"401 就跳登录"的逻辑都不可靠。
+ *
+ * 现在的规则：能拿到的真实 HTTP 状态优先，其次用 body.code（限白名单），
+ * 都没有才退化为 400。
+ */
+function resolveFailureStatus(httpStatus: number | undefined, envelopeCode: unknown): number {
+  if (typeof httpStatus === 'number' && httpStatus >= 400) {
+    return httpStatus
+  }
+  const code = Number(envelopeCode)
+  return FORWARDABLE_CODES.has(code) ? code : 400
 }
 
 export function createApiClient(
@@ -59,8 +97,11 @@ export function createApiClient(
   }
 
   // 【核心修改】：统一将当前前端的语言环境透传给 Java 服务端
-  // 转换为 Java/Spring Boot 常见的标准 Locale 格式（例如 zh-CN / en-US）
-  headers['Accept-Language'] = lang === 'zh' ? 'zh-CN' : 'en-US'
+  // 之前这里写的是 `lang === 'zh' ? 'zh-CN' : 'en-US'`，于是**法语站点**
+  // 也被声明成 en-US：页面骨架是法语，但后端生成的文案（异常提示、标签）
+  // 全是英文。改为按 types/store-locale.ts 的 BCP-47 映射表翻译，
+  // 新增语言时不需要再改这里。
+  headers['Accept-Language'] = STORE_INTL_LOCALE_TAGS[lang] || 'en-US'
   headers['x-language'] = lang
 
   // 店铺标识：由本站在服务端配置，通过请求头传给后端。
@@ -76,6 +117,22 @@ export function createApiClient(
 
     headers,
 
+    /**
+     * 超时必须有：没有它时，后端一旦卡住（或连不上），
+     * await 这个调用的 Nitro 请求会**一直挂着**，而 SSR 期间
+     * app/middleware/auth.ts、首页/商品页的 setup 都在等它 ——
+     * 结果是整个前台所有服务端渲染页面一起变慢甚至超时，而不是"降级展示"。
+     */
+    timeout: Number(config.apiTimeoutMs) || 10000,
+
+    /**
+     * 重试刻意关闭（ofetch 默认会对部分失败的 GET 自动重试一次）。
+     * 这里的调用既有幂等 GET，也有下单/加购这类非幂等 POST，
+     * 统一重试会带来"我的购物车怎么多了一件"这类难查的问题；
+     * 需要重试的场景应由业务层用幂等键显式实现（订单已经有 idempotentKey）。
+     */
+    retry: 0,
+
     onRequest({ request, options }) {
       const timestamp = signUtils.getTimestamp().toString()
       const url = request as string
@@ -89,7 +146,11 @@ export function createApiClient(
       options.headers['sign'] = sign
       options.headers['version'] = 'v3'
 
-      console.log(`[API →] ${options.method || 'GET'} ${config.apiBaseUrl}${url}`)
+      // 只在开发环境打印：生产日志里堆满请求明细既没用，又会泄露
+      // 完整接口地址（含查询参数，例如订单号、邮箱）。
+      if (import.meta.dev) {
+        console.log(`[API →] ${options.method || 'GET'} ${config.apiBaseUrl}${url}`)
+      }
     },
 
     onResponse({ response }) {
@@ -98,7 +159,7 @@ export function createApiClient(
       if (body && typeof body === 'object' && 'success' in body) {
         if (!body.success) {
           throw createError({
-            statusCode: 400,
+            statusCode: resolveFailureStatus(response.status, body.code),
             statusMessage: body.message || '请求失败',
           })
         }
@@ -112,6 +173,25 @@ export function createApiClient(
       throw createError({
         statusCode: response.status || 500,
         statusMessage: message,
+      })
+    },
+
+    /**
+     * 请求根本没拿到响应时（后端没启动、端口不通、超时被 abort）走这里。
+     * 区分 504（超时，值得重试/稍后再试）与 502（连不上，属于部署问题），
+     * 前端才能给出"稍后重试"还是"服务不可用"的正确提示。
+     */
+    onRequestError({ error }) {
+      const name = String((error as any)?.name || '')
+      const cause = String((error as any)?.cause?.name || '')
+      const isTimeout = name === 'AbortError' || name === 'TimeoutError'
+        || cause === 'AbortError' || cause === 'TimeoutError'
+
+      throw createError({
+        statusCode: isTimeout ? 504 : 502,
+        statusMessage: isTimeout
+          ? '后端服务响应超时，请稍后重试'
+          : '无法连接后端服务，请确认服务已启动',
       })
     },
   })

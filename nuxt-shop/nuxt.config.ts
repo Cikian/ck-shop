@@ -5,6 +5,75 @@ import tailwindcss from '@tailwindcss/vite'
 // 该文件零依赖，可以在配置加载阶段（jiti）安全 import。
 import { STORE_DEFAULT_LANG, STORE_LOCALES } from './types/store-locale'
 
+/**
+ * 密钥**必须**来自环境变量，缺失或仍是示例值时直接报错。
+ *
+ * 为什么不做兜底：以前这里写的是
+ *   signSecret: process.env.SIGN_SECRET || 'dd05f1c5...'
+ * 这个默认值就是 JeecgBoot 开源仓库里的公开密钥。一旦某个环境漏配 .env，
+ * 服务会**静默**用公开密钥启动 —— 任何人都能伪造 sign/timestamp/version 头，
+ * 直接绕过 BFF 与后端之间的信任边界，而且页面上看不出任何异常。
+ * 加密密钥（AES_KEY/AES_IV）同理：密码"加密"会退化成可逆的公开变换。
+ * 所以这里宁可启动失败，也不要带着公开密钥上线。
+ */
+const DEMO_SECRET_VALUES = new Set([
+  'change-me',
+  '1234567890adbcde', // JeecgBoot 开源默认 AES key
+  '1234567890hjlkew', // JeecgBoot 开源默认 AES iv
+  'dd05f1c54d63749eda95f9fa6d49v442a', // JeecgBoot 开源默认签名密钥
+])
+
+// `nuxt prepare` 由 package.json 的 postinstall 触发，此时（例如刚 clone 完还没建 .env）
+// 不应该因为缺密钥就让 npm install 失败，否则新人根本装不上依赖。
+// 只有 prepare 会被放行；dev / build / start 一律强制校验。
+const isPrepareOnly = process.argv.some(arg => arg.includes('prepare'))
+
+/**
+ * 显式豁免开关：只允许写在**被 gitignore 的 .env** 里。
+ *
+ * 现实约束：本项目当前开发环境（nuxt-shop/.env 与 ck-server/.env）用的就是
+ * JeecgBoot 的开源默认密钥，而 AES key 在 Java 侧是代码内常量、签名密钥在
+ * 后端 .env 里 —— 轮换必须前后端同时改并重启后端，不能由前端单方面完成。
+ * 所以这里留一个"知情豁免"口子：默认拒绝，只有在本地 .env 里显式写下
+ * ALLOW_INSECURE_DEMO_SECRETS=true 才放行，并且每次启动都打醒目告警。
+ * 这样仓库里不再有任何可用的默认密钥，而本地开发环境不会被立刻打断。
+ */
+const ALLOW_INSECURE_DEMO_SECRETS = (process.env.ALLOW_INSECURE_DEMO_SECRETS || '').toLowerCase() === 'true'
+
+function requireSecret(name: string): string {
+  const value = (process.env[name] || '').trim()
+
+  if (!value) {
+    if (isPrepareOnly) {
+      return `prepare-only-${name.toLowerCase()}`
+    }
+    throw new Error(
+      `[nuxt.config] 环境变量 ${name} 未配置，已拒绝启动。\n`
+      + `  该值必须与 Java 后端一致：请复制 .env.example 为 .env 后填写（见 README「环境变量」一节）。`,
+    )
+  }
+
+  if (DEMO_SECRET_VALUES.has(value)) {
+    if (isPrepareOnly) {
+      return value
+    }
+    if (!ALLOW_INSECURE_DEMO_SECRETS) {
+      throw new Error(
+        `[nuxt.config] 环境变量 ${name} 仍是 JeecgBoot 开源默认值，已拒绝启动。\n`
+        + `  · 生产/测试环境：必须换成与后端一致的私有值。\n`
+        + `  · 仅本地开发：若暂时无法与后端一起轮换，可在 .env（已被 gitignore）中显式设置\n`
+        + `    ALLOW_INSECURE_DEMO_SECRETS=true 后再启动 —— 这只表示"我知道自己在用公开密钥"。`,
+      )
+    }
+    console.warn(
+      `[nuxt.config] ⚠️ ${name} 正在使用 JeecgBoot 开源默认值（已通过 ALLOW_INSECURE_DEMO_SECRETS 放行）。`
+      + `任何能读到开源仓库的人都能伪造签名/解密口令，禁止用于生产。`,
+    )
+  }
+
+  return value
+}
+
 export default defineNuxtConfig({
   compatibilityDate: '2025-07-15',
 
@@ -50,15 +119,21 @@ export default defineNuxtConfig({
   },
 
   // ===== SEO 基础信息 =====
+  // 每个前台站点（一个店铺）在部署时用自己的域名/站名，否则多店铺共用一份
+  // 'localhost:3000' 会产出错误的 canonical / sitemap / OG 链接。
   site: {
-    url: 'http://localhost:3000',
-    name: 'Nuxt Shop Demo',
-    description: 'A demo e-commerce storefront built with Nuxt 4',
-    defaultLocale: 'en',
+    url: process.env.STORE_SITE_URL || 'http://localhost:3000',
+    name: process.env.STORE_SITE_NAME || 'Cikian Shop',
+    description: process.env.STORE_SITE_DESCRIPTION || 'Cikian Shop 多店铺商城',
+    // 与 i18n.defaultLocale 同源，避免两处各写一份默认语言
+    defaultLocale: STORE_DEFAULT_LANG,
   },
 
   runtimeConfig: {
     apiBaseUrl: process.env.API_BASE_URL || 'http://127.0.0.1:9951/api',
+
+    /** 调用 Java 后端的超时（毫秒）。没有它时后端卡住会把 Nitro 的 SSR 请求一起挂死。 */
+    apiTimeoutMs: Number(process.env.API_TIMEOUT_MS || 10000),
 
     /**
      * 当前站点的店铺编码。
@@ -72,10 +147,32 @@ export default defineNuxtConfig({
      */
     storeCode: process.env.STORE_CODE || '',
 
-    aesKey: process.env.AES_KEY || '1234567890adbcde',
-    aesIv: process.env.AES_IV || '1234567890hjlkew',
+    /**
+     * 本站对外访问的 origin（如 https://shop.example.com）。
+     *
+     * 用途：Google OAuth 的 redirect_uri 必须是一个**确定**的地址。
+     * 留空时才回退到「本次请求的 origin」；而 getRequestURL() 会采信
+     * Host / X-Forwarded-Host，若前置代理没有校验 Host，攻击者可以伪造它，
+     * 让 BFF 拿着一份攻击者指定的 redirect_uri 去换 code。
+     * 生产环境**建议显式配置**本项。
+     */
+    publicOrigin: process.env.STORE_PUBLIC_ORIGIN || '',
 
-    signSecret: process.env.SIGN_SECRET || 'dd05f1c54d63749eda95f9fa6d49v442a',
+    /**
+     * httpOnly 登录 cookie 是否加 Secure 标记。
+     *
+     * 默认 **true**（安全优先）：Secure cookie 不会在明文 HTTP 上发送，
+     * 避免令牌在网络中被顺手读走。只有在「用 http 隧道 / 局域网 IP 调试」
+     * 这种非 HTTPS 场景才用 COOKIE_SECURE=false 显式关闭 —— 注意此时
+     * 浏览器（Chrome/Firefox）会拒收 Secure cookie，登录会直接失效，
+     * 所以这是一个必须由部署者明确知晓的开关，不再依赖 NODE_ENV 是否被设置。
+     */
+    cookieSecure: (process.env.COOKIE_SECURE ?? 'true').toLowerCase() !== 'false',
+
+    // ★ 密钥只从环境变量取，缺失或仍是示例值直接报错（见文件顶部 requireSecret）
+    aesKey: requireSecret('AES_KEY'),
+    aesIv: requireSecret('AES_IV'),
+    signSecret: requireSecret('SIGN_SECRET'),
 
     public: {
     },

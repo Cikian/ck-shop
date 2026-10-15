@@ -27,6 +27,14 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 400, statusMessage: '请输入邮箱' })
   }
 
+  // 限流：注册会消耗验证码并写库，限制到 10 分钟 5 次（按 IP + 邮箱）。
+  enforceRateLimit(event, {
+    key: 'auth:register',
+    limit: 5,
+    windowMs: 10 * 60_000,
+    extra: email,
+  })
+
   const emailCode = String(body?.emailCode ?? '').trim()
   if (!emailCode) {
     throw createError({ statusCode: 400, statusMessage: '请输入邮箱验证码' })
@@ -79,14 +87,10 @@ export default defineEventHandler(async (event) => {
   //   比存 localStorage 安全得多（localStorage 里的东西任何脚本都能读）
   // - 之后每次调用需要登录态的接口，server/api 里直接从 cookie 读 token，
   //   自动拼到 x-access-token 请求头发给 Java 后端，前端页面代码完全不用管 token
+  //
+  // Secure/有效期统一由 authCookie.ts 决定（默认 Secure=true）。
   // ============================================================
-  setCookie(event, 'access-token', result.token, {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === 'production', // 本地 http 开发时关掉，线上 https 打开
-    sameSite: 'lax',
-    path: '/',
-    maxAge: 60 * 60 * 24 * 7, // 7 天，与登录路径保持一致
-  })
+  setAccessTokenCookie(event, result.token)
 
   // userInfo 不算敏感数据（不含密码、token），可以直接返回给前端存起来。
   // token **绝不**出现在返回值里 —— 它只活在 httpOnly cookie 中。

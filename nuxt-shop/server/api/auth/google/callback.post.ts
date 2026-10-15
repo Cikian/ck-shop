@@ -52,11 +52,22 @@ export default defineEventHandler(async (event) => {
   }
 
   // state 是后端写入 Redis 的一次性防 CSRF 令牌（契约 2.5，TTL 10 分钟）。
-  // BFF 只负责透传，不做校验也不缓存 —— 校验必须由后端做，
-  // 否则 BFF 自己存一份就成了第二个真相来源。
   const state = String(body?.state ?? '').trim()
   if (!state) {
     throw createError({ statusCode: 400, statusMessage: '缺少 state，请重新发起 Google 登录' })
+  }
+
+  // ★ 会话绑定校验（防 login CSRF）：authorization-url 阶段 BFF 把后端签发的
+  //   state 同时写进了一张 httpOnly cookie，这里必须逐字相等。
+  //   没有这一步时，攻击者可以在自己浏览器跑完授权、拿着 {code, state} 诱使
+  //   受害者浏览器提交 —— 受害者的会话会被静默换成攻击者账号。
+  //   注意 consume 是**一次性**的（无论成败都作废），避免重放。
+  const boundState = consumeOAuthState(event)
+  if (!boundState || boundState !== state) {
+    throw createError({
+      statusCode: 400,
+      statusMessage: '登录会话已失效，请重新发起 Google 登录',
+    })
   }
 
   // lang 必须先算出来：兜底回调路径要按语言补前缀（见 defaultCallbackPath 注释）
@@ -64,7 +75,8 @@ export default defineEventHandler(async (event) => {
 
   // ★ 服务端自拼，忽略 body 里的任何 redirectUri（见文件头说明）。
   //   必须与 auth-url 阶段拼出**逐字相同**的地址，否则 Google 报 redirect_uri_mismatch。
-  const origin = getRequestURL(event).origin
+  //   origin 同样优先取配置值，避免采信可伪造的 Host/X-Forwarded-Host。
+  const origin = resolvePublicOrigin(event)
   const redirectUri = `${origin}${defaultCallbackPath(lang)}`
 
   const api = createApiClient(event, { lang })
@@ -90,14 +102,9 @@ export default defineEventHandler(async (event) => {
   // ============================================================
   // ★★★ token 存储策略（与邮箱登录路径**完全一致**）★★★
   // token 只进 httpOnly cookie；返回值里没有 token。
+  // Secure/有效期统一由 authCookie.ts 决定（默认 Secure=true）。
   // ============================================================
-  setCookie(event, 'access-token', result.token, {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
-    sameSite: 'lax',
-    path: '/',
-    maxAge: 60 * 60 * 24 * 7,
-  })
+  setAccessTokenCookie(event, result.token)
 
   // isNewUser 透传给前端：Google 新注册用户没有密码，
   // 回调页可据此引导去设置密码（契约 2.7 的 change-password）。

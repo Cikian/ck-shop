@@ -30,6 +30,14 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 400, statusMessage: '请输入邮箱' })
   }
 
+  // 限流：验证码可以被暴力猜（6 位数字），必须限制尝试频率。
+  enforceRateLimit(event, {
+    key: 'auth:login-email-code',
+    limit: 10,
+    windowMs: 60_000,
+    extra: email,
+  })
+
   const emailCode = String(body?.emailCode ?? '').trim()
   if (!emailCode) {
     throw createError({ statusCode: 400, statusMessage: '请输入邮箱验证码' })
@@ -59,15 +67,9 @@ export default defineEventHandler(async (event) => {
 
   // ============================================================
   // ★★★ token 存储策略（与其它登录路径**完全一致**）★★★
-  // 详见 login-password.post.ts 里的完整说明：token 只进 httpOnly cookie。
+  // 详见 authCookie.ts：Secure/有效期集中一处，避免各写一份后不一致。
   // ============================================================
-  setCookie(event, 'access-token', result.token, {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
-    sameSite: 'lax',
-    path: '/',
-    maxAge: 60 * 60 * 24 * 7,
-  })
+  setAccessTokenCookie(event, result.token)
 
   return { userInfo: result.userInfo }
 })

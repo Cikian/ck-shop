@@ -19,7 +19,15 @@ export interface SlideItem {
 function cleanUrl(url: string | null | undefined): string {
   if (!url) return ''
   // 清理 URL 中可能存在的反引号、前后空格
-  return url.replace(/`/g, '').trim()
+  const value = url.replace(/`/g, '').trim()
+
+  // ★ scheme 白名单。这个字段前端是直接绑到 `:href` / `<img src>` 上的
+  //   （HomeHeroCarousel.vue），轮播图又是**后台配置**的内容：
+  //   一旦填了 `javascript:alert(1)` 之类的 scheme，用户点一下就会在
+  //   本站域名下执行脚本（存储型 XSS）。只放行 http(s) 与站内单斜杠相对路径。
+  if (/^https?:\/\//i.test(value)) return value
+  if (value.startsWith('/') && !value.startsWith('//')) return value
+  return ''
 }
 
 export default defineEventHandler(async (event): Promise<SlideItem[]> => {

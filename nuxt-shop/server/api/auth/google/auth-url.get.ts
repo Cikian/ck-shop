@@ -61,9 +61,9 @@ function toSafeRelativePath(raw: unknown, fallback: string): string {
 export default defineEventHandler(async (event) => {
   const query = getQuery(event)
 
-  // ★ 由服务端推 origin，不信任任何前端传入的 host —— 这也是防 Host 头伪造的
-  //   第一道关：getRequestURL 取的是**本次请求**实际到达的地址。
-  const origin = getRequestURL(event).origin
+  // ★ origin 由服务端决定：优先用配置好的 STORE_PUBLIC_ORIGIN，
+  //   未配置时才退回本次请求的 origin（见 utils/googleOAuth.ts 的说明）。
+  const origin = resolvePublicOrigin(event)
 
   // lang 必须先算出来：兜底回调路径要按语言补前缀（见 defaultCallbackPath 注释）
   const lang = resolveStoreLang(query.lang, 'en')
@@ -82,6 +82,10 @@ export default defineEventHandler(async (event) => {
         query: { redirectUri },
       },
     )
+
+    // ★ 把后端签发的 state 绑定到本次浏览器会话（httpOnly cookie，10 分钟）。
+    //   回调时用它来拒绝"把别人的 code/state 塞给受害者"的 login CSRF。
+    bindOAuthState(event, result.state)
 
     // 把最终使用的 redirectUri 一起回给前端：
     // 回调页要拿**同一个值**去换 token，前端自己拼容易和这里不一致
