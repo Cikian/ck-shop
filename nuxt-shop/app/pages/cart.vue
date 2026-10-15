@@ -379,6 +379,12 @@
 </template>
 
 <script setup lang="ts">
+/**
+ * 购物车是私有页面：未登录 / 登录过期时由 auth 中间件重定向到登录页，
+ * 登录成功后回到购物车（redirect 参数由中间件写入）。
+ */
+definePageMeta({ middleware: 'auth' })
+
 import { extractCartErrorMessage, useCart } from '~~/composables/useCart'
 import { writeCheckoutSnapshot } from '~~/composables/useCheckoutSnapshot'
 import { useStorePrice, useStoreProductList } from '~~/composables/useProducts'

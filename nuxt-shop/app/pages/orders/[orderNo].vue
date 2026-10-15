@@ -454,6 +454,9 @@
 </template>
 
 <script setup lang="ts">
+/** 订单详情是私有页面，未登录 / 登录过期由 auth 中间件重定向到登录页并回跳 */
+definePageMeta({ middleware: 'auth' })
+
 import { toNumberOrNull } from '~~/types/shop-product'
 import { useStorePrice } from '~~/composables/useProducts'
 

@@ -148,8 +148,35 @@
    */
   --container-7xl: 110rem;      /* 1760px */
 
-  --nav-height: 64px;           /* 移动端导航高度 */
+  /*
+   * 固定导航的真实高度。
+   *
+   * ⚠️ 移动端导航是**两行**：第 1 行（Logo / 购物车 / 汉堡）+ 第 2 行（搜索框）。
+   *     以前这里只有一个 64px，而 .pt-navbar 直接用它当占位高度 ——
+   *     结果移动端每页顶部有 48px 内容（首页的分类药丸行、面包屑、商品页排序条）
+   *     被 fixed header 盖住：**看得见一部分、点下去落在 header 的搜索框上**，
+   *     表现就是"移动端按钮点了没反应"（PC 端 header 只有两行 116px，预留 140px，
+   *     所以 PC 完全正常）。
+   *
+   * 改法：把两行拆成两个 token，再用 --nav-total-height 表示"导航总高度"，
+   * 所有"给导航让位"的地方（.pt-navbar / scroll-padding-top / 详情页吸顶条）
+   * 一律用总高度，避免以后加行/减行时又漏掉某一处。
+   *
+   * 数值来自真机尺寸实测（390×844、768px 断点）：
+   *   移动端 64 + 64 = 128px（实测 header 高 128px）
+   *   桌面端 116px（实测 117px：64 工具行 + 52 分类行 + 1px 边框）
+   */
+  --nav-height: 64px;           /* 移动端第 1 行：Logo / 购物车 / 汉堡 */
+  --nav-search-height: 64px;    /* 移动端第 2 行：搜索行（含 1px 上边框） */
   --nav-height-md: 116px;       /* 桌面端：搜索行 + 分类行 */
+  --nav-total-height: calc(var(--nav-height) + var(--nav-search-height)); /* 移动端总高 128px */
+}
+
+/* 桌面端导航总高 = 116px（第 1 行工具 + 第 2 行分类） */
+@media (min-width: 768px) {
+  :root {
+    --nav-total-height: var(--nav-height-md);
+  }
 }
 
 /* ==========================================================================
@@ -158,8 +185,8 @@
 
 html {
   scroll-behavior: smooth;
-  /* 锚点跳转时为固定导航让位 */
-  scroll-padding-top: calc(var(--nav-height-md) + 16px);
+  /* 锚点跳转时为固定导航让位（用总高度：移动端两行 128px / 桌面 116px） */
+  scroll-padding-top: calc(var(--nav-total-height) + 16px);
 }
 
 body {
@@ -494,14 +521,20 @@ body {
   left: 100%;
 }
 
-/* 固定导航占位：桌面两行导航更高 */
+/*
+ * 固定导航占位。
+ *
+ * ⚠️ 这里**必须**用 --nav-total-height（导航总高），不能用 --nav-height：
+ *    移动端导航有两行，只减一行的 64px 会让每页顶部 48px 内容被 fixed header 盖住，
+ *    盖住的部分点不到（点击落到 header 的搜索框上）——这是"移动端按钮点了没反应"的成因之一。
+ */
 .pt-navbar {
-  padding-top: calc(var(--nav-height) + 1rem);
+  padding-top: calc(var(--nav-total-height) + 1rem);
 }
 
 @media (min-width: 768px) {
   .pt-navbar {
-    padding-top: calc(var(--nav-height-md) + 1.5rem);
+    padding-top: calc(var(--nav-total-height) + 1.5rem);
   }
 }
 

@@ -36,11 +36,13 @@
                 {{ t('profile.goLogin') }}
               </NuxtLinkLocale>
               <!--
-                站点没有注册页（app/pages 下不存在 register.vue），Header 也是把"注册"入口
-                指向 /login。这里保持一致：宁可两个入口都落到登录页，也不给用户一个点进去 404
-                的假入口。（若后续补了注册页，这里改成 /register 即可。）
+                /register 现在是**真实存在**的页面（app/pages/register.vue，契约 4.2）。
+                这里曾经把「注册账号」也指向 /login 并附了一段"站点没有注册页"的注释 ——
+                那是当时的权宜之计（宁可两个入口都落到登录页，也不给用户一个 404 的假入口）。
+                注册页已落地，这个 404 顾虑消失，两个入口各自直达即可。
+                （Header.vue 的「登录 / 注册」同批做了同样的拆分。）
               -->
-              <NuxtLinkLocale to="/login" class="ui-pill ui-pill-ghost h-11 px-7 text-sm">
+              <NuxtLinkLocale to="/register" class="ui-pill ui-pill-ghost h-11 px-7 text-sm">
                 <UIcon name="lucide:user-plus" class="h-4 w-4" aria-hidden="true" />
                 {{ t('profile.register') }}
               </NuxtLinkLocale>
@@ -106,7 +108,7 @@
                 <button
                   type="button"
                   class="relative mt-5 flex h-10 w-full cursor-pointer items-center justify-center gap-2 rounded-full border border-white/40 bg-white/10 text-[13px] font-bold text-white transition-colors hover:bg-white/20 motion-reduce:transition-none"
-                  @click="activeTab = 'settings'"
+                  @click="selectTab('settings')"
                 >
                   <UIcon name="lucide:pencil" class="h-3.5 w-3.5" aria-hidden="true" />
                   {{ t('profile.editProfile') }}
@@ -175,7 +177,7 @@
                 :tabindex="activeTab === tab.key ? 0 : -1"
                 class="chip shrink-0"
                 :class="activeTab === tab.key ? 'chip-active' : ''"
-                @click="activeTab = tab.key"
+                @click="selectTab(tab.key)"
                 @keydown="handleTabKeydown($event, index)"
               >
                 <UIcon :name="tab.icon" class="h-4 w-4" aria-hidden="true" />
@@ -241,8 +243,18 @@
                       :value="userInfo?.username || ''"
                       type="text"
                       disabled
+                      aria-describedby="profile-username-hint"
                       class="h-11 w-full cursor-not-allowed rounded-[var(--radius-input)] border border-[var(--color-line)] bg-[var(--color-line-soft)] px-4 text-sm text-[var(--color-muted)]"
                     >
+                    <!--
+                      用户名规则（契约 0 节决策 7）：u_ + 8 位小写字母数字，系统生成，**永不可改**。
+                      必须把"为什么灰着"讲出来 —— 只给一个 disabled 的框，用户会以为是页面坏了
+                      或者以为自己该去别处改。
+                    -->
+                    <p id="profile-username-hint" class="mt-1.5 flex items-start gap-1.5 text-[12px] leading-relaxed text-[var(--color-muted)]">
+                      <UIcon name="lucide:lock" class="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+                      <span>{{ t('auth.usernameReadonlyHint') }}</span>
+                    </p>
                   </div>
 
                   <div>
@@ -284,6 +296,181 @@
                     </button>
                   </div>
                 </form>
+
+                <!--
+                  ===== 账户密码：设置 / 修改 =====
+                  不新增 Tab，内嵌在「账户设置」里（Lead 已裁决）：
+                  「账户设置」在语义上本来就应该同时管资料与密码，
+                  再开一个 Tab 只会挤压移动端本就不宽裕的横向 tab 栏。
+
+                  标题由 hasPassword 决定（契约 2.8 / 5.5.2）：
+                    false -> 「设置密码」（邮箱验证码 / Google 自动注册的用户，没有旧密码）
+                    true  -> 「修改密码」（必须先验旧密码）
+                    null  -> 资料还没拉到 / 接口失败：整块不渲染，
+                             避免在"不知道用户有没有密码"的情况下给出错误的表单。
+                -->
+                <section class="mt-7 border-t border-[var(--color-line-soft)] pt-6">
+                  <h3 class="flex items-center gap-2 text-[15px] font-black text-[var(--color-ink)]">
+                    <UIcon name="lucide:key-round" class="h-4 w-4 text-[var(--color-brand-500)]" aria-hidden="true" />
+                    {{ t('profile.passwordSection') }}
+                  </h3>
+                  <p class="mt-1.5 text-[12px] leading-relaxed text-[var(--color-muted)]">
+                    {{ t('profile.passwordSectionDesc') }}
+                  </p>
+
+                  <!-- 资料加载失败：把后端/网络的原话展示出来，并给一个重试入口 -->
+                  <div
+                    v-if="profileError"
+                    class="mt-4 flex items-start gap-2 rounded-[var(--radius-card-sm)] bg-[var(--color-error-50)] px-4 py-3 text-[13px] font-medium text-[var(--color-error-600)]"
+                    role="alert"
+                  >
+                    <UIcon name="lucide:circle-alert" class="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
+                    <span class="min-w-0 flex-1">
+                      {{ t('profile.profileLoadFailed') }}：{{ profileError }}
+                      <button
+                        type="button"
+                        class="ml-2 cursor-pointer font-bold underline underline-offset-2 disabled:opacity-45"
+                        :disabled="profileLoading"
+                        @click="loadProfile()"
+                      >
+                        {{ t('common.retry') }}
+                      </button>
+                    </span>
+                  </div>
+
+                  <!-- 加载中：骨架屏（不猜字段数，固定两行） -->
+                  <div v-else-if="profileLoading && hasPassword === null" class="mt-4 space-y-3" aria-busy="true">
+                    <span class="block h-11 w-full animate-pulse rounded-[var(--radius-input)] bg-[var(--color-line-soft)]"></span>
+                    <span class="block h-11 w-2/3 animate-pulse rounded-[var(--radius-input)] bg-[var(--color-line-soft)]"></span>
+                  </div>
+
+                  <form v-else-if="hasPassword !== null" class="mt-4 grid gap-4 sm:grid-cols-2" @submit.prevent="handlePasswordSubmit">
+                    <!-- 旧密码：只在用户**确实已有密码**时渲染。
+                         没设过密码的人填不出旧密码，给一个必填框就是纯阻塞。 -->
+                    <div v-if="hasPassword" class="sm:col-span-2">
+                      <label for="profile-old-password" class="mb-1.5 block text-[13px] font-bold text-[var(--color-ink-soft)]">
+                        {{ t('auth.oldPassword') }}
+                      </label>
+                      <input
+                        id="profile-old-password"
+                        v-model="passwordForm.oldPassword"
+                        type="password"
+                        autocomplete="current-password"
+                        class="h-11 w-full rounded-[var(--radius-input)] border border-[var(--color-line)] bg-white px-4 text-sm text-[var(--color-ink)] transition-colors focus:border-[var(--color-brand-400)] focus:outline-none focus:ring-2 focus:ring-[var(--color-brand-100)] motion-reduce:transition-none"
+                        @input="markPasswordTouched"
+                      >
+                    </div>
+
+                    <div>
+                      <label for="profile-new-password" class="mb-1.5 block text-[13px] font-bold text-[var(--color-ink-soft)]">
+                        {{ t('auth.password') }}
+                      </label>
+                      <div class="relative">
+                        <input
+                          id="profile-new-password"
+                          v-model="passwordForm.newPassword"
+                          :type="showNewPassword ? 'text' : 'password'"
+                          autocomplete="new-password"
+                          :aria-invalid="passwordMismatch"
+                          aria-describedby="profile-password-strength"
+                          class="h-11 w-full rounded-[var(--radius-input)] border border-[var(--color-line)] bg-white pl-4 pr-11 text-sm text-[var(--color-ink)] transition-colors focus:border-[var(--color-brand-400)] focus:outline-none focus:ring-2 focus:ring-[var(--color-brand-100)] motion-reduce:transition-none"
+                          @input="markPasswordTouched"
+                        >
+                        <!-- 密码可见性切换：aria-label 随状态变化，不用 emoji -->
+                        <button
+                          type="button"
+                          class="absolute inset-y-0 right-0 flex w-11 cursor-pointer items-center justify-center text-[var(--color-muted)] transition-colors hover:text-[var(--color-brand-600)] motion-reduce:transition-none"
+                          :aria-label="showNewPassword ? t('auth.hidePassword') : t('auth.showPassword')"
+                          :aria-pressed="showNewPassword"
+                          @click="showNewPassword = !showNewPassword"
+                        >
+                          <UIcon :name="showNewPassword ? 'lucide:eye-off' : 'lucide:eye'" class="h-4 w-4" aria-hidden="true" />
+                        </button>
+                      </div>
+
+                      <!-- 密码强度：轻量三段提示条，只提示不阻断 -->
+                      <div v-if="passwordStrength" id="profile-password-strength" class="mt-2" aria-live="polite">
+                        <span class="block h-1 w-full overflow-hidden rounded-full bg-[var(--color-line-soft)]">
+                          <span
+                            class="block h-full rounded-full transition-[width] duration-200 motion-reduce:transition-none"
+                            :class="passwordStrengthBarClass"
+                          ></span>
+                        </span>
+                        <!-- 文案随强度变化：只挂 passwordTooWeak 会在"强"的时候也说密码太弱 -->
+                        <span class="mt-1 block text-[11px] text-[var(--color-muted)]">
+                          {{ passwordStrengthText }}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div>
+                      <label for="profile-confirm-password" class="mb-1.5 block text-[13px] font-bold text-[var(--color-ink-soft)]">
+                        {{ t('auth.confirmPassword') }}
+                      </label>
+                      <div class="relative">
+                        <input
+                          id="profile-confirm-password"
+                          v-model="passwordForm.confirmPassword"
+                          :type="showConfirmPassword ? 'text' : 'password'"
+                          autocomplete="new-password"
+                          :aria-invalid="passwordMismatch"
+                          :aria-describedby="passwordMismatch ? 'profile-confirm-password-error' : undefined"
+                          class="h-11 w-full rounded-[var(--radius-input)] border bg-white pl-4 pr-11 text-sm text-[var(--color-ink)] transition-colors focus:outline-none focus:ring-2 motion-reduce:transition-none"
+                          :class="passwordMismatch
+                            ? 'border-[var(--color-error)] focus:border-[var(--color-error)] focus:ring-[var(--color-error-50)]'
+                            : 'border-[var(--color-line)] focus:border-[var(--color-brand-400)] focus:ring-[var(--color-brand-100)]'"
+                          @input="markPasswordTouched"
+                        >
+                        <button
+                          type="button"
+                          class="absolute inset-y-0 right-0 flex w-11 cursor-pointer items-center justify-center text-[var(--color-muted)] transition-colors hover:text-[var(--color-brand-600)] motion-reduce:transition-none"
+                          :aria-label="showConfirmPassword ? t('auth.hidePassword') : t('auth.showPassword')"
+                          :aria-pressed="showConfirmPassword"
+                          @click="showConfirmPassword = !showConfirmPassword"
+                        >
+                          <UIcon :name="showConfirmPassword ? 'lucide:eye-off' : 'lucide:eye'" class="h-4 w-4" aria-hidden="true" />
+                        </button>
+                      </div>
+                      <!-- 字段级错误：不只在 toast 里说，输入框下方也要留痕 -->
+                      <p
+                        v-if="passwordMismatch"
+                        id="profile-confirm-password-error"
+                        class="mt-1.5 text-[12px] font-medium text-[var(--color-error-600)]"
+                        role="alert"
+                      >
+                        {{ t('auth.passwordMismatch') }}
+                      </p>
+                    </div>
+
+                    <!-- 标题随 hasPassword 走：这是"设置"还是"修改"由后端状态决定，不由前端猜 -->
+                    <div class="flex flex-wrap items-center gap-3 sm:col-span-2">
+                      <button
+                        type="submit"
+                        class="ui-pill ui-pill-brand h-11 px-6 text-sm disabled:cursor-not-allowed disabled:opacity-45"
+                        :disabled="!passwordFormValid"
+                      >
+                        <UIcon
+                          :name="passwordSubmitting ? 'lucide:loader-circle' : 'lucide:key-round'"
+                          class="h-4 w-4"
+                          :class="passwordSubmitting ? 'animate-spin' : ''"
+                          aria-hidden="true"
+                        />
+                        {{ passwordSubmitting
+                          ? t('common.loading')
+                          : (hasPassword ? t('auth.changePassword') : t('auth.setPassword')) }}
+                      </button>
+                      <button
+                        v-if="passwordTouched"
+                        type="button"
+                        class="cursor-pointer text-[13px] font-medium text-[var(--color-muted)] underline underline-offset-2 transition-colors hover:text-[var(--color-ink-soft)] motion-reduce:transition-none"
+                        :disabled="passwordSubmitting"
+                        @click="resetPasswordForm"
+                      >
+                        {{ t('common.cancel') }}
+                      </button>
+                    </div>
+                  </form>
+                </section>
               </template>
 
               <!--
@@ -378,24 +565,517 @@
               </template>
 
               <!--
-                我的订单 / 收货地址：
-                后端目前**没有**订单、地址接口接入本页，所以这里只给真实空态。
-                原来的 ORD-2024-001 等订单号、2 条美国地址、"View All"、
-                美元金额按钮全部删除。
+                我的订单：真实数据（GET /api/order）。
+                这里刻意做得比 /orders 整页更紧凑（单行摘要 + 缩略图条），
+                但状态文字与按钮可见性**完全沿用后端字段**，与 /orders 是同一套口径；
+                需要看明细/付款/退款就跳 /orders。
               -->
-              <div v-else class="flex flex-col items-center justify-center py-14 text-center">
-                <span class="flex h-20 w-20 items-center justify-center rounded-full bg-[var(--color-brand-50)] text-[var(--color-brand-400)]">
-                  <UIcon :name="emptyIcon" class="h-9 w-9" aria-hidden="true" />
-                </span>
-                <p class="mt-5 text-sm font-bold text-[var(--color-ink)]">
-                  {{ t(emptyLabel) }}
-                </p>
-              </div>
+              <template v-else-if="activeTab === 'orders'">
+                <!-- 加载失败：把后端/网络的原话展示出来，用户才知道该重试还是先别管 -->
+                <div v-if="ordersError" class="mt-5 flex items-start gap-2 rounded-[var(--radius-card-sm)] bg-[var(--color-error-50)] px-4 py-3 text-[13px] font-medium text-[var(--color-error-600)]">
+                  <UIcon name="lucide:circle-alert" class="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
+                  <span class="min-w-0 flex-1">
+                    {{ t('order.loadError') }}：{{ ordersError }}
+                    <button
+                      type="button"
+                      class="ml-2 cursor-pointer font-bold underline underline-offset-2 disabled:opacity-45"
+                      :disabled="ordersLoading"
+                      @click="loadOrders()"
+                    >
+                      {{ t('common.retry') }}
+                    </button>
+                  </span>
+                </div>
+
+                <!-- 加载中：骨架屏，固定 3 行（不猜每页条数） -->
+                <ul v-else-if="ordersLoading && !orders.length" class="mt-4 space-y-3" aria-busy="true" :aria-label="t('common.loading')">
+                  <li v-for="index in 3" :key="`order-skeleton-${index}`" class="space-y-2.5 rounded-[var(--radius-card-sm)] bg-[var(--color-line-soft)]/50 p-4">
+                    <span class="block h-4 w-1/3 animate-pulse rounded bg-[var(--color-line-soft)]"></span>
+                    <span class="block h-3 w-2/3 animate-pulse rounded bg-[var(--color-line-soft)]"></span>
+                  </li>
+                </ul>
+
+                <!-- 有订单 -->
+                <template v-else-if="orders.length">
+                  <p class="mt-1.5 text-[13px] text-[var(--color-muted)]">
+                    {{ t('order.pagination') }} · {{ t('order.pageInfo', { current: currentOrderPage, total: orderTotalPages }) }}
+                  </p>
+
+                  <ul class="mt-4 space-y-3">
+                    <li
+                      v-for="order in orders"
+                      :key="order.orderNo"
+                      class="rounded-[var(--radius-card-sm)] border border-[var(--color-line-soft)] p-4"
+                    >
+                      <div class="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+                        <div class="flex min-w-0 flex-wrap items-center gap-x-2.5 gap-y-1">
+                          <span class="text-[13px] font-bold tabular text-[var(--color-ink)]">{{ order.orderNo }}</span>
+                          <!-- 状态文字用后端 orderStatusLabel；status 只决定配色，前端不自建映射 -->
+                          <OrderStatusTag :label="order.orderStatusLabel || order.orderStatus || ''" :status="order.orderStatus" />
+                        </div>
+                        <span class="text-[12px] tabular text-[var(--color-muted)]">{{ order.createTime || '' }}</span>
+                      </div>
+
+                      <!-- 商品缩略图条：只展示后端返回的快照图，没有就留空位（不塞占位图） -->
+                      <div v-if="orderItems(order).length" class="mt-3 flex items-center gap-2">
+                        <span
+                          v-for="(item, index) in orderItems(order).slice(0, 4)"
+                          :key="`${order.orderNo}-thumb-${item.id || index}`"
+                          class="h-12 w-12 shrink-0 overflow-hidden rounded-[var(--radius-tile)] bg-[var(--color-line-soft)]"
+                        >
+                          <img
+                            v-if="item.productImage"
+                            :src="item.productImage"
+                            :alt="item.productName || ''"
+                            class="h-full w-full object-cover"
+                            loading="lazy"
+                          >
+                          <span v-else class="flex h-full w-full items-center justify-center">
+                            <UIcon name="lucide:image" class="h-5 w-5 text-[var(--color-muted)]" aria-hidden="true" />
+                          </span>
+                        </span>
+                        <!--
+                          这里只显示第一个商品的名称。**刻意不在这里再写一个数量/单位**：
+                            - 件数由下方 `order.totalQuantity` 统一表达（「共 N 件」），
+                              这里再写一次就会出现两个含义不同的数字并列；
+                            - 曾经这里写过 t('shop.itemsUnit')，但 shop.itemsUnit 是**裸单位词**
+                              （zh "件" / en "items" / fr "articles"，值里没有 {count} 占位符），
+                              传进去的 count 会被 i18n 静默忽略，渲染成孤零零一个「件」。
+                              本项目其它地方的正确用法都是「数字 + 空格 + 单位」
+                              （见 CartLineItem.vue / CartSummaryCard.vue / cart.vue）。
+                            - 商品种类数（orderItems(order).length）也与「件」不是一个概念，
+                              不能拿它当数量补上去。
+                          多条商品的存在感由左边那排缩略图表达，所以这里删掉不丢信息。
+                        -->
+                        <span class="min-w-0 flex-1 truncate text-[12px] text-[var(--color-muted)]">
+                          {{ orderItems(order)[0]?.productName || '' }}
+                        </span>
+                      </div>
+
+                      <div class="mt-3 flex flex-wrap items-center justify-between gap-x-4 gap-y-2 border-t border-[var(--color-line-soft)] pt-3">
+                        <div class="flex flex-wrap items-baseline gap-x-3 gap-y-1 text-[12px] text-[var(--color-muted)]">
+                          <span>{{ t('order.totalQuantity', { count: order.totalQuantity ?? 0 }) }}</span>
+                          <span v-if="isPositive(order.refundAmount)" class="text-[var(--color-warning-600)]">
+                            {{ t('order.refundAmount') }} {{ format(order.refundAmount) }}
+                          </span>
+                          <span>
+                            {{ t('order.payAmount') }}
+                            <span class="price ml-1 text-[16px]">{{ format(order.payAmount) }}</span>
+                          </span>
+                        </div>
+
+                        <div class="flex flex-wrap items-center gap-2">
+                          <NuxtLinkLocale :to="orderDetailLink(order.orderNo)" class="ui-pill ui-pill-ghost h-9 px-4 text-[12px]">
+                            {{ t('order.viewDetail') }}
+                          </NuxtLinkLocale>
+                          <!-- 按钮可见性完全由后端 canXxx 决定，前端不重算状态机 -->
+                          <button
+                            v-if="order.canCancel"
+                            type="button"
+                            class="inline-flex h-9 cursor-pointer items-center rounded-full border border-[var(--color-line)] px-4 text-[12px] font-medium text-[var(--color-ink-soft)] transition-colors duration-200 hover:border-[var(--color-error)] hover:text-[var(--color-error)] motion-reduce:transition-none"
+                            @click="openCancel(order.orderNo)"
+                          >
+                            {{ t('order.actionCancel') }}
+                          </button>
+                          <button
+                            v-if="order.canRefund"
+                            type="button"
+                            class="inline-flex h-9 cursor-pointer items-center rounded-full border border-[var(--color-line)] px-4 text-[12px] font-medium text-[var(--color-ink-soft)] transition-colors duration-200 hover:border-[var(--color-brand-500)] hover:text-[var(--color-brand-600)] motion-reduce:transition-none"
+                            @click="openRefund(order)"
+                          >
+                            {{ t('order.actionRefund') }}
+                          </button>
+                          <button
+                            v-if="order.canReceive"
+                            type="button"
+                            class="inline-flex h-9 cursor-pointer items-center rounded-full border border-[var(--color-line)] px-4 text-[12px] font-medium text-[var(--color-ink-soft)] transition-colors duration-200 hover:border-[var(--color-success)] hover:text-[var(--color-success-600)] motion-reduce:transition-none"
+                            @click="openReceive(order.orderNo)"
+                          >
+                            {{ t('order.actionReceive') }}
+                          </button>
+                          <NuxtLinkLocale v-if="order.canPay" :to="payLink(order.orderNo)" class="ui-pill ui-pill-brand h-9 px-5 text-[12px]">
+                            {{ t('order.actionPay') }}
+                          </NuxtLinkLocale>
+                        </div>
+                      </div>
+                    </li>
+                  </ul>
+
+                  <!-- 分页：只有一页时不渲染，避免噪音 -->
+                  <nav v-if="orderTotalPages > 1" class="mt-6 flex flex-wrap items-center justify-center gap-2" :aria-label="t('order.pagination')">
+                    <button
+                      type="button"
+                      class="ui-pill ui-pill-ghost h-9 gap-1 px-4 text-[12px] disabled:cursor-not-allowed disabled:opacity-40"
+                      :disabled="pageNo <= 1 || ordersLoading"
+                      @click="goToOrderPage(pageNo - 1)"
+                    >
+                      <UIcon name="lucide:chevron-left" class="h-4 w-4" aria-hidden="true" />
+                      <span class="hidden sm:inline">{{ t('order.prev') }}</span>
+                    </button>
+                    <span class="px-2 text-[12px] tabular text-[var(--color-muted)]">
+                      {{ t('order.pageInfo', { current: currentOrderPage, total: orderTotalPages }) }}
+                    </span>
+                    <button
+                      type="button"
+                      class="ui-pill ui-pill-ghost h-9 gap-1 px-4 text-[12px] disabled:cursor-not-allowed disabled:opacity-40"
+                      :disabled="pageNo >= orderTotalPages || ordersLoading"
+                      @click="goToOrderPage(pageNo + 1)"
+                    >
+                      <span class="hidden sm:inline">{{ t('order.next') }}</span>
+                      <UIcon name="lucide:chevron-right" class="h-4 w-4" aria-hidden="true" />
+                    </button>
+                  </nav>
+
+                  <div class="mt-5 flex justify-center">
+                    <!-- NuxtLinkLocale 自己会补 locale 前缀，这里不能再套 localePath（否则会变成 /zh/zh/orders） -->
+                    <NuxtLinkLocale to="/orders" class="ui-pill ui-pill-ghost h-10 px-6 text-[13px]">
+                      <UIcon name="lucide:arrow-right" class="h-4 w-4" aria-hidden="true" />
+                      <!--
+                        这里**不能用** shop.profileOrders：它的中文值是「订单数」，那是统计卡的**名词**口径，
+                        当成"跳转全部订单"的链接文案会读成一句没头没尾的统计项。
+                        用 shop.profileMyOrders（我的订单 / My orders / Mes commandes）——与目标页标题同义，
+                        用户一眼能看懂点了会去哪；且不新增 i18n key。
+                      -->
+                      {{ t('shop.profileMyOrders') }}
+                    </NuxtLinkLocale>
+                  </div>
+                </template>
+
+                <!-- 真的没有订单 -->
+                <div v-else class="flex flex-col items-center justify-center py-14 text-center">
+                  <span class="flex h-20 w-20 items-center justify-center rounded-full bg-[var(--color-brand-50)] text-[var(--color-brand-400)]">
+                    <UIcon name="lucide:package-open" class="h-9 w-9" aria-hidden="true" />
+                  </span>
+                  <p class="mt-5 text-sm font-bold text-[var(--color-ink)]">
+                    {{ t('order.empty') }}
+                  </p>
+                  <p class="mt-2 max-w-md text-[13px] text-[var(--color-muted)]">
+                    {{ t('order.emptyDesc') }}
+                  </p>
+                  <NuxtLinkLocale to="/products" class="ui-pill ui-pill-brand mt-5 h-10 px-6 text-[13px]">
+                    <UIcon name="lucide:arrow-right" class="h-4 w-4" aria-hidden="true" />
+                    {{ t('order.emptyAction') }}
+                  </NuxtLinkLocale>
+                </div>
+              </template>
+
+              <!-- 收货地址：真实数据（GET /api/address/list）+ 完整增删改 / 设为默认 -->
+              <template v-else-if="activeTab === 'addresses'">
+                <div class="mt-4 flex justify-end">
+                  <button type="button" class="ui-pill ui-pill-brand h-10 shrink-0 px-5 text-[13px]" @click="openAddressCreate">
+                    <UIcon name="lucide:plus" class="h-4 w-4" aria-hidden="true" />
+                    {{ t('address.add') }}
+                  </button>
+                </div>
+
+                <!-- 加载失败 -->
+                <div v-if="addressesError" class="mt-4 flex items-start gap-2 rounded-[var(--radius-card-sm)] bg-[var(--color-error-50)] px-4 py-3 text-[13px] font-medium text-[var(--color-error-600)]">
+                  <UIcon name="lucide:circle-alert" class="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
+                  <span class="min-w-0 flex-1">
+                    {{ t('address.loadError') }}：{{ addressesError }}
+                    <button
+                      type="button"
+                      class="ml-2 cursor-pointer font-bold underline underline-offset-2 disabled:opacity-45"
+                      :disabled="addressesLoading"
+                      @click="loadAddresses()"
+                    >
+                      {{ t('common.retry') }}
+                    </button>
+                  </span>
+                </div>
+
+                <!-- 加载中：骨架屏 -->
+                <ul v-else-if="addressesLoading && !addresses.length" class="mt-4 space-y-3" aria-busy="true" :aria-label="t('common.loading')">
+                  <li v-for="index in 3" :key="`addr-skeleton-${index}`" class="space-y-2.5 rounded-[var(--radius-card-sm)] bg-[var(--color-line-soft)]/50 p-4">
+                    <span class="block h-4 w-1/4 animate-pulse rounded bg-[var(--color-line-soft)]"></span>
+                    <span class="block h-3 w-2/3 animate-pulse rounded bg-[var(--color-line-soft)]"></span>
+                  </li>
+                </ul>
+
+                <!-- 有地址 -->
+                <ul v-else-if="addresses.length" class="mt-4 space-y-3">
+                  <li
+                    v-for="address in addresses"
+                    :key="address.id"
+                    class="rounded-[var(--radius-card-sm)] border border-[var(--color-line-soft)] p-4"
+                  >
+                    <div class="flex flex-wrap items-start justify-between gap-x-4 gap-y-2">
+                      <div class="min-w-0 flex-1">
+                        <p class="flex flex-wrap items-center gap-x-2 gap-y-1">
+                          <span class="text-[14px] font-bold text-[var(--color-ink)]">{{ address.receiverName || '—' }}</span>
+                          <!-- 手机号是否脱敏由后端决定，前端不加工 -->
+                          <span class="text-[13px] tabular text-[var(--color-ink-soft)]">{{ address.receiverPhone || '' }}</span>
+                          <span
+                            v-if="address.isDefault"
+                            class="rounded-full bg-[var(--color-brand-500)] px-2 py-0.5 text-[10px] font-bold text-white"
+                          >
+                            {{ t('address.defaultTag') }}
+                          </span>
+                          <span
+                            v-if="address.addressTag"
+                            class="rounded-full bg-[var(--color-line-soft)] px-2 py-0.5 text-[10px] font-bold text-[var(--color-ink-soft)]"
+                          >
+                            {{ address.addressTag }}
+                          </span>
+                        </p>
+                        <!-- fullAddress 由后端拼好，前端不再各处拼一遍 -->
+                        <p class="mt-1.5 text-[13px] leading-relaxed text-[var(--color-muted)]">
+                          {{ address.fullAddress || '—' }}
+                        </p>
+                        <p v-if="isPositive(address.useCount)" class="mt-1.5 text-[12px] tabular text-[var(--color-muted)]">
+                          {{ t('address.useCount', { count: address.useCount }) }}
+                        </p>
+                      </div>
+
+                      <div class="flex shrink-0 flex-wrap items-center gap-2">
+                        <button
+                          v-if="!address.isDefault"
+                          type="button"
+                          class="inline-flex h-9 cursor-pointer items-center rounded-full border border-[var(--color-line)] px-4 text-[12px] font-medium text-[var(--color-ink-soft)] transition-colors duration-200 hover:border-[var(--color-brand-500)] hover:text-[var(--color-brand-600)] disabled:opacity-40 motion-reduce:transition-none"
+                          :disabled="addressMutating"
+                          @click="setDefaultAddress(address.id)"
+                        >
+                          {{ t('address.setDefault') }}
+                        </button>
+                        <button
+                          type="button"
+                          class="inline-flex h-9 cursor-pointer items-center rounded-full border border-[var(--color-line)] px-4 text-[12px] font-medium text-[var(--color-ink-soft)] transition-colors duration-200 hover:border-[var(--color-brand-500)] hover:text-[var(--color-brand-600)] disabled:opacity-40 motion-reduce:transition-none"
+                          :disabled="addressMutating"
+                          @click="openAddressEdit(address)"
+                        >
+                          {{ t('common.edit') }}
+                        </button>
+                        <button
+                          type="button"
+                          class="inline-flex h-9 cursor-pointer items-center rounded-full border border-[var(--color-line)] px-4 text-[12px] font-medium text-[var(--color-ink-soft)] transition-colors duration-200 hover:border-[var(--color-error)] hover:text-[var(--color-error)] disabled:opacity-40 motion-reduce:transition-none"
+                          :disabled="addressMutating"
+                          @click="askDeleteAddress(address)"
+                        >
+                          {{ t('common.delete') }}
+                        </button>
+                      </div>
+                    </div>
+                  </li>
+                </ul>
+
+                <!-- 真的没有地址 -->
+                <div v-else class="flex flex-col items-center justify-center py-14 text-center">
+                  <span class="flex h-20 w-20 items-center justify-center rounded-full bg-[var(--color-brand-50)] text-[var(--color-brand-400)]">
+                    <UIcon name="lucide:map-pin-off" class="h-9 w-9" aria-hidden="true" />
+                  </span>
+                  <p class="mt-5 text-sm font-bold text-[var(--color-ink)]">
+                    {{ t('address.empty') }}
+                  </p>
+                  <p class="mt-2 max-w-md text-[13px] text-[var(--color-muted)]">
+                    {{ t('address.emptyDesc') }}
+                  </p>
+                  <button type="button" class="ui-pill ui-pill-brand mt-5 h-10 px-6 text-[13px]" @click="openAddressCreate">
+                    <UIcon name="lucide:plus" class="h-4 w-4" aria-hidden="true" />
+                    {{ t('address.add') }}
+                  </button>
+                </div>
+              </template>
             </div>
           </div>
         </div>
       </template>
     </div>
+
+    <!-- 地址新增 / 编辑弹层（字段口径与 /address 页一致，只有这一处定义） -->
+    <UModal
+      v-model:open="addressFormState.open"
+      :title="addressFormState.id ? t('address.editTitle') : t('address.addTitle')"
+      :ui="{ content: 'rounded-[var(--radius-card)]' }"
+      @update:open="onAddressFormOpenChange"
+    >
+      <template #body>
+        <form class="grid gap-4 sm:grid-cols-2" @submit.prevent="submitAddressForm">
+          <div>
+            <label for="profile-address-name" class="mb-1.5 block text-[13px] font-bold text-[var(--color-ink-soft)]">
+              {{ t('address.receiverName') }}
+            </label>
+            <input
+              id="profile-address-name"
+              v-model="addressForm.receiverName"
+              type="text"
+              autocomplete="name"
+              :placeholder="t('address.namePlaceholder')"
+              class="h-11 w-full rounded-[var(--radius-input)] border border-[var(--color-line)] bg-white px-4 text-sm text-[var(--color-ink)] focus:border-[var(--color-brand-400)] focus:outline-none focus:ring-2 focus:ring-[var(--color-brand-100)]"
+            >
+          </div>
+
+          <div>
+            <label for="profile-address-phone" class="mb-1.5 block text-[13px] font-bold text-[var(--color-ink-soft)]">
+              {{ t('address.receiverPhone') }}
+            </label>
+            <input
+              id="profile-address-phone"
+              v-model="addressForm.receiverPhone"
+              type="tel"
+              autocomplete="tel"
+              :placeholder="t('address.phonePlaceholder')"
+              class="h-11 w-full rounded-[var(--radius-input)] border border-[var(--color-line)] bg-white px-4 text-sm text-[var(--color-ink)] focus:border-[var(--color-brand-400)] focus:outline-none focus:ring-2 focus:ring-[var(--color-brand-100)]"
+            >
+          </div>
+
+          <div class="grid grid-cols-3 gap-3 sm:col-span-2">
+            <input
+              v-model="addressForm.province"
+              type="text"
+              :aria-label="t('address.provincePlaceholder')"
+              :placeholder="t('address.provincePlaceholder')"
+              class="h-11 w-full rounded-[var(--radius-input)] border border-[var(--color-line)] bg-white px-3 text-sm text-[var(--color-ink)] focus:border-[var(--color-brand-400)] focus:outline-none focus:ring-2 focus:ring-[var(--color-brand-100)]"
+            >
+            <input
+              v-model="addressForm.city"
+              type="text"
+              :aria-label="t('address.cityPlaceholder')"
+              :placeholder="t('address.cityPlaceholder')"
+              class="h-11 w-full rounded-[var(--radius-input)] border border-[var(--color-line)] bg-white px-3 text-sm text-[var(--color-ink)] focus:border-[var(--color-brand-400)] focus:outline-none focus:ring-2 focus:ring-[var(--color-brand-100)]"
+            >
+            <input
+              v-model="addressForm.district"
+              type="text"
+              :aria-label="t('address.districtPlaceholder')"
+              :placeholder="t('address.districtPlaceholder')"
+              class="h-11 w-full rounded-[var(--radius-input)] border border-[var(--color-line)] bg-white px-3 text-sm text-[var(--color-ink)] focus:border-[var(--color-brand-400)] focus:outline-none focus:ring-2 focus:ring-[var(--color-brand-100)]"
+            >
+          </div>
+
+          <div class="sm:col-span-2">
+            <label for="profile-address-detail" class="mb-1.5 block text-[13px] font-bold text-[var(--color-ink-soft)]">
+              {{ t('address.detailAddress') }}
+            </label>
+            <input
+              id="profile-address-detail"
+              v-model="addressForm.detailAddress"
+              type="text"
+              autocomplete="street-address"
+              :placeholder="t('address.detailPlaceholder')"
+              class="h-11 w-full rounded-[var(--radius-input)] border border-[var(--color-line)] bg-white px-4 text-sm text-[var(--color-ink)] focus:border-[var(--color-brand-400)] focus:outline-none focus:ring-2 focus:ring-[var(--color-brand-100)]"
+            >
+          </div>
+
+          <div>
+            <label for="profile-address-postal" class="mb-1.5 block text-[13px] font-bold text-[var(--color-ink-soft)]">
+              {{ t('address.postalCode') }}
+            </label>
+            <input
+              id="profile-address-postal"
+              v-model="addressForm.postalCode"
+              type="text"
+              autocomplete="postal-code"
+              :placeholder="t('address.postalPlaceholder')"
+              class="h-11 w-full rounded-[var(--radius-input)] border border-[var(--color-line)] bg-white px-4 text-sm text-[var(--color-ink)] focus:border-[var(--color-brand-400)] focus:outline-none focus:ring-2 focus:ring-[var(--color-brand-100)]"
+            >
+          </div>
+
+          <div>
+            <label for="profile-address-tag" class="mb-1.5 block text-[13px] font-bold text-[var(--color-ink-soft)]">
+              {{ t('address.addressTag') }}
+            </label>
+            <input
+              id="profile-address-tag"
+              v-model="addressForm.addressTag"
+              type="text"
+              :placeholder="t('address.tagPlaceholder')"
+              class="h-11 w-full rounded-[var(--radius-input)] border border-[var(--color-line)] bg-white px-4 text-sm text-[var(--color-ink)] focus:border-[var(--color-brand-400)] focus:outline-none focus:ring-2 focus:ring-[var(--color-brand-100)]"
+            >
+          </div>
+
+          <label class="flex cursor-pointer items-center gap-2.5 sm:col-span-2">
+            <input v-model="addressForm.isDefault" type="checkbox" class="h-4 w-4 cursor-pointer accent-[var(--color-brand-500)]">
+            <span class="text-[13px] font-medium text-[var(--color-ink-soft)]">{{ t('address.isDefaultLabel') }}</span>
+          </label>
+        </form>
+      </template>
+
+      <template #footer>
+        <div class="flex w-full justify-end gap-3">
+          <button
+            type="button"
+            class="cursor-pointer rounded-full border border-[var(--color-line)] px-5 py-2.5 text-sm font-semibold text-[var(--color-ink-soft)] transition-colors duration-200 hover:bg-[var(--color-surface-secondary)] motion-reduce:transition-none"
+            :disabled="addressFormState.pending"
+            @click="addressFormState.open = false"
+          >
+            {{ t('common.cancel') }}
+          </button>
+          <button
+            type="button"
+            class="cursor-pointer rounded-full bg-[var(--color-brand-500)] px-5 py-2.5 text-sm font-semibold text-white transition-colors duration-200 hover:bg-[var(--color-brand-600)] disabled:cursor-not-allowed disabled:opacity-50 motion-reduce:transition-none"
+            :disabled="addressFormState.pending"
+            @click="submitAddressForm"
+          >
+            {{ addressFormState.pending ? t('address.saving') : t('common.save') }}
+          </button>
+        </div>
+      </template>
+    </UModal>
+
+    <!-- 删除地址二次确认（删除不可撤销，必须让用户再点一次） -->
+    <UModal
+      v-model:open="addressDeleteState.open"
+      :title="t('address.deleteTitle')"
+      :description="t('address.deleteDesc')"
+      :ui="{ content: 'rounded-[var(--radius-card)]' }"
+    >
+      <template #footer>
+        <div class="flex w-full justify-end gap-3">
+          <button
+            type="button"
+            class="cursor-pointer rounded-full border border-[var(--color-line)] px-5 py-2.5 text-sm font-semibold text-[var(--color-ink-soft)] transition-colors duration-200 hover:bg-[var(--color-surface-secondary)] motion-reduce:transition-none"
+            @click="addressDeleteState.open = false"
+          >
+            {{ t('common.cancel') }}
+          </button>
+          <button
+            type="button"
+            class="cursor-pointer rounded-full bg-[var(--color-error)] px-5 py-2.5 text-sm font-semibold text-white transition-colors duration-200 hover:bg-[var(--color-error-600)] disabled:cursor-not-allowed disabled:opacity-50 motion-reduce:transition-none"
+            :disabled="addressDeleteState.pending"
+            @click="confirmDeleteAddress"
+          >
+            {{ t('address.deleteConfirm') }}
+          </button>
+        </div>
+      </template>
+    </UModal>
+
+    <!-- 订单操作：确认收货 / 取消订单 / 申请退款。全部复用 /orders 页同一批组件与接口，不再实现一遍 -->
+    <UModal
+      v-model:open="receiveState.open"
+      :title="t('order.receiveTitle')"
+      :description="t('order.receiveDesc')"
+      :ui="{ content: 'rounded-[var(--radius-card)]' }"
+    >
+      <template #footer>
+        <div class="flex w-full justify-end gap-3">
+          <button
+            type="button"
+            class="cursor-pointer rounded-full border border-[var(--color-line)] px-5 py-2.5 text-sm font-semibold text-[var(--color-ink-soft)] transition-colors duration-200 hover:bg-[var(--color-surface-secondary)] motion-reduce:transition-none"
+            @click="receiveState.open = false"
+          >
+            {{ t('common.cancel') }}
+          </button>
+          <button
+            type="button"
+            class="cursor-pointer rounded-full bg-[var(--color-brand-500)] px-5 py-2.5 text-sm font-semibold text-white transition-colors duration-200 hover:bg-[var(--color-brand-600)] disabled:cursor-not-allowed disabled:opacity-50 motion-reduce:transition-none"
+            :disabled="receiveState.pending"
+            @click="confirmReceive"
+          >
+            {{ t('order.receiveConfirm') }}
+          </button>
+        </div>
+      </template>
+    </UModal>
+
+    <OrderCancelModal v-model:open="cancelState.open" :order-no="cancelState.orderNo" @canceled="loadOrders()" />
+
+    <RefundApplyModal
+      v-model:open="refundState.open"
+      :order-no="refundState.orderNo"
+      :items="refundState.items"
+      @applied="loadOrders()"
+    />
 
     <!-- Footer -->
     <SiteFooter />
@@ -403,25 +1083,37 @@
 </template>
 
 <script setup lang="ts">
-import { useAuth } from '~~/composables/useAuth'
+/**
+ * 个人中心是私有页面：未登录 / 登录过期时由 auth 中间件重定向到登录页，
+ * 并带上 redirect 参数，登录成功后回到这里。
+ */
+definePageMeta({ middleware: 'auth' })
+
+import { useAuth, resolveAuthErrorMessage } from '~~/composables/useAuth'
 import { useFavoriteList, extractFavoriteErrorMessage } from '~~/composables/useFavorites'
 import { useStorePrice } from '~~/composables/useProducts'
-import { resolveCoverUrl, resolvePriceView } from '~~/types/shop-product'
+import { resolveCoverUrl, resolvePriceView, toNumberOrNull } from '~~/types/shop-product'
 
 /**
  * 个人中心。
  *
  * 本页最重要的一件事：**删掉所有编造的 mock 数据**。
- * 目前只有「我的收藏」接通了真实接口（GET /api/favorite，见 composables/useFavorites.ts）；
- * 订单 / 收货地址 / 优惠券 / 积分 / 会员等级在本页仍无接口，
- * 因此这些位置只能显示真实空态或真实的 0，绝不显示假订单号、假金额、假等级。
+ * 「我的收藏」「我的订单」「收货地址」三个面板都已接通真实接口
+ * （GET /api/favorite、GET /api/order、GET /api/address/list）；
+ * 优惠券 / 积分后端仍无接口，因此只能显示真实的 0，
+ * 绝不显示假订单号、假金额、假地址、假等级。
+ *
+ * 订单面板的两条硬规则与 /orders 整页完全一致（同一套后端契约，不能各写一套）：
+ *   1) **按钮可见性只用后端 canPay / canCancel / canReceive / canRefund**，前端不重算状态机；
+ *   2) **状态文字一律用后端 orderStatusLabel**，前端不自建「状态码 -> 中文」映射。
  */
 
 const { t, locale } = useI18n()
-const { userInfo, isLoggedIn, logout } = useAuth()
+const { userInfo, isLoggedIn, logout, changePassword } = useAuth()
 const localePath = useLocalePath()
+const route = useRoute()
 const toast = useToast()
-const { formatCompact } = useStorePrice()
+const { format, formatCompact } = useStorePrice()
 
 type TabKey = 'info' | 'orders' | 'favorites' | 'addresses' | 'settings'
 
@@ -434,7 +1126,43 @@ const tabs: { key: TabKey; label: string; icon: string }[] = [
 ]
 
 // 默认落在"个人信息"：一进来就能看到真实资料，比直接看订单/地址空态友好
-const activeTab = ref<TabKey>('info')
+//
+// ★ 但标签页必须能**通过 URL 指定**（?tab=orders / favorites / addresses / settings）。
+//   否则会出这个真实缺陷：Header 下拉菜单里的「个人中心 / 我的订单 / 收藏夹」三个入口
+//   都指向 /profile，而本页永远从 info 开始 —— 用户点「我的订单」也只会停在「个人信息」，
+//   看起来像"点了没反应/跳错了"。让 URL 成为标签页的唯一真相来源后，
+//   这些入口只要带上 ?tab=xxx 就能直达对应面板，且刷新/分享链接都能保持在同一面板。
+const TAB_KEYS: TabKey[] = ['info', 'orders', 'favorites', 'addresses', 'settings']
+
+/** 把 URL 上的 ?tab= 解析成合法标签；非法/缺失一律回退 info（不做 404，也不留空面板） */
+function resolveTabFromQuery(value: unknown): TabKey {
+  const raw = String(Array.isArray(value) ? value[0] : (value ?? '')).trim()
+  return (TAB_KEYS as string[]).includes(raw) ? (raw as TabKey) : 'info'
+}
+
+const activeTab = ref<TabKey>(resolveTabFromQuery(route.query.tab))
+
+/**
+ * 切换标签时把 URL 同步过去（replace 而不是 push）：
+ *   - replace 不往历史里塞记录，用户点几次标签后按浏览器「返回」不会被标签页困住；
+ *   - 同时又让当前面板**可刷新、可复制链接**（这正是 Header 入口依赖的能力）。
+ * 只在 query 真的变了才跳，避免无意义的重复导航。
+ */
+function selectTab(key: TabKey) {
+  activeTab.value = key
+  const current = resolveTabFromQuery(route.query.tab)
+  if (current === key) return
+  void navigateTo(
+    localePath({ path: '/profile', query: key === 'info' ? {} : { tab: key } }),
+    { replace: true },
+  )
+}
+
+// 浏览器前进/后退时 query 变了，面板要跟着变（否则后退了但界面不动）
+watch(() => route.query.tab, (value) => {
+  const next = resolveTabFromQuery(value)
+  if (next !== activeTab.value) activeTab.value = next
+})
 
 const activeTabMeta = computed(
   () => tabs.find(tab => tab.key === activeTab.value)
@@ -457,11 +1185,11 @@ const {
 
 /**
  * 4 张统计卡。
- * 「收藏数」用收藏接口返回的真实 total；其余三项后端没有对应接口，
- * 数值只能写成常量 0（接口补齐后再接数据）——**绝不用编造的数字填充**。
+ * 「收藏数」用收藏接口的真实 total，「订单数」用订单接口的真实 total；
+ * 优惠券 / 积分后端没有对应接口，只能写常量 0（接口补齐后再接数据）——**绝不用编造的数字填充**。
  */
 const stats = computed(() => [
-  { label: 'shop.profileOrders', value: 0, icon: 'lucide:package', iconClass: 'bg-[var(--color-brand-50)] text-[var(--color-brand-600)]' },
+  { label: 'shop.profileOrders', value: orderTotal.value, icon: 'lucide:package', iconClass: 'bg-[var(--color-brand-50)] text-[var(--color-brand-600)]' },
   { label: 'shop.profileFavorites', value: favoriteTotal.value, icon: 'lucide:heart', iconClass: 'bg-[var(--color-error-50)] text-[var(--color-error-600)]' },
   { label: 'shop.profileCoupons', value: 0, icon: 'lucide:ticket', iconClass: 'bg-[var(--color-warning-50)] text-[var(--color-warning-600)]' },
   { label: 'shop.profilePoints', value: 0, icon: 'lucide:gift', iconClass: 'bg-[var(--color-success-50)] text-[var(--color-success-600)]' },
@@ -509,25 +1237,403 @@ watch(isLoggedIn, () => {
   }
 }, { immediate: true })
 
-/** 空态图标：订单 / 地址各自不同，纯装饰，不暗示任何数据（收藏面板有自己的空态） */
-const EMPTY_ICONS: Record<string, string> = {
-  info: 'lucide:inbox',
-  orders: 'lucide:package-open',
-  addresses: 'lucide:map-pin-off',
+// ---------------------------------------------------------------------------
+// 我的订单（真实数据，字段口径与 /orders 页一致）
+// ---------------------------------------------------------------------------
+
+/** 订单明细（后端 StoreOrderItemVO 的子集，够本面板画缩略图/合计即可） */
+interface OrderItemVO {
+  id?: string | null
+  productName?: string | null
+  productImage?: string | null
+  price?: number | null
+  quantity?: number | null
+  refundQuantity?: number | null
 }
-const emptyIcon = computed(() => EMPTY_ICONS[activeTab.value] ?? 'lucide:inbox')
+
+/** 订单列表项（后端 StoreOrderListVO） */
+interface OrderListVO {
+  orderNo: string
+  orderStatus?: string | null
+  orderStatusLabel?: string | null
+  payAmount?: number | null
+  refundAmount?: number | null
+  totalQuantity?: number | null
+  createTime?: string | null
+  items?: OrderItemVO[] | null
+  canPay?: boolean | null
+  canCancel?: boolean | null
+  canReceive?: boolean | null
+  canRefund?: boolean | null
+}
+
+/** MyBatis-Plus Page 出参 */
+interface PageResult<T> {
+  records?: T[] | null
+  total?: number | null
+  current?: number | null
+  pages?: number | null
+}
+
+/** 个人中心只展示最近一页，不做状态筛选（要筛选用 /orders 整页） */
+const PAGE_SIZE = 10
+
+const orders = ref<OrderListVO[]>([])
+const orderTotal = ref(0)
+const pageNo = ref(1)
+const ordersLoading = ref(false)
+const ordersError = ref('')
+
+const receiveState = reactive({ open: false, orderNo: '', pending: false })
+const cancelState = reactive({ open: false, orderNo: '' })
+const refundState = reactive<{ open: boolean, orderNo: string, items: OrderItemVO[] }>({
+  open: false,
+  orderNo: '',
+  items: [],
+})
+
+const orderTotalPages = computed(() => {
+  const pages = Math.ceil(orderTotal.value / PAGE_SIZE)
+  return pages > 0 ? pages : 1
+})
+const currentOrderPage = computed(() => pageNo.value)
+
+// 注意：这些链接都直接喂给 NuxtLinkLocale，它自己会补 locale 前缀，
+// 所以这里**只给无前缀路径**；再套一层 localePath 会得到 /zh/zh/orders 这种坏链接。
+const orderDetailLink = (orderNo: string) => `/orders/${orderNo}`
+const payLink = (orderNo: string) => ({ path: '/checkout/pay', query: { orderNo } })
+
+/** 严格大于 0：只有真的退过款才显示"已退金额"（也用于地址使用次数） */
+function isPositive(value: unknown): boolean {
+  const num = toNumberOrNull(value)
+  return num !== null && num > 0
+}
+
+/** 明细数组归一化：后端给 null 时不能当数组用，否则模板里 .slice() 会炸 */
+function orderItems(order: OrderListVO): OrderItemVO[] {
+  return Array.isArray(order.items) ? order.items : []
+}
+
+/** 从 $fetch 抛出的错误里取出可读文案（后端业务异常 message 是中文，直接展示） */
+function readErrorMessage(error: unknown, fallback: string): string {
+  const err = error as any
+  return err?.data?.statusMessage || err?.data?.message || err?.statusMessage || err?.message || fallback
+}
+
+function isUnauthorizedError(error: unknown): boolean {
+  const err = error as any
+  const code = err?.statusCode ?? err?.status ?? err?.data?.statusCode
+  return code === 401 || code === 403
+}
+
+async function loadOrders() {
+  ordersLoading.value = true
+  ordersError.value = ''
+  try {
+    const page = await $fetch<PageResult<OrderListVO>>('/api/order', {
+      query: {
+        pageNo: pageNo.value,
+        pageSize: PAGE_SIZE,
+        lang: locale.value,
+      },
+    })
+    orders.value = Array.isArray(page?.records) ? page.records : []
+    orderTotal.value = toNumberOrNull(page?.total) ?? 0
+    // 后端会回传 pageNo 的权威值（比如超出范围时被纠正），以它为准
+    const serverPage = toNumberOrNull(page?.current)
+    if (serverPage !== null && serverPage >= 1) pageNo.value = Math.trunc(serverPage)
+  } catch (error) {
+    // 401/403 不在这里弹错：个人中心未登录时整页已经是登录引导（auth 中间件 + isLoggedIn 分支）
+    if (isUnauthorizedError(error)) return
+    ordersError.value = readErrorMessage(error, t('order.loadErrorDesc'))
+  } finally {
+    ordersLoading.value = false
+  }
+}
+
+function goToOrderPage(target: number) {
+  const next = Math.min(Math.max(target, 1), orderTotalPages.value)
+  if (next === pageNo.value) return
+  pageNo.value = next
+  void loadOrders()
+}
+
+function openReceive(orderNo: string) {
+  receiveState.orderNo = orderNo
+  receiveState.open = true
+}
+
+function openCancel(orderNo: string) {
+  cancelState.orderNo = orderNo
+  cancelState.open = true
+}
+
+function openRefund(order: OrderListVO) {
+  refundState.orderNo = order.orderNo
+  refundState.items = orderItems(order)
+  refundState.open = true
+}
+
+/** 确认收货：成功后就地刷新列表（订单状态会变成"已完成"） */
+async function confirmReceive() {
+  receiveState.pending = true
+  try {
+    await $fetch('/api/order/confirm-receive', {
+      method: 'POST',
+      body: { orderNo: receiveState.orderNo, lang: locale.value },
+    })
+    toast.add({ title: t('order.receivedToast'), color: 'success', icon: 'lucide:check' })
+    receiveState.open = false
+    await loadOrders()
+  } catch (error) {
+    toast.add({
+      title: t('order.actionFailed'),
+      description: readErrorMessage(error, t('order.loadErrorDesc')),
+      color: 'error',
+      icon: 'lucide:circle-alert',
+    })
+  } finally {
+    receiveState.pending = false
+  }
+}
+
+// ---------------------------------------------------------------------------
+// 收货地址（真实数据 + 完整增删改 / 设为默认，字段口径与 /address 页一致）
+// ---------------------------------------------------------------------------
 
 /**
- * 空态文案：订单 / 地址各自不同。
- * 这两个面板后端在本页还没有接口，所以只显示真实空态 ——
- * 不出现任何编造的订单号、地址或金额。
+ * isDefault 的三态（后端 AddressDTO 的注释）：null = 不改动当前默认状态，true = 设为默认。
+ * 所以提交时"没勾选"必须传 null 而不是 false ——
+ * 否则编辑一条非默认地址会把用户真正想保留的默认地址顺手取消掉。
  */
-const EMPTY_LABELS: Record<string, string> = {
-  info: 'shop.noData',
-  orders: 'shop.profileOrdersEmpty',
-  addresses: 'shop.profileAddressesEmpty',
+interface AddressVO {
+  id: string
+  receiverName?: string | null
+  receiverPhone?: string | null
+  province?: string | null
+  city?: string | null
+  district?: string | null
+  detailAddress?: string | null
+  postalCode?: string | null
+  addressTag?: string | null
+  isDefault?: boolean | null
+  masked?: boolean | null
+  useCount?: number | null
+  fullAddress?: string | null
 }
-const emptyLabel = computed(() => EMPTY_LABELS[activeTab.value] ?? 'shop.noData')
+
+const addresses = ref<AddressVO[]>([])
+const addressesLoading = ref(false)
+const addressesError = ref('')
+/** 设为默认/删除等写操作进行中：统一禁用各行的按钮，防重复提交 */
+const addressMutating = ref(false)
+
+const addressFormState = reactive({ open: false, id: '', pending: false })
+const addressDeleteState = reactive({ open: false, pending: false, id: '' })
+
+const addressForm = reactive({
+  receiverName: '',
+  receiverPhone: '',
+  province: '',
+  city: '',
+  district: '',
+  detailAddress: '',
+  postalCode: '',
+  addressTag: '',
+  isDefault: false,
+})
+
+async function loadAddresses() {
+  addressesLoading.value = true
+  addressesError.value = ''
+  try {
+    const list = await $fetch<AddressVO[]>('/api/address/list', { query: { lang: locale.value } })
+    // 没有 id 的记录无法编辑/删除，直接过滤掉，避免渲染出点了就报错的按钮
+    addresses.value = (Array.isArray(list) ? list : []).filter(item => !!item?.id)
+  } catch (error) {
+    if (isUnauthorizedError(error)) return
+    addressesError.value = readErrorMessage(error, t('address.loadErrorDesc'))
+  } finally {
+    addressesLoading.value = false
+  }
+}
+
+function notifyAddressError(error: unknown) {
+  toast.add({
+    title: t('address.actionFailed'),
+    description: readErrorMessage(error, t('address.loadErrorDesc')),
+    color: 'error',
+    icon: 'lucide:circle-alert',
+  })
+}
+
+function resetAddressForm() {
+  addressForm.receiverName = ''
+  addressForm.receiverPhone = ''
+  addressForm.province = ''
+  addressForm.city = ''
+  addressForm.district = ''
+  addressForm.detailAddress = ''
+  addressForm.postalCode = ''
+  addressForm.addressTag = ''
+  addressForm.isDefault = false
+}
+
+function openAddressCreate() {
+  resetAddressForm()
+  addressFormState.id = ''
+  addressFormState.pending = false
+  addressFormState.open = true
+}
+
+/** 把一条地址填进表单（新增/编辑共用，字段口径只有这一处） */
+function fillAddressForm(address: AddressVO) {
+  addressForm.receiverName = address.receiverName ?? ''
+  addressForm.receiverPhone = address.receiverPhone ?? ''
+  addressForm.province = address.province ?? ''
+  addressForm.city = address.city ?? ''
+  addressForm.district = address.district ?? ''
+  addressForm.detailAddress = address.detailAddress ?? ''
+  addressForm.postalCode = address.postalCode ?? ''
+  addressForm.addressTag = address.addressTag ?? ''
+  // 已经是默认地址时勾上，避免用户以为"编辑一下默认就没了"
+  addressForm.isDefault = address.isDefault === true
+  addressFormState.id = address.id
+}
+
+/**
+ * 打开编辑弹层：先用列表数据把表单填上（不阻塞用户），
+ * 再拉一次**单条详情**覆盖 —— 用户在别的标签页改过这条地址时，看到的是改后的值。
+ * 详情拉不到就继续用列表数据，不打扰用户。
+ */
+async function openAddressEdit(address: AddressVO) {
+  resetAddressForm()
+  addressFormState.pending = false
+  addressFormState.open = true
+  fillAddressForm(address)
+  try {
+    const fresh = await $fetch<AddressVO>(`/api/address/${encodeURIComponent(address.id)}`, {
+      query: { lang: locale.value },
+    })
+    if (fresh?.id && addressFormState.id === fresh.id) fillAddressForm(fresh)
+  } catch {
+    // 静默降级：列表数据已经够用，这里不再弹一次错误
+  }
+}
+
+function onAddressFormOpenChange(open: boolean) {
+  addressFormState.open = open
+  if (!open) addressFormState.pending = false
+}
+
+/** 前端先做一次必填校验，把话说清楚（后端也会校验，这里只是少一次往返） */
+function validateAddressForm(): string {
+  if (!addressForm.receiverName.trim()) return t('address.receiverRequired')
+  if (!addressForm.receiverPhone.trim()) return t('address.phoneRequired')
+  if (!addressForm.detailAddress.trim()) return t('address.detailRequired')
+  return ''
+}
+
+async function submitAddressForm() {
+  if (addressFormState.pending) return
+  const invalid = validateAddressForm()
+  if (invalid) {
+    toast.add({ title: invalid, color: 'warning', icon: 'lucide:circle-alert' })
+    return
+  }
+
+  addressFormState.pending = true
+  try {
+    const payload = {
+      receiverName: addressForm.receiverName.trim(),
+      receiverPhone: addressForm.receiverPhone.trim(),
+      province: addressForm.province.trim(),
+      city: addressForm.city.trim(),
+      district: addressForm.district.trim(),
+      detailAddress: addressForm.detailAddress.trim(),
+      postalCode: addressForm.postalCode.trim(),
+      addressTag: addressForm.addressTag.trim(),
+      // 勾选 -> true（设为默认）；未勾选 -> null（不改动默认状态，而不是"取消默认"）
+      isDefault: addressForm.isDefault ? true : null,
+      lang: locale.value,
+    }
+
+    if (addressFormState.id) {
+      await $fetch('/api/address/edit', { method: 'POST', body: { ...payload, id: addressFormState.id } })
+    } else {
+      await $fetch('/api/address/add', { method: 'POST', body: payload })
+    }
+
+    toast.add({ title: t('address.savedToast'), color: 'success', icon: 'lucide:check' })
+    addressFormState.open = false
+    await loadAddresses()
+  } catch (error) {
+    notifyAddressError(error)
+  } finally {
+    addressFormState.pending = false
+  }
+}
+
+async function setDefaultAddress(id: string) {
+  if (addressMutating.value) return
+  addressMutating.value = true
+  try {
+    // id 走查询参数（后端方法签名没有 @RequestBody）
+    await $fetch('/api/address/set-default', {
+      method: 'POST',
+      query: { id, lang: locale.value },
+    })
+    toast.add({ title: t('address.defaultSetToast'), color: 'success', icon: 'lucide:check' })
+    await loadAddresses()
+  } catch (error) {
+    notifyAddressError(error)
+  } finally {
+    addressMutating.value = false
+  }
+}
+
+function askDeleteAddress(address: AddressVO) {
+  addressDeleteState.id = address.id
+  addressDeleteState.open = true
+}
+
+async function confirmDeleteAddress() {
+  if (addressDeleteState.pending || !addressDeleteState.id) return
+  addressDeleteState.pending = true
+  try {
+    await $fetch('/api/address/delete', {
+      method: 'POST',
+      query: { id: addressDeleteState.id, lang: locale.value },
+    })
+    toast.add({ title: t('address.deletedToast'), color: 'success', icon: 'lucide:check' })
+    addressDeleteState.open = false
+    await loadAddresses()
+  } catch (error) {
+    notifyAddressError(error)
+  } finally {
+    addressDeleteState.pending = false
+  }
+}
+
+/**
+ * 订单、地址与账户资料都在**登录态恢复后立刻各拉一次**（不是等用户切到对应标签页）：
+ * 顶部「订单数」统计卡要立即显示真实数量，否则用户会看到"订单数 0"却明明下过单。
+ *   - 未登录不打接口（个人中心未登录时走的是登录引导，不该产生必然 401 的请求）；
+ *   - 三个接口都只在登录态**首次**变为 true 时拉一次，避免重试/翻页后被 watch 冲掉。
+ *
+ * /api/auth/profile 同样在这里拉：密码区块要靠它的 hasPassword 决定标题，
+ * 等用户点到「账户设置」再拉会让标题先空一下再跳变；顺手也让资料表单
+ * 在有真实资料时更早拿到数据（契约 3 节新增的 profile.get.ts）。
+ */
+const privateDataLoaded = ref(false)
+
+watch(isLoggedIn, () => {
+  if (!isLoggedIn.value || privateDataLoaded.value) return
+  privateDataLoaded.value = true
+  void loadOrders()
+  void loadAddresses()
+  void loadProfile()
+}, { immediate: true })
 
 const displayName = computed(() => userInfo.value?.realname || userInfo.value?.username || '')
 
@@ -576,6 +1682,196 @@ const infoRows = computed(() => {
   }
   return rows
 })
+
+// ---------------------------------------------------------------------------
+// 账户密码（设置 / 修改）
+// ---------------------------------------------------------------------------
+
+/**
+ * 密码区块要回答两个问题，两个都**不能靠猜**：
+ *
+ *  1) 用户**有没有**设置过密码？—— 决定标题是「设置密码」还是「修改密码」。
+ *     判据是后端 `GET /api/auth/profile` 的 `hasPassword`（契约 2.8），
+ *     它读的是 `sys_user.pwd_set`：邮箱验证码 / Google 自动注册的用户为 false
+ *     （他们的 password 字段是系统随机占位串，非空但没人知道明文，所以不能拿"password 非空"当判据）。
+ *
+ *     ⚠️ **不能**用 useAuth().userInfo 里的字段来判断：
+ *        userInfo 来自 `/api/auth/session`，契约 3.2 明确规定它的形状 AuthSession 保持不变，
+ *        并不保证带 hasPassword。所以这里像上面的收藏/订单一样**显式打一次接口**，
+ *        拿到这个页面真正需要的字段，而不是去依赖一个契约没承诺的字段。
+ *
+ *  2) 当前密码要不要填？—— 已经有密码的用户必须验旧密码；没设过密码的用户
+ *     压根没有旧密码，输入框直接不渲染（让用户面对一个必填却填不出的框是纯粹的阻塞）。
+ */
+const hasPassword = ref<boolean | null>(null)
+const profileLoading = ref(false)
+const profileError = ref('')
+
+const passwordForm = reactive({ oldPassword: '', newPassword: '', confirmPassword: '' })
+/** 与资料表单同一套"用户动过就别覆盖"的思路：改动过程中不被任何异步回填冲掉 */
+const passwordTouched = ref(false)
+const passwordSubmitting = ref(false)
+/** 两个密码框的可见性：默认遮住，眼睛图标切换（aria-label 随状态变化） */
+const showNewPassword = ref(false)
+const showConfirmPassword = ref(false)
+
+interface AuthProfileVO {
+  id?: string | null
+  username?: string | null
+  realname?: string | null
+  email?: string | null
+  avatar?: string | null
+  phone?: string | null
+  hasPassword?: boolean | null
+  registerStoreCode?: string | null
+  createTime?: string | null
+}
+
+async function loadProfile() {
+  profileLoading.value = true
+  profileError.value = ''
+  try {
+    const data = await $fetch<AuthProfileVO>('/api/auth/profile', { query: { lang: locale.value } })
+    // 只有后端**明确给了** hasPassword 才认；给不出就当 null（未知），
+    // 由模板走"未知就先不渲染密码表单"的保守分支 —— 绝不默认成 false 骗用户去"设置密码"，
+    // 那会给已有密码的用户一个不验旧密码的表单，最终被后端拒绝。
+    hasPassword.value = typeof data?.hasPassword === 'boolean' ? data.hasPassword : null
+  } catch (error) {
+    // 401/403 不弹错：未登录时本页整页已是登录引导（auth 中间件 + isLoggedIn 分支）
+    if (isUnauthorizedError(error)) return
+    // 用 useAuth 的 resolveAuthErrorMessage 而不是本页的 readErrorMessage：
+    // 前者把 statusMessage 排在 message 前面 —— ofetch 会把非 2xx 的 message 固定成
+    // "400 Bad Request" 这类 HTTP 短语，真实业务文案在 statusMessage 里。
+    // 本页的 readErrorMessage 是给订单/地址那批老接口用的，刻意不动它们，降低回归面。
+    profileError.value = resolveAuthErrorMessage(error) || t('profile.profileLoadFailed')
+  } finally {
+    profileLoading.value = false
+  }
+}
+
+/**
+ * 密码强度：与后端规则一致（8-32 位，至少含字母和数字，契约 2.2）。
+ * 做成**轻量**的三段提示条，只提示不阻断 —— 真正的拒绝交给后端校验。
+ */
+const passwordStrength = computed<'' | 'weak' | 'medium' | 'strong'>(() => {
+  const value = passwordForm.newPassword
+  if (!value) return ''
+  const hasLetter = /[a-zA-Z]/.test(value)
+  const hasDigit = /\d/.test(value)
+  if (value.length < 8 || !hasLetter || !hasDigit) return 'weak'
+  if (value.length >= 12 && /[^a-zA-Z0-9]/.test(value)) return 'strong'
+  return 'medium'
+})
+
+const passwordStrengthBarClass = computed(() => {
+  if (passwordStrength.value === 'weak') return 'bg-[var(--color-error)] w-1/3'
+  if (passwordStrength.value === 'medium') return 'bg-[var(--color-warning)] w-2/3'
+  if (passwordStrength.value === 'strong') return 'bg-[var(--color-success)] w-full'
+  return 'w-0'
+})
+
+const passwordMismatch = computed(
+  () => !!passwordForm.confirmPassword && passwordForm.newPassword !== passwordForm.confirmPassword,
+)
+
+/**
+ * 强度提示文案。
+ *
+ * frontend-auth 提供了专门的档位文案，按语义分两档用（不再自己拼字符串）：
+ *   - 弱：`auth.passwordTooWeak` —— 它就是后端规则的说明（8-32 位、至少含字母和数字），
+ *     正是在"弱"这一档需要讲清楚的话；
+ *   - 中 / 强：换用 `auth.strengthMedium` / `auth.strengthStrong` 的档位词，
+ *     前缀 `${auth.passwordStrength}:`，读起来是「密码强度：强」。
+ *     若这里仍用 passwordTooWeak，密码很强时界面却在说"密码太弱"，自相矛盾。
+ */
+const passwordStrengthText = computed(() => {
+  if (passwordStrength.value === 'weak') return t('auth.passwordTooWeak')
+  if (passwordStrength.value === 'medium') return `${t('auth.passwordStrength')}: ${t('auth.strengthMedium')}`
+  if (passwordStrength.value === 'strong') return `${t('auth.passwordStrength')}: ${t('auth.strengthStrong')}`
+  return ''
+})
+
+/** 前端先拦一次低成本错误，省一轮往返；服务端仍会独立校验 */
+const passwordFormValid = computed(() => {
+  if (passwordSubmitting.value || hasPassword.value === null) return false
+  if (hasPassword.value && !passwordForm.oldPassword) return false
+  if (!passwordForm.newPassword) return false
+  if (passwordForm.newPassword !== passwordForm.confirmPassword) return false
+  return true
+})
+
+function markPasswordTouched() {
+  passwordTouched.value = true
+}
+
+function resetPasswordForm() {
+  passwordForm.oldPassword = ''
+  passwordForm.newPassword = ''
+  passwordForm.confirmPassword = ''
+  passwordTouched.value = false
+  showNewPassword.value = false
+  showConfirmPassword.value = false
+}
+
+/**
+ * 提交新密码。
+ *
+ * 走 useAuth().changePassword（契约 4.1，POST /api/auth/change-password），
+ * 它负责带 httpOnly cookie 打 BFF 并解包结果；本页不自己 $fetch，避免两套错误语义。
+ *
+ * ⚠️ 方法由 frontend-auth 在 composables/useAuth.ts 中提供。若该文件还是旧版本，
+ *    这里会是 undefined —— 那时应当等它落地，而不是在本页绕过它自己发请求（契约 5 节禁止跨范围）。
+ */
+async function handlePasswordSubmit() {
+  if (passwordSubmitting.value) return
+
+  if (hasPassword.value && !passwordForm.oldPassword) {
+    toast.add({ title: t('profile.oldPasswordRequired'), color: 'warning', icon: 'lucide:circle-alert' })
+    return
+  }
+  if (!passwordForm.newPassword) {
+    toast.add({ title: t('profile.newPasswordRequired'), color: 'warning', icon: 'lucide:circle-alert' })
+    return
+  }
+  if (passwordForm.newPassword !== passwordForm.confirmPassword) {
+    toast.add({ title: t('auth.passwordMismatch'), color: 'warning', icon: 'lucide:circle-alert' })
+    return
+  }
+
+  passwordSubmitting.value = true
+  // 标题要在这次提交前定下来：提交成功后 hasPassword 会立刻变 true，
+  // 否则下面的成功提示会从「密码设置成功」变成「密码已更新」，与用户刚做的事对不上。
+  const wasSettingPassword = hasPassword.value === false
+  try {
+    await changePassword({
+      // 没设过密码的账号不该传 oldPassword（后端也接受空，见契约 2.7 注释）
+      oldPassword: hasPassword.value ? passwordForm.oldPassword : undefined,
+      newPassword: passwordForm.newPassword,
+      confirmPassword: passwordForm.confirmPassword,
+    })
+
+    // ★ 成功后必须把本页状态同步成"已设置密码"：
+    //   否则用户改完密码，标题还停在「设置密码」，会以为刚才没成功（Lead 已明确要求）。
+    hasPassword.value = true
+    resetPasswordForm()
+    toast.add({
+      title: wasSettingPassword ? t('profile.passwordSetSuccess') : t('profile.passwordSaved'),
+      color: 'success',
+      icon: 'lucide:check',
+    })
+  } catch (error) {
+    toast.add({
+      title: t('profile.passwordSaveFailed'),
+      // 同 loadProfile：密码接口是 BFF 新增的认证接口，错误文案走 resolveAuthErrorMessage，
+      // 才能把后端那句真实的中文/英文提示（如"原密码不正确"）显示出来。
+      description: resolveAuthErrorMessage(error) || t('profile.passwordSaveFailed'),
+      color: 'error',
+      icon: 'lucide:circle-alert',
+    })
+  } finally {
+    passwordSubmitting.value = false
+  }
+}
 
 // ---------------------------------------------------------------------------
 // 账户设置表单
@@ -654,7 +1950,8 @@ function handleTabKeydown(event: KeyboardEvent, index: number) {
   event.preventDefault()
   const target = tabs[next]
   if (!target) return
-  activeTab.value = target.key
+  // 走 selectTab 而不是直接赋值：键盘切换标签同样要把 ?tab= 同步到 URL
+  selectTab(target.key)
   if (import.meta.client) {
     document.getElementById(`profile-tab-${target.key}`)?.focus()
   }

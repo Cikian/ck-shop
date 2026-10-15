@@ -11,6 +11,21 @@ export default defineNuxtConfig({
   vite: {
     server: {
       allowedHosts: [
+        // ⚠️ 这个域名是 CikPier frp 隧道（nuxt.frp.cikian.cn → 本机 3000）的入口。
+        //
+        // 但请注意：**dev server 经隧道访问时，客户端 JS 一定不会执行**。
+        // Vite 开发模式把客户端入口/依赖暴露成带绝对文件路径的 URL，例如
+        //   /_nuxt/E:/CProject/ck-shop/nuxt-shop/node_modules/nuxt/dist/app/entry.async.js
+        // 而隧道前置的 nginx 会把任何含 `node_modules`（以及 `.nuxt` 这类点目录）
+        // 的请求直接 404 掉 —— 结果：页面只剩 SSR 出来的 HTML，
+        //   · <a> 链接（商品卡片、导航）能点（浏览器原生跳转）；
+        //   · 所有 @click 按钮全部没反应（Vue 从未水合）。
+        // 这正是「PC 端（localhost:3000）正常、手机端只有商品卡片能点」的根因。
+        //
+        // ✅ 手机/外网访问请用生产构建（资源是 /_nuxt/<hash>.js，不含 node_modules）：
+        //      npm run build
+        //      $env:PORT=3001; npm start        # 再把隧道 localPort 指到 3001
+        // 详见 docs/店铺端移动端点击失效-根因与修复.md
         'nuxt.frp.cikian.cn'
       ],
     },

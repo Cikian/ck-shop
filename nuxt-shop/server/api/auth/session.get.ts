@@ -1,0 +1,96 @@
+// server/api/auth/session.get.ts
+// GET /api/auth/session —— 登录态的**服务端权威来源**
+//
+// 为什么需要这个接口：
+// token 存在 httpOnly cookie 里，前端 JS 读不到；而 localStorage 里的 user-info
+// 只是一份缓存，cookie 过期后它还在，导致前端误判"已登录"。
+// 所以"是否还登录着"这件事必须由服务端回答：只有服务端能看到 cookie，
+// 也只有 Java 后端能判断这个 token 是否还有效。
+//
+// 本接口**一律返回 HTTP 200**，用 body 里的 authenticated 表达结果：
+// 调用它的地方是路由中间件，中间件要的是"能不能过"，
+// 而不是去分辨 401/403/500 各代表什么；统一 200 可以让调用方只判断一个布尔值。
+//
+// 校验用的后端接口：GET /shop/account/profile（店铺端专用的轻量"当前用户"接口）。
+//
+// ⚠️ 改造说明（原先读的是 JeecgBoot 官方的 /sys/user/getUserInfo）：
+//   /sys/user/getUserInfo 是**管理端**的接口，会带回 sysAllDictItems 等一大堆
+//   店铺端根本用不到的数据，而且无法表达 hasPassword（前端需要它来决定
+//   显示"设置密码"还是"修改密码"）。所以店铺端改用 /shop/account/profile。
+//
+// ⚠️ 但**返回值形状 AuthSession 一个字都不能变**：
+//   app/middleware/auth.ts 与 composables/useAuth.ts 都按
+//   `{ authenticated, userInfo }` 解析（useAuth 还直接 import 了下面这个类型）。
+//   改形状会造成"中间件放行但页面按未登录渲染"这类难查的问题。
+//
+//   /shop/account/profile 返回的是**扁平的 profile 对象本身**（不是 { userInfo } 包一层），
+//   所以下面要把整个 profile 当作 userInfo 返回 —— 字段名恰好包含了前端要的
+//   realname / username / avatar / email，展示层无需改动。
+
+export interface AuthSession {
+  authenticated: boolean
+  userInfo: Record<string, any> | null
+}
+
+// 未登录的统一返回形状。避免在多处重复写字面量对象。
+const UNAUTHENTICATED: AuthSession = { authenticated: false, userInfo: null }
+
+export default defineEventHandler(async (event): Promise<AuthSession> => {
+  // SSR 相关：本接口不自己转发 cookie，转发动作由调用方（middleware/auth.ts）负责 ——
+  // 它在服务端渲染时用 useRequestHeaders(['cookie']) 把浏览器 cookie 带给这次请求。
+  // 少了那一步，SSR 期间这里读不到 token，首屏会被误判为未登录（先渲染再跳转的闪烁）。
+  const token = getCookie(event, 'access-token')
+  if (!token) {
+    return UNAUTHENTICATED
+  }
+
+  // 语言透传：后端按 Accept-Language 处理异常文案，这里沿用项目统一做法从 ?lang= 取。
+  const query = getQuery(event)
+  const lang = query.lang === 'zh' ? 'zh' : 'en'
+
+  try {
+    const api = createApiClient(event, { withAuth: true, lang })
+    const result = await api<Record<string, any>>('/shop/account/profile', {
+      method: 'GET',
+    })
+
+    // apiClient 的响应拦截器已经解包了 Result 外层，这里拿到的是 profile 本体
+    // （{ id, username, realname, email, avatar, phone, hasPassword, ... }）。
+    // 只要没抛异常就说明 token 有效，但 body 仍可能缺失（后端 Result 成功却没有 result），
+    // 那种情况不能算"已登录"，否则前端会拿到一个没有用户的登录态。
+    //
+    // ⚠️ 注意这里**不能**再判断 result.userInfo（那是老接口的嵌套形状）。
+    //    profile 是扁平的，只要是一个非空对象就算有效登录态。
+    if (!result || typeof result !== 'object') {
+      return UNAUTHENTICATED
+    }
+    return { authenticated: true, userInfo: result }
+  } catch (error: any) {
+    // 判据不能只看 statusCode，这里踩过一个坑，务必保持现状：
+    // 后端对失效 token 回的是 HTTP 401 + body {success:false, message:"Token非法无效!"}，
+    // 而 apiClient 的 onResponse 拦截器看到 success:false 会**先**抛一个 statusCode=400 的错误，
+    // onResponseError（那里面才带真实的 401）根本没机会执行。
+    // 所以只认 401/403 会导致"token 失效却不清 cookie"，cookie 就一直留在浏览器里。
+    // 于是这里把 400 也纳入，并用后端文案兜底判定。
+    const statusCode = error?.statusCode ?? error?.status
+    const message = String(error?.statusMessage || error?.message || '')
+    // 只匹配后端明确的 token 失效文案，避免把"参数错误"这类 400 误判成登录失效：
+    // JeecgBoot 侧对应 CommonConstant.TOKEN_IS_INVALID_MSG("Token非法无效!") 和 "token为空!"
+    const tokenRejected = /token|令牌/i.test(message)
+
+    if (statusCode === 401 || statusCode === 403 || (statusCode === 400 && tokenRejected)) {
+      // cookie 已经是一张废票，删掉它：否则每次读 session 都要白发一次请求到后端，
+      // 而且浏览器会一直带着这个死 cookie。
+      deleteCookie(event, 'access-token', { path: '/' })
+      return UNAUTHENTICATED
+    }
+
+    // ★ 其他错误（后端没起来、网络超时、5xx）**不删 cookie**，也不向上抛。
+    // 理由：这类错误说明"我们现在无法判断 token 是否有效"，而不是"token 无效"。
+    // 若把 500 抛给前端，后端抖一下会把所有在线用户弹下线；
+    // 若删掉 cookie，用户就得重新登录。所以这里安全降级为未登录（调用方会引导去登录页），
+    // 但保留 cookie —— 后端恢复后用户刷新页面就能自动回到登录态。
+    console.warn(`[/api/auth/session] 校验登录态失败（非鉴权错误，已降级）: ${message || error}`)
+    return UNAUTHENTICATED
+  }
+})

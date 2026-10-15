@@ -410,9 +410,10 @@
         </div>
       </div>
 
-      <!-- ===================== 通栏吸顶锚点导航 =====================
-           top 用实测的 Header 高度（Header 是 fixed，两行导航比 --nav-height 高），
-           这样桌面/移动端都不会被导航盖住。
+      <!--
+           ===================== 通栏吸顶锚点导航 =====================
+           top 用实测的 Header 高度（Header 是 fixed，导航是两行，比单行 token 高），
+           SSR 首帧回退到 --nav-total-height（导航总高），这样桌面/移动端都不会被导航盖住。
 
            这里的负 margin 是为了"在容器内做通栏"：把容器的横向内边距抵消掉，
            再自己补一份，使吸顶条的背景铺满内容区宽度。
@@ -802,8 +803,8 @@ const reviewSection = ref<HTMLElement | null>(null)
 const recommendSection = ref<HTMLElement | null>(null)
 
 const activeAnchor = ref<AnchorId>('detail')
-/** 吸顶位置：SSR 先用设计 token，挂载后用实测的 Header 高度修正（Header 是 fixed） */
-const stickyTop = ref('var(--nav-height)')
+/** 吸顶位置：SSR 先用设计 token（导航总高，移动端两行 128px / 桌面 116px），挂载后用实测的 Header 高度修正（Header 是 fixed） */
+const stickyTop = ref('var(--nav-total-height)')
 
 /**
  * 只给「真的渲染出来的模块」生成锚点：

@@ -43,18 +43,37 @@
 
       <!-- Right actions -->
       <div class="ml-auto flex shrink-0 items-center gap-1 sm:gap-2">
+        <!--
+          未登录时的两个入口。**必须拆成两个独立链接**：
+          原来是「登录 / 注册」一个链接指向 /login —— 用户点「注册」落到登录页，
+          只能自己再找一遍注册入口（甚至以为注册功能不存在）。
+          现在 /register 已经是真实存在的页面（app/pages/register.vue），
+          两个入口各自直达，不再是"看起来有注册、点进去是登录"的假入口。
+        -->
         <template v-if="!isLoggedIn">
           <NuxtLinkLocale
-            to="/login"
+            :to="loginLink"
             class="hidden text-[13px] font-medium text-[var(--color-ink-soft)] transition-colors hover:text-[var(--color-brand-600)] sm:inline"
           >
-            {{ t('login.title') }} / {{ t('login.register') }}
+            {{ t('login.title') }}
+          </NuxtLinkLocale>
+          <span class="hidden text-[13px] text-[var(--color-line)] sm:inline" aria-hidden="true">/</span>
+          <NuxtLinkLocale
+            :to="registerLink"
+            class="hidden text-[13px] font-medium text-[var(--color-ink-soft)] transition-colors hover:text-[var(--color-brand-600)] sm:inline"
+          >
+            {{ t('login.register') }}
           </NuxtLinkLocale>
         </template>
 
+        <!--
+          顶栏「我的订单」快捷入口。
+          ⚠️ 必须带 ?tab=orders：个人中心默认停在「个人信息」，
+             裸跳 /profile 会让用户点「我的订单」却看到个人信息（下拉菜单里同款问题）。
+        -->
         <NuxtLinkLocale
           v-if="isLoggedIn"
-          to="/profile"
+          :to="{ path: '/profile', query: { tab: 'orders' } }"
           class="hidden items-center gap-1.5 text-[13px] font-medium text-[var(--color-ink-soft)] transition-colors hover:text-[var(--color-brand-600)] sm:flex"
         >
           <UIcon name="lucide:package" class="h-4 w-4" aria-hidden="true" />
@@ -250,16 +269,26 @@
         </div>
 
         <div class="border-t border-[var(--color-line-soft)] pt-3">
+          <!-- 移动端：登录 / 注册 各自一个入口（原来只有一个「登录」落到 /login） -->
           <NuxtLinkLocale
             v-if="!isLoggedIn"
-            to="/login"
+            :to="loginLink"
             class="ui-pill-brand h-11 w-full text-sm"
             @click="mobileMenuOpen = false"
           >
             {{ t('login.title') }}
           </NuxtLinkLocale>
+          <NuxtLinkLocale
+            v-if="!isLoggedIn"
+            :to="registerLink"
+            class="ui-pill ui-pill-ghost mt-2 h-11 w-full text-sm"
+            @click="mobileMenuOpen = false"
+          >
+            <UIcon name="lucide:user-plus" class="h-4 w-4" aria-hidden="true" />
+            {{ t('login.register') }}
+          </NuxtLinkLocale>
           <button
-            v-else
+            v-if="isLoggedIn"
             type="button"
             class="flex w-full items-center justify-center gap-2 rounded-full border border-[var(--color-line)] px-4 py-2.5 text-sm font-medium text-[var(--color-error)]"
             @click="handleLogout"
@@ -296,6 +325,47 @@ const { count, refreshCount } = useCart()
 
 const mobileMenuOpen = ref(false)
 const keyword = ref('')
+
+/**
+ * 登录入口链接：必须带上**当前页面**作为 redirect，登录后才能回到用户原本在看的地方。
+ *
+ * 之前这里直接 to="/login"（不带 redirect），而 login.vue 在没有 redirect 时会
+ * 兜底跳到个人中心 —— 结果用户从首页点「登录」，登录完莫名其妙出现在个人中心。
+ *
+ * ⚠️ 不要在当前已经在登录页时再套一层 redirect=/login，那只会让登录后回到登录页。
+ * 这种情况直接给不带的裸路径，让 login.vue 用它自己的兜底逻辑。
+ *
+ * ⚠️⚠️ 这里返回的必须是**不带 locale 前缀**的路径，绝对不能套 localePath()。
+ * 模板里两个使用处都是 <NuxtLinkLocale>，它自己会补 locale 前缀；
+ * 如果这里再套一层 localePath，就会拼成 /zh/zh/login 这种不存在的路径：
+ *   - 它在 SSR 阶段被 vue-router 解析失败，每个页面都会打一条
+ *     "[VUE_ROUTER_R0004] No match found for location with path /zh/zh/login"；
+ *   - 现在渲染出的 href 之所以还是对的，只是因为 NuxtLinkLocale 渲染时把重复前缀
+ *     纠正掉了 —— 这是"恰好被纠正"，不能依赖。一旦该纠正行为变化（升级 Nuxt 等），
+ *     用户点「登录」就会直接 404。
+ * 同样的坑在 profile.vue 的「查看全部订单」链接上也踩过一次（/zh/zh/orders），
+ * 结论一致：**谁负责补前缀，就只让一方补**，另一方给裸路径。
+ */
+const loginLink = computed(() => {
+  if (route.path.endsWith('/login')) {
+    return '/login'
+  }
+  return { path: '/login', query: { redirect: route.fullPath } }
+})
+
+/**
+ * 注册入口链接。
+ *
+ * 与 loginLink 一样，返回的必须是**不带 locale 前缀**的裸路径，
+ * 使用处是 <NuxtLinkLocale>，前缀由它补 —— 这里再套 localePath() 就会得到 /zh/zh/register
+ * （与上面 loginLink 那段注释里记录的坑完全同一个）。
+ *
+ * 这里**刻意不带 redirect**：register.vue 在注册成功后直接签发 token 并登录（契约 2.2），
+ * 完成后由它自己决定去哪。硬塞一个 redirect=/register 只会让用户注册完又回到注册页。
+ * 唯一的例外是用户已经在 /register 上（刷新/直接访问），此时也让链接保持裸路径，
+ * 避免出现 redirect=/register 这种自指参数。
+ */
+const registerLink = computed(() => '/register')
 
 /**
  * 站点字标。
@@ -368,10 +438,18 @@ function submitSearch() {
   router.push(localePath({ path: '/products', query: q ? { keyword: q } : {} }))
 }
 
+/**
+ * 用户菜单。
+ *
+ * ⚠️ 「我的订单」「收藏夹」必须带上 ?tab=，不能三个都往 /profile 裸跳：
+ *   个人中心默认停在「个人信息」，不带 tab 的话点「我的订单」也只会看到个人信息，
+ *   用户会以为"点了没反应/跳错了"（这是真实收到过的反馈）。
+ *   让 URL 带上目标标签，profile.vue 会据此直接打开对应面板。
+ */
 const userMenuItems = computed<DropdownMenuItem[]>(() => [
   { label: t('nav.profile'), icon: 'lucide:user', onSelect: () => router.push(localePath('/profile')) },
-  { label: t('nav.orders'), icon: 'lucide:package', onSelect: () => router.push(localePath('/profile')) },
-  { label: t('nav.wishlist'), icon: 'lucide:heart', onSelect: () => router.push(localePath('/profile')) },
+  { label: t('nav.orders'), icon: 'lucide:package', onSelect: () => router.push(localePath({ path: '/profile', query: { tab: 'orders' } })) },
+  { label: t('nav.wishlist'), icon: 'lucide:heart', onSelect: () => router.push(localePath({ path: '/profile', query: { tab: 'favorites' } })) },
   { label: t('nav.cart'), icon: 'lucide:shopping-cart', onSelect: () => router.push(localePath('/cart')) },
   { type: 'separator' },
   { label: t('nav.logout'), icon: 'lucide:log-out', onSelect: () => handleLogout() },

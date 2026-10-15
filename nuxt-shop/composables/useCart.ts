@@ -53,7 +53,7 @@ export const useCart = () => {
    */
   const selectionInitialized = useState<boolean>('store-cart-selection-initialized', () => false)
 
-  const { isLoggedIn, restoreUser } = useAuth()
+  const { isLoggedIn, restoreUser, refreshSession } = useAuth()
   // 在 setup 阶段取一次 locale：动作函数是"稍后被用户点击触发"的，
   // 那时再调用 useI18n() 属于脱离 setup 上下文，容易拿到不可靠的实例。
   const { locale } = useI18n()
@@ -157,8 +157,19 @@ export const useCart = () => {
     try {
       count.value = normalizeCartCount(await $fetch('/api/cart/count'))
       unauthorized.value = false
-    } catch {
-      // 角标拿不到就保持上一次的数字：为一个小徽标弹错误提示只会打扰用户
+    } catch (error) {
+      // ★ 401/403 说明 cookie 里的 token 已经失效（登录过期），
+      // 但 localStorage 的 user-info 还在，isLoggedIn 仍是 true。
+      // 这里必须把本地登录态一起清掉，否则顶部会一直显示头像 + 旧角标，
+      // 而用户其实已经掉线 —— 这正是"登录过期了头像还在"的成因之一。
+      // 清掉之后 refreshSession() 的语义在这里被复用（它内部会同步 localStorage）。
+      if (isUnauthorizedError(error)) {
+        count.value = { totalItems: 0, totalQuantity: 0 }
+        unauthorized.value = true
+        await refreshSession()
+        return
+      }
+      // 其他错误（网络抖动等）保持上一次的数字：为一个小徽标弹错误提示只会打扰用户
     }
   }
 
