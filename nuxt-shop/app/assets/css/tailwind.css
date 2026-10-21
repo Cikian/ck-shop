@@ -697,3 +697,20 @@ body {
 .no-scrollbar::-webkit-scrollbar {
   display: none;
 }
+
+/* ============================================================================
+ * Nuxt UI 主色兜底（2026-10-22）
+ *
+ * 现象：运行时 --ui-primary 解析成 Tailwind 的 green-500，toast / 开关 / 复选 /
+ * 下拉选中态 / focus ring 全部变绿，与珊瑚品牌色分裂。
+ *
+ * 根因：Nuxt 4 的 srcDir 是 app/，而 app.config.ts 之前放在仓库根目录，
+ * 根本没被读取 —— .nuxt/app.config.mjs 里是 Nuxt UI 的默认值 primary: "green"。
+ * 现在配置文件已移到 app/app.config.ts（primary: 'brand'）。
+ *
+ * 这里再显式覆盖一次 --ui-primary：即使配置文件将来又被挪错位置，
+ * 单色 primary（按钮底色 / 开关 / focus ring）也不会退回绿色。
+ * ========================================================================== */
+:root {
+  --ui-primary: var(--color-brand-500);
+}
