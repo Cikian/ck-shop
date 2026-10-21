@@ -983,6 +983,15 @@ public class ShopProductServiceImpl extends ServiceImpl<ShopProductMapper, ShopP
         BigDecimal max = null;
         Set<String> usedKeys = new HashSet<>();
         Set<String> keptComboIds = new HashSet<>();
+        /*
+         * combinations 是**三态**语义（与 detailBlocks/params 一致）：
+         *   null / 字段缺省 → 不动现有 SKU（只改标题、只改详情的局部保存不能把 SKU 清掉）
+         *   []            → 显式清空（用户在「SKU 组合」页签把行全删了）
+         *   非空          → 全量同步
+         * 旧实现用 "isEmpty" 把 null 与 [] 混为一谈：不带 combinations 的局部保存
+         * 会把全部 SKU 逻辑删除、库存写 0，而且没有任何提示。
+         */
+        boolean combinationsProvided = dto.getCombinations() != null;
         boolean hasCombinations = !CollectionUtils.isEmpty(dto.getCombinations());
 
         if (hasCombinations) {
@@ -1139,20 +1148,40 @@ public class ShopProductServiceImpl extends ServiceImpl<ShopProductMapper, ShopP
          * 绝不物理删除——订单会引用 SKU 主键，删掉就无法追溯了。
          * 行保留着还占着唯一索引 (product_id, combination_key)，用户日后把同一组合加回来时，
          * 上面的 reviveById 会把这行复活并原地更新，主键不变。
+         *
+         * 注意：只有**请求里真的带了 combinations** 才做删除。局部保存（不带该字段）
+         * 绝不能触发这里，否则"改个标题"就会把所有 SKU 删光。
          */
-        for (String liveComboId : liveComboIds) {
-            if (!keptComboIds.contains(liveComboId)) {
-                combinationMapper.deleteById(liveComboId);
+        if (combinationsProvided) {
+            for (String liveComboId : liveComboIds) {
+                if (!keptComboIds.contains(liveComboId)) {
+                    combinationMapper.deleteById(liveComboId);
+                }
             }
         }
 
         // ---------- 6. 回写汇总字段 ----------
-        if (hasCombinations) {
+        if (!combinationsProvided) {
+            // 未提交 SKU：库存/价格区间保持原样（编辑商品主体不该改库存）
+        } else if (hasCombinations) {
             BigDecimal basePrice = product.getPrice() == null ? BigDecimal.ZERO : product.getPrice();
             product.setStock(stockSum);
             product.setMinPrice(min != null ? min : basePrice);
             product.setMaxPrice(max != null ? max : basePrice);
+        } else if (CollectionUtils.isEmpty(savedSpecs)) {
+            /*
+             * 无规格商品：库存就是商品级 stock（前端在"无规格"时提供该字段）。
+             * 绝不能写 0——那会让"新建一个无规格商品"直接变成无货商品。
+             */
+            Integer requestedStock = dto.getStock() != null ? dto.getStock() : product.getStock();
+            if (requestedStock != null && requestedStock < 0) {
+                throw new JeecgBootException("库存不能为负数");
+            }
+            product.setStock(requestedStock == null ? 0 : requestedStock);
+            product.setMinPrice(product.getPrice());
+            product.setMaxPrice(product.getPrice());
         } else {
+            // 有规格但一个组合都没留下：确实没有可售 SKU，库存为 0 是正确结果
             product.setStock(0);
             product.setMinPrice(product.getPrice());
             product.setMaxPrice(product.getPrice());

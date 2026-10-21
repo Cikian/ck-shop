@@ -72,6 +72,23 @@
                     <a-input v-model:value="formData.unit" placeholder="如 件 / 台 / 盒" allow-clear :disabled="disabled" />
                   </a-form-item>
                 </a-col>
+                <!--
+                  无规格商品的库存直接记在商品上（有规格时按 SKU 组合维护，这里不出现，避免两处库存打架）。
+                  旧版表单没有这个字段，新建无规格商品时后端只能把 stock 写成 0 —— 商品一建出来就是无货。
+                -->
+                <a-col v-if="!(formData.specs || []).length" :xs="24" :xl="12">
+                  <a-form-item label="库存" name="stock">
+                    <a-input-number
+                      v-model:value="formData.stock"
+                      :min="0"
+                      :precision="0"
+                      style="width: 100%"
+                      :disabled="disabled"
+                      placeholder="无规格商品的库存"
+                    />
+                    <span class="field-hint">该商品没有规格，库存直接记在商品上；添加规格后改为按 SKU 维护</span>
+                  </a-form-item>
+                </a-col>
                 <a-col :xs="24" :xl="12">
                   <a-form-item label="排序" name="sortOrder">
                     <a-input-number v-model:value="formData.sortOrder" :min="0" :precision="0" style="width: 100%" :disabled="disabled" />
@@ -673,6 +690,8 @@
     upstreamSource: undefined,
     upstreamUrl: '',
     price: null,
+    /** 无规格商品的商品级库存；有规格时由 SKU 汇总，不提交这个值 */
+    stock: 0,
     unit: '件',
     sortOrder: 0,
     status: 'Y',
@@ -1155,6 +1174,7 @@
       upstreamSource: undefined,
       upstreamUrl: '',
       price: null,
+      stock: 0,
       unit: '件',
       sortOrder: 0,
       status: 'Y',
@@ -1224,6 +1244,7 @@
         upstreamSource: detail.upstreamSource || undefined,
         upstreamUrl: detail.upstreamUrl || '',
         price: detail.price ?? null,
+        stock: detail.stock ?? 0,
         unit: detail.unit || '件',
         sortOrder: detail.sortOrder ?? 0,
         status: detail.status || 'Y',
@@ -1469,6 +1490,8 @@
       upstreamSource: formData.upstreamSource || null,
       upstreamUrl: normalizeUpstreamUrl(formData.upstreamUrl) || null,
       price: formData.price,
+      // 无规格商品的商品级库存；有规格时后端按 SKU 汇总覆盖，忽略这个值
+      stock: formData.stock ?? 0,
       unit: formData.unit,
       sortOrder: formData.sortOrder ?? 0,
       status: formData.status,
