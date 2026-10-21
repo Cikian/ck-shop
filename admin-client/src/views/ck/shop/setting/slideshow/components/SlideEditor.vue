@@ -10,10 +10,10 @@
       </div>
       <span class="ed__status" :class="`is-${saveState}`">{{ statusText }}</span>
       <div class="ed__actions">
-        <a-popconfirm v-if="!isNew" title="确定要删除这张轮播图吗？" ok-text="确认删除" cancel-text="取消" @confirm="emit('remove', record)">
+        <a-popconfirm v-if="!isNew" title="确定要删除这张轮播图吗？" ok-text="确认删除" cancel-text="取消" @confirm="handleRemove">
           <a-button size="small" danger v-auth="'ck:shop:slideshow:delete'">删除</a-button>
         </a-popconfirm>
-        <a-button v-else size="small" @click="emit('remove', record)">取消新增</a-button>
+        <a-button v-else size="small" @click="handleRemove">取消新增</a-button>
       </div>
     </header>
 
@@ -113,6 +113,7 @@
                     v-model:value="contents[lang.code][`pic_url_${lang.code}`]"
                     :file-max="1"
                     text="上传图片"
+                    @update:value="scheduleSave"
                   />
                 </div>
                 <p class="ed__hint">建议 2:1（1200×600）</p>
@@ -137,7 +138,7 @@
 </template>
 
 <script lang="ts" name="SlideEditor" setup>
-  import { computed, nextTick, reactive, ref } from 'vue';
+  import { computed, nextTick, onBeforeUnmount, reactive, ref } from 'vue';
   import JImageUpload from '/@/components/Form/src/jeecg/components/JImageUpload.vue';
   import { useMessage } from '/@/hooks/web/useMessage';
   import { getFileAccessHttpUrl } from '/@/utils/common/compUtils';
@@ -198,6 +199,11 @@
   ];
 
   let timer: ReturnType<typeof setTimeout> | null = null;
+  /**
+   * 删除/取消新增时不再 flush：
+   * 否则 onBeforeUnmount 的"关闭前保存"会把刚删掉的轮播图重新写回去。
+   */
+  let suppressFlush = false;
   /** 初始化期间不触发自动保存 */
   let ready = false;
   /** 是否有保存请求在执行中，以及期间是否又有新改动 */
@@ -376,6 +382,35 @@
       saveNow();
     }, SAVE_DELAY);
   }
+
+  /** 删除/取消新增：先抑制"关闭前保存"，再通知父组件移除 */
+  function handleRemove() {
+    suppressFlush = true;
+    if (timer) {
+      clearTimeout(timer);
+      timer = null;
+    }
+    emit('remove', props.record);
+  }
+
+  /**
+   * 卸载前把最后一次改动落库。
+   *
+   * 父组件用 `:key="active.id"` 渲染本组件，切换轮播图/切换店铺/离开页面都会卸载它；
+   * 若此时还有 700ms 的防抖计时器没触发，之前只改图片或文字的修改就会丢失
+   * （图片上传不走 @change，曾经连计时器都不会启动）。
+   */
+  onBeforeUnmount(() => {
+    if (!timer) {
+      return;
+    }
+    clearTimeout(timer);
+    timer = null;
+    if (!suppressFlush) {
+      // 不 await：卸载过程不能阻塞；请求本身不会被取消，落库照常完成
+      void saveNow();
+    }
+  });
 
   defineExpose({ saveNow, hasDraftContent });
 </script>
