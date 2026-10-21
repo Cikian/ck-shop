@@ -22,9 +22,22 @@ public interface IShopStoreService extends IService<ShopStore> {
     String saveStore(ShopStore store);
 
     /**
-     * 编辑店铺（校验编码唯一）
+     * 编辑店铺（校验编码唯一 + **对象级授权**）
+     *
+     * <p>非 {@code shop-store:manage-all} 账号只能编辑"绑定部门落在本人可见域内"的店铺，
+     * 且不能修改绑定部门 / 域名 / 状态。
      */
     boolean updateStore(ShopStore store);
+
+    /**
+     * 删除店铺（对象级授权：不能删别的部门的店铺）
+     */
+    boolean deleteStore(String id);
+
+    /**
+     * 批量删除店铺（逐个做对象级授权；任何一条越权则整体失败，不做"部分删除"）
+     */
+    boolean deleteStores(List<String> ids);
 
     /**
      * 全部启用中的店铺（前端站点下拉、解析器兜底用）

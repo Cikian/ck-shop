@@ -149,18 +149,20 @@ public class ShopStoreController extends JeecgController<ShopStore, IShopStoreSe
 
     /**
      * 通过id删除（逻辑删除：已删除的店铺编码不会被回收，避免老配置指向别的店铺）
+     *
+     * <p>对象级授权在 service 内完成：只能删可见域内的店铺。
      */
     @AutoLog(value = "店铺-通过id删除")
     @Operation(summary = "店铺-通过id删除")
     @RequiresPermissions("shop-store:delete")
     @DeleteMapping(value = "/delete")
     public Result<String> delete(@RequestParam(name = "id", required = true) String id) {
-        shopStoreService.removeById(id);
+        shopStoreService.deleteStore(id);
         return Result.OK("删除成功!");
     }
 
     /**
-     * 批量删除
+     * 批量删除（逐个做对象级授权，任一越权整体失败）
      */
     @AutoLog(value = "店铺-批量删除")
     @Operation(summary = "店铺-批量删除")
@@ -168,7 +170,7 @@ public class ShopStoreController extends JeecgController<ShopStore, IShopStoreSe
     @DeleteMapping(value = "/deleteBatch")
     public Result<String> deleteBatch(@RequestParam(name = "ids", required = true) String ids) {
         List<String> idList = Arrays.asList(ids.split(","));
-        shopStoreService.removeByIds(idList);
+        shopStoreService.deleteStores(idList);
         return Result.OK("批量删除成功！");
     }
 

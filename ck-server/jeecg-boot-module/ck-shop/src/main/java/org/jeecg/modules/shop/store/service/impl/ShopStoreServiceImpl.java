@@ -5,9 +5,11 @@ import com.baomidou.mybatisplus.core.toolkit.IdWorker;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import org.apache.commons.lang3.StringUtils;
 import org.jeecg.common.exception.JeecgBootException;
+import org.jeecg.modules.shop.store.ShopOrgScopeResolver;
 import org.jeecg.modules.shop.store.entity.ShopStore;
 import org.jeecg.modules.shop.store.mapper.ShopStoreMapper;
 import org.jeecg.modules.shop.store.service.IShopStoreService;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -29,6 +31,10 @@ public class ShopStoreServiceImpl extends ServiceImpl<ShopStoreMapper, ShopStore
     /** sys_depart.org_type：2 = 部门（1 = 公司，3 = 岗位），只有部门能作为店铺的数据隔离维度 */
     private static final String ORG_TYPE_DEPARTMENT = "2";
 
+    /** 可见域/对象级授权解析器（多店铺隔离的唯一鉴权出口） */
+    @Autowired
+    private ShopOrgScopeResolver orgScopeResolver;
+
     @Override
     public String saveStore(ShopStore store) {
         checkCode(store, null);
@@ -37,6 +43,7 @@ public class ShopStoreServiceImpl extends ServiceImpl<ShopStoreMapper, ShopStore
             store.setId(IdWorker.getIdStr());
         }
         checkDepart(store.getDepartId(), store.getStatus(), null);
+        checkCreateAllowed(store);
         return this.save(store) ? store.getId() : null;
     }
 
@@ -50,10 +57,14 @@ public class ShopStoreServiceImpl extends ServiceImpl<ShopStoreMapper, ShopStore
         if (Objects.isNull(exist)) {
             throw new JeecgBootException("店铺不存在或已删除!");
         }
+        // ---- 对象级授权：只能改当前可见域内的店铺（接口可按 id 直调，列表过滤不算数） ----
+        checkStoreAccessible(exist);
         checkCode(store, store.getId());
         if (StringUtils.isBlank(store.getStatus())) {
             store.setStatus(exist.getStatus());
         }
+        // ---- 敏感字段（绑定部门 / 域名 / 状态）只有总部管理员能改 ----
+        checkSensitiveFieldsUnchanged(store, exist);
 
         /*
          * departId 的三种语义要分清（前端据此传值）：
@@ -82,6 +93,100 @@ public class ShopStoreServiceImpl extends ServiceImpl<ShopStoreMapper, ShopStore
     public List<ShopStore> listEnabled() {
         // 带出绑定部门的 org_code（只读派生字段），前端"所属店铺"下拉据此映射到 sys_org_code
         return baseMapper.selectEnabledWithDepart();
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public boolean deleteStore(String id) {
+        if (StringUtils.isBlank(id)) {
+            throw new JeecgBootException("缺少店铺ID");
+        }
+        ShopStore exist = this.getById(id);
+        if (Objects.isNull(exist)) {
+            return false;
+        }
+        checkStoreAccessible(exist);
+        return this.removeById(id);
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public boolean deleteStores(List<String> ids) {
+        if (ids == null || ids.isEmpty()) {
+            return false;
+        }
+        // 先整体校验再删：任何一条越权就抛异常回滚，绝不出现"删了一半"的中间状态
+        for (String id : ids) {
+            ShopStore exist = this.getById(id);
+            if (Objects.isNull(exist)) {
+                continue;
+            }
+            checkStoreAccessible(exist);
+        }
+        return this.removeByIds(ids);
+    }
+
+    // ==================================================================
+    // 对象级授权
+    // ==================================================================
+
+    /**
+     * 店铺的对象级授权：按"店铺绑定的部门"判断是否落在当前账号可见域内。
+     *
+     * <p>未绑定部门的店铺只有总部管理员能碰——普通运营无法证明它属于自己的范围，
+     * 按 fail-closed 处理（{@link ShopOrgScopeResolver#checkAccessible} 对 null orgCode 也会拒绝）。
+     */
+    private void checkStoreAccessible(ShopStore store) {
+        String orgCode = StringUtils.isBlank(store.getDepartId())
+                ? null : baseMapper.selectDepartOrgCodeById(store.getDepartId());
+        orgScopeResolver.checkAccessible(orgCode, "店铺");
+    }
+
+    /**
+     * 新建店铺：普通运营只能把店铺绑定到**本人所在部门**。
+     *
+     * <p>否则运营可以新建一个绑定到别部门的店铺，再去改自己的域名/状态，
+     * 等于凭空造出一个"看得见但管不着"的站点。
+     */
+    private void checkCreateAllowed(ShopStore store) {
+        if (orgScopeResolver.canManageAll()) {
+            return;
+        }
+        String myOrg = orgScopeResolver.currentOrgCode();
+        String targetOrg = StringUtils.isBlank(store.getDepartId())
+                ? null : baseMapper.selectDepartOrgCodeById(store.getDepartId());
+        if (StringUtils.isBlank(myOrg) || !myOrg.equals(targetOrg)) {
+            throw new JeecgBootException("无权新建店铺：只能新建绑定到本人所在部门（"
+                    + StringUtils.defaultIfBlank(myOrg, "未设置") + "）的店铺，"
+                    + "如需为其它部门建店请联系总部管理员");
+        }
+    }
+
+    /**
+     * 绑定部门 / 域名 / 状态属于"改配置"而非"改文案"，只有总部管理员（{@code shop-store:manage-all}）能改。
+     *
+     * <p>这三个字段任何一个被普通运营改动，影响面都远超"编辑店铺名称"：
+     * 换部门 = 整店数据搬到别人范围；换域名 = 前台流量被劫持到另一个站；停用 = 站点直接下线。
+     */
+    private void checkSensitiveFieldsUnchanged(ShopStore incoming, ShopStore exist) {
+        if (orgScopeResolver.canManageAll()) {
+            return;
+        }
+        // departId：null=未提交(沿用原值)、""=显式解绑、非空=改绑
+        String incomingDepart = incoming.getDepartId() == null ? exist.getDepartId() : incoming.getDepartId();
+        if (!StringUtils.equals(StringUtils.trimToNull(incomingDepart),
+                StringUtils.trimToNull(exist.getDepartId()))) {
+            throw new JeecgBootException("无权修改店铺的绑定部门：该操作仅限总部管理员");
+        }
+        if (incoming.getDomain() != null
+                && !StringUtils.equals(StringUtils.trimToNull(incoming.getDomain()),
+                StringUtils.trimToNull(exist.getDomain()))) {
+            throw new JeecgBootException("无权修改店铺域名：该操作仅限总部管理员");
+        }
+        if (StringUtils.isNotBlank(incoming.getStatus())
+                && !StringUtils.equals(incoming.getStatus(), exist.getStatus())) {
+            throw new JeecgBootException("无权修改店铺状态：该操作仅限总部管理员");
+        }
     }
 
     /**
