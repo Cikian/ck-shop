@@ -499,7 +499,11 @@ onMounted(() => {
   // 两处都调会在首屏打出两次同样的请求。
 })
 
-const isNotFound = computed(() => (error.value as any)?.statusCode === 404)
+const isNotFound = computed(() => {
+  const err = error.value as { statusCode?: number } | null
+  // ① 接口明确 404；② 没有错误但也没有数据（后端返回了空对象/空响应）——都按"不存在"处理
+  return err?.statusCode === 404 || (!pending.value && !err && !product.value)
+})
 
 /** 切换选择时重置数量与主图 */
 function onSelectionChange(next: SpecSelection) {
@@ -652,11 +656,53 @@ async function handleToggleFavorite() {
   }
 }
 
-useSeoMeta({
-  title: () => product.value?.seoTitle || product.value?.title || t('product.notFound'),
-  description: () => product.value?.seoDescription || product.value?.subTitle || '',
-  ogTitle: () => product.value?.seoTitle || product.value?.title || '',
-  ogDescription: () => product.value?.seoDescription || product.value?.subTitle || '',
-  ogImage: () => product.value?.coverUrl || product.value?.mainImage || '',
+/**
+ * SEO / 404。
+ *
+ * 旧实现用 `useSeoMeta` 无条件注册 `ogTitle / ogImage` 等标签：商品不存在时
+ * 这些 getter 没有值，unhead 在 `tags:afterResolve` 里对非字符串的 content 调
+ * `replaceAll` 直接抛 `TypeError`，整页从"404 友好提示"变成 **HTTP 500**。
+ *
+ * 现在改成 `useHead` + 显式构造 meta：
+ *  - 所有 content 都保证是字符串（标题永远有回退）；
+ *  - 商品不存在时只输出 noindex，**不注册任何商品 SEO**；
+ *  - SSR 命中"不存在"时显式 `setResponseStatus(404)`，搜索引擎才会把它当 404，
+ *    而不是可收录的空页面。
+ */
+const notFoundTitle = computed(() => t('product.notFound') || 'Product not found')
+
+useHead(() => {
+  const current = product.value
+  const missing = isNotFound.value
+  const title = missing
+    ? notFoundTitle.value
+    : (current?.seoTitle || current?.title || notFoundTitle.value)
+  const description = missing ? '' : (current?.seoDescription || current?.subTitle || '')
+  const image = missing ? '' : (current?.coverUrl || current?.mainImage || '')
+
+  const meta: Array<Record<string, string>> = [
+    { name: 'robots', content: missing ? 'noindex, nofollow' : 'index, follow' },
+    { property: 'og:title', content: title },
+  ]
+  if (description) {
+    meta.push(
+      { name: 'description', content: description },
+      { property: 'og:description', content: description },
+    )
+  }
+  if (image) {
+    meta.push({ property: 'og:image', content: image })
+  }
+  return { title, meta }
 })
+
+if (import.meta.server) {
+  const requestEvent = useRequestEvent()
+  // flush: 'sync' 保证 useAsyncData 的 error 一落地就写响应状态，赶在响应发出之前
+  watch(isNotFound, (missing) => {
+    if (missing && requestEvent) {
+      setResponseStatus(requestEvent, 404, 'Not Found')
+    }
+  }, { immediate: true, flush: 'sync' })
+}
 </script>
