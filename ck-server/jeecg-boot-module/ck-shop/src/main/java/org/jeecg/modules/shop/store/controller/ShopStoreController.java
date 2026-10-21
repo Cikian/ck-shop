@@ -8,6 +8,7 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
+import org.apache.shiro.SecurityUtils;
 import org.apache.shiro.authz.annotation.RequiresPermissions;
 import org.jeecg.common.api.vo.Result;
 import org.jeecg.common.aspect.annotation.AutoLog;
@@ -15,6 +16,7 @@ import org.jeecg.common.exception.JeecgBootException;
 import org.jeecg.common.system.base.controller.JeecgController;
 import org.jeecg.common.system.query.QueryGenerator;
 import org.jeecg.modules.shop.store.entity.ShopStore;
+import org.jeecg.modules.shop.store.entity.vo.StoreOptionVO;
 import org.jeecg.modules.shop.store.service.IShopStoreService;
 import org.jeecgframework.poi.excel.ExcelImportUtil;
 import org.jeecgframework.poi.excel.entity.ImportParams;
@@ -37,6 +39,7 @@ import java.io.InputStream;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 /**
  * <p>
@@ -58,9 +61,13 @@ public class ShopStoreController extends JeecgController<ShopStore, IShopStoreSe
     private IShopStoreService shopStoreService;
 
     /**
-     * 分页列表
+     * 分页列表（管理端店铺管理页）
+     *
+     * <p>必须带 {@code shop-store:list}：这里返回的是完整实体（含 departId/domain/themeConfig），
+     * 而 JeecgBoot 没有 URL 级权限过滤器——不写注解就等于"任何登录账号都能列出全部店铺"。
      */
     @Operation(summary = "店铺-分页列表查询")
+    @RequiresPermissions("shop-store:list")
     @GetMapping(value = "/list")
     public Result<IPage<ShopStore>> queryPageList(ShopStore shopStore,
                                                   @RequestParam(name = "pageNo", defaultValue = "1") Integer pageNo,
@@ -75,11 +82,28 @@ public class ShopStoreController extends JeecgController<ShopStore, IShopStoreSe
 
     /**
      * 全部启用店铺（商品表单的「销售渠道」选择、前端站点下拉用）
+     *
+     * <p><b>只返回安全投影</b>：id/code/name/logoUrl/sortOrder。
+     * 不再直出实体，避免把 departId/departOrgCode/domain/themeConfig/createBy 交给调用方
+     * （本接口是"任意已登录账号"可调，包括店铺端买家 token）。
+     *
+     * <p>{@code departOrgCode} 只有 {@code shop-store:manage-all} 持有者才返回：
+     * 商品表单需要它把"所属店铺"映射成商品的 sys_org_code，普通运营不需要也不应该看到。
      */
     @Operation(summary = "店铺-启用列表")
     @GetMapping(value = "/all")
-    public Result<List<ShopStore>> all() {
-        return Result.OK(shopStoreService.listEnabled());
+    public Result<List<StoreOptionVO>> all() {
+        boolean canManageAll = SecurityUtils.getSubject().isPermitted("shop-store:manage-all");
+        List<StoreOptionVO> options = shopStoreService.listEnabled().stream()
+                .map(store -> new StoreOptionVO()
+                        .setId(store.getId())
+                        .setCode(store.getCode())
+                        .setName(store.getName())
+                        .setLogoUrl(store.getLogoUrl())
+                        .setSortOrder(store.getSortOrder())
+                        .setDepartOrgCode(canManageAll ? store.getDepartOrgCode() : null))
+                .collect(Collectors.toList());
+        return Result.OK(options);
     }
 
     /**
@@ -110,9 +134,10 @@ public class ShopStoreController extends JeecgController<ShopStore, IShopStoreSe
     }
 
     /**
-     * 通过id查询
+     * 通过id查询（管理端编辑店铺用，返回完整实体）
      */
     @Operation(summary = "店铺-通过id查询")
+    @RequiresPermissions("shop-store:list")
     @GetMapping(value = "/queryById")
     public Result<ShopStore> queryById(@RequestParam(name = "id", required = true) String id) {
         ShopStore shopStore = shopStoreService.getById(id);
