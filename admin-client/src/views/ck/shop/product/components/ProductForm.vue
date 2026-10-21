@@ -517,7 +517,7 @@
               message="规格决定客户能怎么选"
               description="例：颜色（白色/红色/黑色）× 内存（8G/16G）× 存储（256G/512G/1T）共 18 种组合。配置完请到「SKU 组合」页签生成组合，并删掉不存在的组合（例如白色 8G 1T）。"
             />
-            <ProductSpecEditor v-model:specs="formData.specs" :disabled="disabled" @change="handleSpecsChange" />
+            <ProductSpecEditor v-model:specs="formData.specs" :combinations="formData.combinations" :disabled="disabled" @change="handleSpecsChange" />
           </div>
         </a-tab-pane>
 

@@ -39,11 +39,22 @@
             />
             <a-tag v-if="spec.presetCode" color="blue" class="spec-card__preset">预设：{{ spec.presetCode }}</a-tag>
             <span class="spec-card__count">{{ (spec.values || []).length }} 个可选值</span>
-            <a-tooltip title="删除该规格（其下的组合会在生成时被剔除）">
-              <a-button type="text" danger size="small" :disabled="disabled" @click="removeSpec(specIndex)">
+            <!--
+              删除规格会级联移除所有引用它的 SKU 组合（价格/库存/编码一起丢），
+              必须先把影响条数说清楚再让用户确认，绝不一点就删。
+            -->
+            <a-popconfirm
+              :title="`删除规格「${spec.name || '未命名'}」？`"
+              :description="specDeleteImpact(spec)"
+              ok-text="确认删除"
+              cancel-text="取消"
+              :disabled="disabled"
+              @confirm="removeSpec(specIndex)"
+            >
+              <a-button type="text" danger size="small" :disabled="disabled">
                 <Icon icon="ant-design:delete-outlined" />
               </a-button>
-            </a-tooltip>
+            </a-popconfirm>
           </div>
 
           <!-- 规格值：拖拽排序 + 配图，同样必须用 #item 插槽 -->
@@ -69,11 +80,18 @@
                   allow-clear
                   @blur="onSpecMetaChange"
                 />
-                <a-tooltip title="删除该可选值">
-                  <a-button type="text" size="small" danger :disabled="disabled" @click="removeValue(spec, valueIndex)">
+                <a-popconfirm
+                  :title="`删除可选值「${value.value || '未命名'}」？`"
+                  :description="valueDeleteImpact(spec, value)"
+                  ok-text="确认删除"
+                  cancel-text="取消"
+                  :disabled="disabled"
+                  @confirm="removeValue(spec, valueIndex)"
+                >
+                  <a-button type="text" size="small" danger :disabled="disabled">
                     <Icon icon="ant-design:close-outlined" />
                   </a-button>
-                </a-tooltip>
+                </a-popconfirm>
               </div>
             </template>
           </VueDraggable>
@@ -160,10 +178,13 @@
   const props = withDefaults(
     defineProps<{
       specs: SpecItem[];
+      /** 当前 SKU 组合：只用于"删除规格/规格值会影响几个组合"的确认提示 */
+      combinations?: any[];
       disabled?: boolean;
     }>(),
     {
       specs: () => [],
+      combinations: () => [],
       disabled: false,
     }
   );
@@ -274,6 +295,38 @@
       __uid: uid('spec'),
     });
     sync();
+  }
+
+  /**
+   * 一个规格值可能被组合用三种键引用：后端主键 / 稳定 tempId / 本地 __uid。
+   * 全部收集起来，避免"删了但算不出影响条数"。
+   */
+  function valueKeys(value: any): string[] {
+    return [value?.id, value?.tempId, value?.__uid].filter((key) => !!key).map((key) => String(key));
+  }
+
+  /** 有多少个 SKU 组合引用了这些规格值 */
+  function combosReferencing(keys: Set<string>): number {
+    if (!keys.size) {
+      return 0;
+    }
+    return (props.combinations || []).filter((combo: any) =>
+      (combo?.specValueRefs || []).some((ref: string) => keys.has(ref))
+    ).length;
+  }
+
+  function specDeleteImpact(spec: SpecItem): string {
+    const keys = new Set<string>();
+    (spec.values || []).forEach((value) => valueKeys(value).forEach((key) => keys.add(key)));
+    const count = combosReferencing(keys);
+    return count > 0
+      ? `将同时移除引用它的 ${count} 个 SKU 组合，价格、库存与 SKU 编码会一起丢失。`
+      : '当前没有 SKU 组合引用该规格。';
+  }
+
+  function valueDeleteImpact(_spec: SpecItem, value: SpecValueItem): string {
+    const count = combosReferencing(new Set(valueKeys(value)));
+    return count > 0 ? `将同时移除引用它的 ${count} 个 SKU 组合。` : '当前没有 SKU 组合引用该可选值。';
   }
 
   function removeSpec(index: number) {
