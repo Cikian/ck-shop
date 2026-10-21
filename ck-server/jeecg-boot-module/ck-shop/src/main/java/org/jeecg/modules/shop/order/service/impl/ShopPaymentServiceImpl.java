@@ -83,6 +83,16 @@ public class ShopPaymentServiceImpl
     @Autowired
     private ShopPaymentSupport paymentSupport;
 
+    /**
+     * 支付单 Mapper。
+     *
+     * <p><b>必须保留 {@code @Autowired}：</b>这里刻意用一个同类型的独立字段（而不是直接用父类
+     * {@code ServiceImpl} 的 {@code baseMapper}），但 Spring 不会自动把它跟 baseMapper 关联；
+     * 少了注解它就是 null，第一个用到它的地方（发起支付）会抛
+     * {@code Cannot invoke "ShopOrderPaymentMapper.selectOne(...)" because "this.paymentMapper" is null}
+     * —— 表现为"所有支付都发不出去"，而订单本身是好的，很容易被误判成渠道问题。
+     */
+    @Autowired
     private ShopOrderPaymentMapper paymentMapper;
 
     @Autowired
