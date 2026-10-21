@@ -48,8 +48,13 @@ public interface IShopPaymentService extends IService<ShopOrderPayment> {
     /**
      * 渠道异步回调统一入口。
      *
-     * <p>处理链：验签 → 落回调流水（唯一键去重）→ 解析事件 → 状态机推进 →
-     * 资金流水 → 库存实扣 → 操作流水 → 返回渠道要求的应答。
+     * <p>处理链：验签 → 落回调流水（RECEIVED，占住唯一去重键）→ 独立事务结算 →
+     * 结算提交后把流水改为 PROCESSED → 返回渠道要求的应答。
+     *
+     * <p><b>事务语义：</b>本方法自身不开事务；结算在
+     * {@code ShopPaymentSettlementService} 的 {@code REQUIRES_NEW} 事务里完成，
+     * 要么全部提交、要么全部回滚。结算失败时会把流水置 FAILED 并<b>释放去重键</b>，
+     * 所以渠道重推不会被误判成"重复回调"。
      *
      * <p><b>重复回调必须返回成功应答</b>：渠道收到失败应答会一直重推，
      * 形成"重推 → 处理失败 → 再重推"的死循环。识别为重复后直接 ACK。

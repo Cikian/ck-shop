@@ -68,7 +68,7 @@
 
 | # | 事项 | 证据 / 建议 |
 |---|---|---|
-| 1 | **C2 支付回调原子性** | `handleNotify` 的 `catch` 吞异常 → 部分结算照常提交；去重行仍占唯一键 → 渠道重推被当重复并回成功 ack → 半完成状态再无自愈机会。另 `mockConfirm` 自调用导致内层 `@Transactional` 失效。建议：结算跨 bean 包 `REQUIRES_NEW` + 失败不回成功 ack。**复现需要一笔测试订单（写数据），等授权** |
+| 1 | **C2 支付回调原子性** | `handleNotify` 的 `catch` 吞异常 → 部分结算照常提交；去重行仍占唯一键 → 渠道重推被当重复并回成功 ack → 半完成状态再无自愈机会。另 `mockConfirm` 自调用导致内层 `@Transactional` 失效。建议：结算跨 bean 包 `REQUIRES_NEW` + 失败不回成功 ack。**复现需要一笔测试订单（写数据），等授权**。✅ **已修复 2026-10-22（检查清单 P0-2）** |
 | 2 | **Flyway 迁移完全没在执行** | 启动即 `Detected applied migration not resolved locally: 3.9.5.2` + `checksum mismatch 3.9.5.12` → 任何新迁移都不会落库。需 `flyway repair` 或人工核对 `flyway_schema_history` |
 | 3 | **后端真 bean 拆分** | `ShopOrderServiceImpl` 1670 / `ShopProductServiceImpl` 1549；按"查询/校验/落库/通知"切分可降到 500–800 行，但不改事务与调用顺序，需授权 |
 | 4 | **`/shop/store/*`、`/shop/tag/*` 读接口权限码** | 实测：匿名 401；**任意店铺会员**可读 `store/list|all`、`tag/list|all`（200 + 数据），返回体含 `departOrgCode`（多店铺隔离所依赖的内部组织编码）、`domain`、`createBy`。三个口径：加权限码 / 拆店铺端公开投影 / 判定可公开 |

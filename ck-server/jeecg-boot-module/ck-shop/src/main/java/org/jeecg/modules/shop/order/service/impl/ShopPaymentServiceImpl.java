@@ -6,26 +6,16 @@ import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
 import org.jeecg.common.exception.JeecgBootException;
-import org.jeecg.modules.shop.order.constant.FundBizType;
 import org.jeecg.modules.shop.order.constant.OperatorType;
 import org.jeecg.modules.shop.order.constant.OrderEventType;
 import org.jeecg.modules.shop.order.constant.PayChannel;
-import org.jeecg.modules.shop.order.constant.PayStatus;
 import org.jeecg.modules.shop.order.constant.PaymentStatus;
-import org.jeecg.modules.shop.order.constant.RefundOrderStatus;
-import org.jeecg.modules.shop.order.constant.ShopOrderConst;
-import org.jeecg.modules.shop.order.entity.ShopFundFlow;
 import org.jeecg.modules.shop.order.entity.ShopOrder;
-import org.jeecg.modules.shop.order.entity.ShopOrderItem;
 import org.jeecg.modules.shop.order.entity.ShopOrderPayment;
-import org.jeecg.modules.shop.order.entity.ShopOrderRefund;
 import org.jeecg.modules.shop.order.entity.ShopPaymentNotifyLog;
 import org.jeecg.modules.shop.order.entity.vo.OrderPrepayVO;
-import org.jeecg.modules.shop.order.mapper.ShopFundFlowMapper;
-import org.jeecg.modules.shop.order.mapper.ShopOrderItemMapper;
 import org.jeecg.modules.shop.order.mapper.ShopOrderMapper;
 import org.jeecg.modules.shop.order.mapper.ShopOrderPaymentMapper;
-import org.jeecg.modules.shop.order.mapper.ShopOrderRefundMapper;
 import org.jeecg.modules.shop.order.mapper.ShopPaymentNotifyLogMapper;
 import org.jeecg.modules.shop.order.pay.PaymentGateway;
 import org.jeecg.modules.shop.order.pay.PaymentGatewayRegistry;
@@ -34,8 +24,6 @@ import org.jeecg.modules.shop.order.pay.mock.MockPaySupport;
 import org.jeecg.modules.shop.order.pay.model.PaymentModels;
 import org.jeecg.modules.shop.order.service.IShopOrderEventService;
 import org.jeecg.modules.shop.order.service.IShopPaymentService;
-import org.jeecg.modules.shop.order.service.IShopRefundService;
-import org.jeecg.modules.shop.order.service.IShopStockService;
 import org.jeecg.modules.shop.order.service.OrderContext;
 import org.jeecg.modules.shop.order.util.MoneyUtils;
 import org.jeecg.modules.shop.order.util.OrderNoGenerator;
@@ -44,7 +32,6 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
@@ -58,7 +45,7 @@ import java.util.Map;
  * 支付服务实现 —— 资金链路的全部核心逻辑。
  * </p>
  *
- * <h3>本类承担的三件难事</h3>
+ * <h3>本类承担的四件难事</h3>
  * <ol>
  *   <li><b>重复回调</b>：渠道会重推 5~8 次。三道防线：回调流水的唯一去重键、
  *       支付单状态 CAS、资金流水的唯一索引。任何一道单独都不够可靠。</li>
@@ -69,6 +56,10 @@ import java.util.Map;
  *   <li><b>金额不一致</b>：渠道实付金额与订单应付不一致时，
  *       以渠道金额记账（钱确实收了），但**同时写一条异常事件并打 ERROR**，
  *       因为这种情况几乎必然是价格被篡改或算价 bug，必须有人查。</li>
+ *   <li><b>回调的事务边界</b>：结算（支付单/订单/库存/资金流水）放在
+ *       {@link ShopPaymentSettlementService} 里，用 {@code REQUIRES_NEW} 独立提交；
+ *       本类只负责"落回调流水 → 调结算 → 提交后再 ACK"，任何异常都不许被吞掉。
+ *       旧实现把结算写在本类且在事务内 catch 了异常，导致半完成状态被提交、去重键又堵死重试。</li>
  * </ol>
  *
  * @author Cikian
@@ -100,16 +91,7 @@ public class ShopPaymentServiceImpl
     private ShopOrderMapper orderMapper;
 
     @Autowired
-    private ShopOrderItemMapper orderItemMapper;
-
-    @Autowired
-    private ShopOrderRefundMapper refundMapper;
-
-    @Autowired
     private ShopPaymentNotifyLogMapper notifyLogMapper;
-
-    @Autowired
-    private ShopFundFlowMapper fundFlowMapper;
 
     @Autowired
     private PaymentGatewayRegistry gatewayRegistry;
@@ -118,21 +100,17 @@ public class ShopPaymentServiceImpl
     @Autowired
     private MockPayGuard mockPayGuard;
 
+    /**
+     * 结算逻辑（支付单 CAS → 订单 CAS → 库存实扣 → 资金流水）的独立 Bean。
+     *
+     * <p>必须是**另一个 Bean**：只有跨 Bean 调用 @Transactional(REQUIRES_NEW) 才会经过代理，
+     * 自调用不会。旧实现把结算写在本类里，异常被 catch 后事务照常提交，形成半完成状态。
+     */
     @Autowired
-    private IShopStockService stockService;
+    private ShopPaymentSettlementService settlementService;
 
     @Autowired
     private IShopOrderEventService eventService;
-
-    /**
-     * 退款结果落地**统一走退款服务**。
-     *
-     * <p>回调与主动查询两条路径如果各写一份"退款成功之后做什么"，
-     * 迟早会分叉 —— 然后就会出现"回调进来时库存回补了、查询进来时没回补"
-     * 这种对不上的情况。因此这里只做转发。
-     */
-    @Autowired
-    private IShopRefundService refundService;
 
     /**
      * 默认支付渠道。
@@ -147,6 +125,17 @@ public class ShopPaymentServiceImpl
     /** 支付超时时间（分钟）：与订单的 pay_deadline 保持一致 */
     @Value("${ck.shop.order.pay-timeout-minutes:30}")
     private int payTimeoutMinutes;
+
+    /**
+     * "处理中"回调流水的可回收时间（秒）。
+     *
+     * <p>进程在"插入 RECEIVED 之后、结算提交之前"被杀掉时，流水会永远停在 RECEIVED。
+     * 渠道重推会撞唯一键、被当成"重复回调"而 ACK —— 结算却从未发生。
+     * 超过这个时间仍未变成 PROCESSED/FAILED 的，视为"上次处理已中断"，
+     * 允许本次重推接管重试。取 120 秒是为了不误伤"结算正在慢慢跑"的正常请求。
+     */
+    @Value("${ck.shop.pay.notify.stale-received-seconds:120}")
+    private long staleReceivedSeconds;
 
     // ==================================================================
     // 发起支付
@@ -305,8 +294,24 @@ public class ShopPaymentServiceImpl
     // 回调处理
     // ==================================================================
 
+    /**
+     * 渠道回调统一入口 —— <b>故意不加 {@code @Transactional}</b>。
+     *
+     * <p>这里只做三件事：验签 → 落回调流水（去重）→ 调用独立 Bean 完成结算。
+     * 事务边界在 {@link ShopPaymentSettlementService}（{@code REQUIRES_NEW}），
+     * 所以"结算要么全部提交、要么全部回滚"，而回调流水的写入不受结算回滚影响。
+     *
+     * <p>处理顺序（每一步都不能省）：
+     * <ol>
+     *   <li>落 {@code RECEIVED} 流水并占住唯一去重键 —— 并发重推只有一条能进来；</li>
+     *   <li>结算（独立事务）；</li>
+     *   <li><b>结算提交之后</b>才把流水改为 PROCESSED、才回渠道成功应答 ——
+     *       先 ACK 再提交的话，一旦提交失败渠道就再也不会重推，这笔钱就丢了；</li>
+     *   <li>结算抛异常：事务回滚 → 流水置 FAILED → <b>释放去重键</b> → 回失败应答。
+     *       这样渠道重推时会被重新处理，而不是被当成"重复回调"回成功而永久卡死。</li>
+     * </ol>
+     */
     @Override
-    @Transactional(rollbackFor = Exception.class)
     public NotifyHandleResult handleNotify(String channel, Map<String, String> headers,
                                            String body, String clientIp) {
         PaymentGateway gateway = gatewayRegistry.require(channel);
@@ -336,266 +341,111 @@ public class ShopPaymentServiceImpl
                 paymentSupport.resolveSignature(headers), notify, true, "RECEIVED", null,
                 notify.getEventTime(), clientIp);
         if (notifyLog == null) {
-            // 唯一键冲突 = 重复回调。这是正常现象（渠道本来就会重推），
-            // 必须返回成功应答，否则渠道会一直重推形成风暴
-            log.info("渠道[{}]重复回调已忽略：dedupKey={}", channel, dedupKey);
-            return NotifyHandleResult.ok(gateway.successAck(), "重复回调，已忽略");
+            // 唯一键冲突有两种可能：
+            //   ① 渠道重复推送同一条回调（正常，直接 ACK）；
+            //   ② 上一次处理在"落流水"和"结算提交"之间被中断（进程被杀/宕机），
+            //      流水卡在 RECEIVED —— 此时若当成重复 ACK 掉，结算永远不会发生。
+            // ②只能靠"超时回收"识别：超过 staleReceivedSeconds 仍是 RECEIVED 的，允许本次重推接管。
+            ShopPaymentNotifyLog reclaimed = reclaimStaleReceived(dedupKey);
+            if (reclaimed == null) {
+                log.info("渠道[{}]重复回调已忽略：dedupKey={}", channel, dedupKey);
+                return NotifyHandleResult.ok(gateway.successAck(), "重复回调，已忽略");
+            }
+            log.warn("发现上次未处理完的回调流水，已回收并重新处理：id={}, dedupKey={}",
+                    reclaimed.getId(), dedupKey);
+            notifyLog = reclaimed;
         }
 
         try {
-            if ("REFUND".equalsIgnoreCase(notifyType)) {
-                return handleRefundNotify(gateway, notify, notifyLog, clientIp);
-            }
-            return handlePayNotify(gateway, notify, notifyLog, clientIp);
+            // 结算走独立 Bean 的 REQUIRES_NEW 事务：异常会一路抛回这里，事务已整体回滚
+            ShopPaymentSettlementService.Outcome outcome = "REFUND".equalsIgnoreCase(notifyType)
+                    ? settlementService.settleRefundNotify(notify)
+                    : settlementService.settlePayNotify(notify);
+            // 到这里结算事务已经提交，此时才写流水结论、才回成功应答
+            updateNotifyLog(notifyLog, outcome.getLogStatus(), outcome.getLogMessage());
+            return NotifyHandleResult.ok(gateway.successAck(), outcome.getAckMessage());
         } catch (Exception e) {
-            // 处理失败：更新回调流水的处理结果，并把失败原因回给渠道（渠道会重推，正是我们需要的）
-            updateNotifyLog(notifyLog, "FAILED", "处理异常：" + e.getMessage());
-            log.error("渠道[{}]回调处理异常：paymentNo={}, err={}",
-                    channel, notify.getPaymentNo(), e.getMessage(), e);
+            // 处理失败：结算已回滚；把流水置失败并**释放去重键**，再把失败应答回给渠道
+            // （渠道会重推——这正是我们要的，而且下次不会被当成"重复回调"）
+            markNotifyFailedAndRelease(notifyLog, e);
+            log.error("渠道[{}]回调处理异常，结算已回滚，等待渠道重推：paymentNo={}, dedupKey={}, err={}",
+                    channel, notify.getPaymentNo(), dedupKey, e.getMessage(), e);
             return NotifyHandleResult.reject(gateway.failAck("PROCESS_ERROR"), e.getMessage());
         }
     }
 
-    private NotifyHandleResult handlePayNotify(PaymentGateway gateway,
-                                               PaymentModels.NotifyResult notify,
-                                               ShopPaymentNotifyLog notifyLog,
-                                               String clientIp) {
-        ShopOrderPayment payment = getByPaymentNo(notify.getPaymentNo());
-        if (payment == null) {
-            // 我方无此支付单，但渠道说有这笔交易 —— 典型的对账差异来源。
-            // 必须留下证据（回调流水已落库），并**返回成功应答**：
-            // 反复重推只会刷屏，这条记录交给人工/对账处理更有价值。
-            updateNotifyLog(notifyLog, "FAILED", "支付单不存在：" + notify.getPaymentNo());
-            log.error("【对账差异】渠道回调的支付单在我方不存在：channelTradeNo={}, paymentNo={}。"
-                            + "请人工核对是否出现【渠道有流水、平台无订单】的情况",
-                    notify.getChannelTradeNo(), notify.getPaymentNo());
-            return NotifyHandleResult.ok(gateway.successAck(), "支付单不存在，已记录待人工核对");
-        }
-
-        recordNotifyOnPayment(payment, notify);
-
-        // 累计回调次数：偏高说明回调链路有异常
-        if (!PaymentStatus.SUCCESS.name().equals(notify.getEventStatus())) {
-            // 渠道明确告知失败/关闭：只改支付单，不动订单（订单仍可继续支付）
-            if (PaymentStatus.FAILED.name().equalsIgnoreCase(notify.getEventStatus())) {
-                paymentMapper.markTerminal(payment.getId(), PaymentStatus.FAILED.name(),
-                        java.util.Arrays.asList(PaymentStatus.INIT.name(), PaymentStatus.PENDING.name()),
-                        "CHANNEL_FAIL", "渠道通知支付失败", "CHANNEL");
-            }
-            updateNotifyLog(notifyLog, "PROCESSED", "事件状态=" + notify.getEventStatus());
-            return NotifyHandleResult.ok(gateway.successAck(), "已记录非成功事件");
-        }
-
-        boolean settled = settleSuccess(payment, notify.getChannelTradeNo(),
-                notify.getPaidAmount(), notify.getEventTime(), OperatorType.CHANNEL,
-                "CHANNEL:" + payment.getChannel(), "渠道回调支付成功");
-        updateNotifyLog(notifyLog, "PROCESSED", settled ? "支付成功已结算" : "重复回调，状态已是成功");
-        return NotifyHandleResult.ok(gateway.successAck(),
-                settled ? "支付成功" : "重复回调，已忽略");
-    }
-
-    private NotifyHandleResult handleRefundNotify(PaymentGateway gateway,
-                                                  PaymentModels.NotifyResult notify,
-                                                  ShopPaymentNotifyLog notifyLog,
-                                                  String clientIp) {
-        if (StringUtils.isBlank(notify.getRefundNo())) {
-            updateNotifyLog(notifyLog, "FAILED", "退款回调缺少退款单号");
-            return NotifyHandleResult.ok(gateway.successAck(), "退款回调缺少退款单号，已记录");
-        }
-        ShopOrderRefund refund = refundMapper.selectOne(new LambdaQueryWrapper<ShopOrderRefund>()
-                .eq(ShopOrderRefund::getRefundNo, notify.getRefundNo())
-                .last("LIMIT 1"));
-        if (refund == null) {
-            updateNotifyLog(notifyLog, "FAILED", "退款单不存在：" + notify.getRefundNo());
-            log.error("【对账差异】渠道退款回调的退款单在我方不存在：refundNo={}", notify.getRefundNo());
-            return NotifyHandleResult.ok(gateway.successAck(), "退款单不存在，已记录待人工核对");
-        }
-
-        if (RefundOrderStatus.SUCCESS.name().equalsIgnoreCase(notify.getEventStatus())) {
-            // 幂等：已成功的退款单再收到回调直接 ACK
-            if (RefundOrderStatus.SUCCESS.name().equals(refund.getStatus())) {
-                updateNotifyLog(notifyLog, "DUPLICATE", "退款已是成功状态");
-                return NotifyHandleResult.ok(gateway.successAck(), "重复回调，已忽略");
-            }
-            refundService.applyChannelRefundResult(refund, true, notify.getChannelTradeNo(),
-                    notify.getEventTime(), null, "CHANNEL:" + paymentSupport.channelOfRefund(refund));
-            updateNotifyLog(notifyLog, "PROCESSED", "退款成功已结算");
-            return NotifyHandleResult.ok(gateway.successAck(), "退款成功");
-        }
-
-        if (RefundOrderStatus.FAILED.name().equalsIgnoreCase(notify.getEventStatus())) {
-            // 退款失败：退款服务会把先前预占的额度还回去，否则额度会被永久占用
-            refundService.applyChannelRefundResult(refund, false, null, null,
-                    notify.getFailReason(), "CHANNEL:" + paymentSupport.channelOfRefund(refund));
-            updateNotifyLog(notifyLog, "PROCESSED", "退款失败，额度已归还");
-            return NotifyHandleResult.ok(gateway.successAck(), "退款失败已记录");
-        }
-
-        updateNotifyLog(notifyLog, "PROCESSED", "未识别的退款事件状态=" + notify.getEventStatus());
-        return NotifyHandleResult.ok(gateway.successAck(), "已记录");
-    }
-
-    /** 退款回调里没有渠道字段，从支付单反查（仅用于操作者标识） */
-
-    // ==================================================================
-    // 结算：把"资金事实"落到订单
-    // ==================================================================
-
     /**
-     * 完成一次支付成功的结算。
+     * 回调处理失败：流水置 FAILED，并把占住的去重键改成一个"已释放"的独立值。
      *
-     * <p>四步，顺序不可颠倒：
-     * <ol>
-     *   <li><b>支付单 CAS</b>：只有从 INIT/PENDING 才能变为 SUCCESS。
-     *       影响 0 行 = 已经是成功状态 = 重复回调，直接返回，不做后续任何动作
-     *       （否则会重复写资金流水、重复扣库存）；</li>
-     *   <li><b>订单 CAS</b>：WAIT_PAY → WAIT_SHIP。影响 0 行说明订单已被关单/取消，
-     *       这就是掉单场景 —— 钱要照收、账要照记，但订单不能凭空复活，
-     *       留给后台人工处理；</li>
-     *   <li><b>库存实扣</b>（仅订单推进成功时）；</li>
-     *   <li><b>资金流水 + 操作流水</b>，两者都靠唯一索引/事务保证只写一次。</li>
-     * </ol>
+     * <p>为什么不是删掉那一行：回调流水是只追加的审计材料，
+     * "这条回调失败过、失败原因是什么"必须留下。删行会让人误以为渠道从没推过。
+     * 改键之后，同样的报文再推一次会插入一条新的 RECEIVED 记录并重新处理；
+     * 旧的 FAILED 记录仍在，两条记录合起来正好还原"失败 → 重试成功"的全过程。
      */
-    private boolean settleSuccess(ShopOrderPayment payment, String channelTradeNo,
-                                  BigDecimal paidAmount, Date payTime,
-                                  String operatorType, String operatorName, String remark) {
-        Date now = new Date();
-        Date actualPayTime = payTime == null ? now : payTime;
-        BigDecimal actualPaid = MoneyUtils.scale(paidAmount);
-        if (!MoneyUtils.isPositive(actualPaid)) {
-            // 渠道回调和查询都可能没带金额；此时以支付单上的应付额为准，
-            // 而不是记 0——记 0 会让对账"渠道有流水、我方金额为 0"
-            actualPaid = MoneyUtils.scale(payment.getAmount());
+    private void markNotifyFailedAndRelease(ShopPaymentNotifyLog notifyLog, Exception cause) {
+        if (notifyLog == null) {
+            return;
         }
-
-        int paymentRows = paymentMapper.markPaid(payment.getId(), channelTradeNo,
-                actualPaid, actualPayTime, operatorName);
-        if (paymentRows == 0) {
-            // 已经是成功状态：重复回调。直接 ACK，不做任何后续动作
-            log.info("支付单[{}]已是成功状态，跳过重复结算", payment.getPaymentNo());
-            return false;
-        }
-
-        ShopOrder order = orderMapper.selectById(payment.getOrderId());
-        if (order == null) {
-            log.error("【数据异常】支付成功但订单不存在：paymentNo={}, orderId={}",
-                    payment.getPaymentNo(), payment.getOrderId());
-            writeFundFlow(payment, actualPaid, actualPayTime, operatorName, "收款（订单缺失，待人工核对）"
-            );
-            return true;
-        }
-
-        // 金额一致性核对：不一致几乎必然是算价 bug 或价格篡改，必须留下痕迹让人查
-        if (!MoneyUtils.eq(payment.getAmount(), actualPaid)) {
-            log.error("【金额异常】渠道实付金额与支付单应付金额不一致："
-                            + "paymentNo={}, 应付={}, 实付={}。以渠道金额记账，请人工核对价格计算逻辑。",
-                    payment.getPaymentNo(), payment.getAmount(), actualPaid);
-            eventService.recordNote(order, OrderEventType.PAY_QUERY, OperatorType.SYSTEM, "SYSTEM",
-                    "【金额异常】应付 " + MoneyUtils.scale(payment.getAmount()).toPlainString()
-                            + " 元，渠道实付 " + actualPaid.toPlainString() + " 元，已按渠道金额记账，请人工核对",
-                    null);
-        }
-
-        int orderRows = orderMapper.update(new ShopOrder()
-                        .setOrderStatus(org.jeecg.modules.shop.order.constant.OrderStatus.WAIT_SHIP.name())
-                        .setPayStatus(PayStatus.PAID.name())
-                        .setPaidAmount(actualPaid)
-                        .setPaymentNo(payment.getPaymentNo())
-                        .setPayChannel(payment.getChannel())
-                        .setPayType(payment.getPayType())
-                        .setPayTime(actualPayTime)
-                        .setUpdateBy(operatorName)
-                        .setUpdateTime(now),
-                new LambdaUpdateWrapper<ShopOrder>()
-                        .eq(ShopOrder::getId, order.getId())
-                        .eq(ShopOrder::getOrderStatus,
-                                org.jeecg.modules.shop.order.constant.OrderStatus.WAIT_PAY.name())
-                        .eq(ShopOrder::getVersion, order.getVersion())
-                        .setSql("version = version + 1"));
-
-        // 资金流水无论如何都要写：钱已经到账了，这是唯一的资金事实记录
-        writeFundFlow(payment, actualPaid, actualPayTime, operatorName, "支付收款");
-
-        if (orderRows == 0) {
-            // ---- 掉单场景：钱收了，订单却已不在待支付 ----
-            // 绝不"把钱退回去"或"把订单改回待支付"：前者需要用户同意，
-            // 后者会让已释放的库存凭空占用。正确做法是留下异常记录交人工处理。
-            log.error("【掉单告警】支付成功但订单状态已不是待支付：orderNo={}, 当前状态={}, paymentNo={}。"
-                            + "该笔资金已入账，请立即人工介入（退款或恢复订单）。",
-                    order.getOrderNo(), order.getOrderStatus(), payment.getPaymentNo());
-            ShopOrder latest = orderMapper.selectById(order.getId());
-            eventService.recordStatusChange(latest, OrderEventType.PAY_SUCCESS,
-                    order.getOrderStatus(), order.getOrderStatus(),
-                    order.getPayStatus(), PayStatus.PAID.name(),
-                    operatorType, operatorName,
-                    "【掉单异常】支付成功时订单已处于[" + order.getOrderStatus() + "]，"
-                            + "资金已入账但订单未推进，需人工介入",
-                    actualPaid,
-                    "{\"channelTradeNo\":\"" + StringUtils.trimToEmpty(channelTradeNo) + "\"}");
-            return true;
-        }
-
-        // 订单推进成功 → 库存实扣
-        List<ShopOrderItem> items = orderItemMapper.selectByOrderIds(
-                java.util.Collections.singletonList(order.getId()));
+        String releasedKey = releasedDedupKey(notifyLog);
         try {
-            stockService.deduct(order.getOrderNo(), items, payment.getPaymentNo(), operatorName);
-        } catch (Exception e) {
-            // 库存扣减失败会抛异常并回滚整个事务（含支付单成功状态）——
-            // 这是刻意的：宁可让回调失败被渠道重推，也不能出现"收了钱没扣库存"的超卖。
-            log.error("支付成功后扣减库存失败，事务将回滚并等待渠道重推：orderNo={}, err={}",
-                    order.getOrderNo(), e.getMessage());
-            throw e;
+            notifyLogMapper.update(new ShopPaymentNotifyLog()
+                            .setProcessStatus("FAILED")
+                            .setProcessMsg(StringUtils.left("处理异常：" + cause.getMessage(), 500))
+                            .setDedupKey(releasedKey),
+                    new LambdaUpdateWrapper<ShopPaymentNotifyLog>()
+                            .eq(ShopPaymentNotifyLog::getId, notifyLog.getId()));
+            log.warn("回调流水已置 FAILED 并释放去重键，允许渠道重推重新处理：id={}, releasedKey={}",
+                    notifyLog.getId(), releasedKey);
+        } catch (Exception updateError) {
+            // 连释放都失败时，这条回调会被永远当成"重复"——必须打 ERROR 交人工介入
+            log.error("释放回调去重键失败，该回调将无法自动重试，请人工处理：id={}, dedupKey={}, err={}",
+                    notifyLog.getId(), notifyLog.getDedupKey(), updateError.getMessage(), updateError);
         }
-
-        ShopOrder paid = orderMapper.selectById(order.getId());
-        eventService.recordStatusChange(paid, OrderEventType.PAY_SUCCESS,
-                order.getOrderStatus(), paid.getOrderStatus(),
-                order.getPayStatus(), paid.getPayStatus(),
-                operatorType, operatorName, remark, actualPaid,
-                "{\"paymentNo\":\"" + payment.getPaymentNo() + "\",\"channelTradeNo\":\""
-                        + StringUtils.trimToEmpty(channelTradeNo) + "\"}");
-        return true;
-    }
-
-    private void writeFundFlow(ShopOrderPayment payment, BigDecimal amount, Date tradeTime,
-                               String operator, String remark) {
-        ShopFundFlow flow = new ShopFundFlow()
-                .setFlowNo(OrderNoGenerator.fundFlowNo())
-                .setBizType(FundBizType.PAY_IN)
-                .setOrderNo(payment.getOrderNo())
-                .setPaymentNo(payment.getPaymentNo())
-                .setStoreId(payment.getStoreId())
-                .setStoreOrgCode(payment.getStoreOrgCode())
-                .setUserId(payment.getUserId())
-                .setChannel(payment.getChannel())
-                .setChannelTradeNo(payment.getChannelTradeNo())
-                .setAmount(MoneyUtils.scale(amount))
-                .setDirection(FundBizType.DIRECTION_IN)
-                .setCurrency(payment.getCurrency())
-                .setStatus("SUCCESS")
-                .setTradeTime(tradeTime)
-                .setSyncTime(new Date())
-                .setRemark(remark)
-                .setCreateTime(new Date());
-        insertFundFlowSafely(flow);
     }
 
     /**
-     * 写资金流水。
+     * 回收"处理中"卡死的回调流水。
      *
-     * <p>唯一索引 {@code uk_fund_biz(biz_type, channel, channel_trade_no)} 是最后一道防线：
-     * 业务幂等一旦因为新回调路径而失效，重复入账会被数据库挡住。
-     * 捕获冲突后**不抛异常**——那意味着这笔钱已经记过账了，正是我们想要的结果。
+     * <p>用 CAS（{@code process_status = 'RECEIVED'}）改成 {@code RETRYING}：
+     * 多个重推同时到达时只有一个能抢到，其余继续按重复回调处理，不会并发结算。
+     * 结算本身还有支付单 CAS 兜底，即使真的重复执行也只会被识别为"重复回调"。
+     *
+     * @return 抢到回收的流水；null 表示不是卡死记录（按重复回调处理）
      */
-    private void insertFundFlowSafely(ShopFundFlow flow) {
-        try {
-            fundFlowMapper.insert(flow);
-        } catch (DuplicateKeyException e) {
-            log.warn("资金流水已存在，跳过重复入账：bizType={}, channelTradeNo={}",
-                    flow.getBizType(), flow.getChannelTradeNo());
+    private ShopPaymentNotifyLog reclaimStaleReceived(String dedupKey) {
+        ShopPaymentNotifyLog existing = notifyLogMapper.selectOne(
+                new LambdaQueryWrapper<ShopPaymentNotifyLog>()
+                        .eq(ShopPaymentNotifyLog::getDedupKey, dedupKey)
+                        .last("LIMIT 1"));
+        if (existing == null) {
+            return null;
         }
+        // 只有"还没得出结论"的状态才可能卡死；PROCESSED/FAILED/DUPLICATE/REJECTED 都是终态
+        String status = existing.getProcessStatus();
+        if (!"RECEIVED".equals(status) && !"RETRYING".equals(status)) {
+            return null;
+        }
+        Date received = existing.getReceiveTime();
+        if (received != null && System.currentTimeMillis() - received.getTime()
+                < staleReceivedSeconds * 1000L) {
+            // 还在正常处理窗口内，不抢
+            return null;
+        }
+        int rows = notifyLogMapper.update(new ShopPaymentNotifyLog()
+                        .setProcessStatus("RETRYING")
+                        .setProcessMsg("上次处理未完成（疑似进程中断），已由重推回收重试"),
+                new LambdaUpdateWrapper<ShopPaymentNotifyLog>()
+                        .eq(ShopPaymentNotifyLog::getId, existing.getId())
+                        .eq(ShopPaymentNotifyLog::getProcessStatus, status));
+        return rows == 1 ? existing : null;
     }
+
+    /** 释放后的去重键：控制在 varchar(160) 内，且带上主键保证唯一 */
+    private String releasedDedupKey(ShopPaymentNotifyLog notifyLog) {
+        return StringUtils.left(StringUtils.defaultString(notifyLog.getDedupKey(), "notify"), 100)
+                + "|R|" + notifyLog.getId();
+    }
+
 
     // ==================================================================
     // 主动查询（补单）
@@ -633,7 +483,8 @@ public class ShopPaymentServiceImpl
         if (PaymentModels.QueryResult.SUCCESS.equals(result.getTradeStatus())) {
             BigDecimal paid = result.getPaidAmount() != null
                     ? result.getPaidAmount() : payment.getAmount();
-            return settleSuccess(payment, StringUtils.defaultIfBlank(
+            // 结算逻辑在独立 Bean 里；这里已有事务（@Transactional），所以与支付单状态同生共死
+            return settlementService.settleSuccess(payment, StringUtils.defaultIfBlank(
                             result.getChannelTradeNo(), payment.getChannelTradeNo()),
                     paid, result.getPayTime(), OperatorType.SYSTEM,
                     StringUtils.defaultIfBlank(operator, "SYSTEM"), "主动查询确认支付成功");
@@ -703,8 +554,16 @@ public class ShopPaymentServiceImpl
     // 模拟支付
     // ==================================================================
 
+    /**
+     * 模拟支付确认（仅 dev）。
+     *
+     * <p><b>故意不加 {@code @Transactional}</b>：它只是"生成一条已签名回调 → 喂给
+     * {@link #handleNotify}"。事务在 {@link ShopPaymentSettlementService} 里，
+     * 所以自调用 {@code this.handleNotify(...)} 不经过代理也没有关系——
+     * 旧实现里 {@code mockConfirm} 与 {@code handleNotify} 都是
+     * {@code @Transactional}，自调用导致内层注解实际不生效，看起来"整体回滚"其实没有。
+     */
     @Override
-    @Transactional(rollbackFor = Exception.class)
     public boolean mockConfirm(String paymentNo, OrderContext context) {
         // 门禁：即使有人绕过 Controller 直接调用 Service（后台任务、测试脚本），
         // 非 dev 环境也一样拒绝，绝不允许"点一下就把订单变已支付"。
@@ -835,28 +694,4 @@ public class ShopPaymentServiceImpl
             log.warn("更新回调流水状态失败：id={}, err={}", entry.getId(), e.getMessage());
         }
     }
-
-    private void recordNotifyOnPayment(ShopOrderPayment payment, PaymentModels.NotifyResult notify) {
-        try {
-            paymentMapper.recordNotify(payment.getId(),
-                    notify.getEventTime() == null ? new Date() : notify.getEventTime(),
-                    ShopMaskUtils.maskNotifyBody(StringUtils.left(
-                            notify.getNotifyType() + "|" + notify.getEventStatus() + "|"
-                                    + notify.getChannelTradeNo(), 2000)),
-                    "CHANNEL");
-        } catch (Exception e) {
-            log.warn("累加支付单回调次数失败：paymentNo={}, err={}", payment.getPaymentNo(), e.getMessage());
-        }
-    }
-
-
-    /**
-     * 从回调请求头里取签名原文（落库留证用）。
-     *
-     * <p>不同渠道的签名头名五花八门（微信 {@code Wechatpay-Signature}、
-     * 支付宝 {@code sign}、模拟渠道 {@code mock-signature}），
-     * 这里统一识别几种常见写法。取不到不影响主流程——
-     * 真正的验签由网关实现负责，这只是给人看的证据。
-     */
-
 }

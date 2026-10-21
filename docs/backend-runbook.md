@@ -75,6 +75,12 @@ $inner.Entries | Where-Object { $_.FullName -match 'shop/(account|test)/' } | Se
 
 ### 5.1 支付回调（C2）：失败会被"静默吞掉"
 
+> **状态：已修复（2026-10-22，检查清单 P0-2）。** 结算抽到独立 Bean
+> `ShopPaymentSettlementService`（`REQUIRES_NEW`）；回调流水两阶段
+> （`RECEIVED → PROCESSED/FAILED`），失败时释放去重键并回失败应答；
+> 结算提交后才 ACK；`mockConfirm` 不再自带事务、也不再依赖自调用。
+> 下文保留为问题复盘。
+
 `ShopPaymentServiceImpl.handleNotify`（`@Transactional`）的结构：
 
 ```

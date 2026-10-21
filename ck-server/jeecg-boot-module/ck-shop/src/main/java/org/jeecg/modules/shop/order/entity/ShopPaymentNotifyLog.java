@@ -84,7 +84,7 @@ public class ShopPaymentNotifyLog implements Serializable {
     @Schema(description = "验签结果: 0-未通过, 1-通过")
     private Integer signVerified;
 
-    @Schema(description = "处理结果: RECEIVED/PROCESSED/DUPLICATE/REJECTED/FAILED")
+    @Schema(description = "处理结果: RECEIVED处理中/RETRYING回收重试/PROCESSED已处理/DUPLICATE重复回调/REJECTED验签失败/FAILED处理失败")
     private String processStatus;
 
     @Schema(description = "处理说明")
