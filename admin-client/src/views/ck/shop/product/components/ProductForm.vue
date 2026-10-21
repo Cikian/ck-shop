@@ -1483,34 +1483,60 @@
       });
     });
 
-    const combinations = (formData.combinations || [])
-      .map((combo: any) => {
-        const rawRefs: string[] = combo.specValueRefs || [];
-        const normalizedRefs = rawRefs.map((ref) => refToTempId.get(ref) ?? ref);
-        // 按规格顺序取出每个规格被选中的值（编辑器写引用时就是按规格顺序，这里按 tempId 再定位一次，避免顺序漂移）
-        const picked = specs.map((spec: any, specIndex: number) => {
-          const byIndex = spec.values.find((value: any) => value.tempId === normalizedRefs[specIndex]);
-          if (byIndex) return byIndex;
-          return spec.values.find((value: any) => normalizedRefs.includes(value.tempId));
-        });
-        return {
-          id: combo.id,
-          skuCode: combo.skuCode || null,
-          combinationKey: picked.map((value: any) => value?.tempId || '').join('-'),
-          combinationName: picked.map((value: any) => value?.value || '').join('/'),
-          specValueRefs: picked.map((value: any) => value?.tempId || ''),
-          price: combo.price === '' || combo.price === undefined ? null : combo.price,
-          stock: Number(combo.stock) || 0,
-          imageUrl: combo.imageUrl || null,
-          saleable: combo.saleable || 'Y',
-        };
-      })
-      .filter(
-        (combo: any) =>
-          (combo.specValueRefs || []).length === specs.length
-          && specs.length > 0
-          && combo.specValueRefs.every(Boolean)
+    /*
+     * SKU 组合必须**逐行校验**，不能先过滤再校验。
+     *
+     * 旧实现先用 `.filter(specValueRefs.length === specs.length && every(Boolean))`
+     * 去掉不完整组合，后面的 `incomplete` 检查永远拿不到数据（死代码）：
+     * 运营新增规格、或历史数据引用了已不存在的规格值时，这些 SKU 会**静默消失**，
+     * 价格/库存/编码一起丢，而接口还回"保存成功"。
+     *
+     * 现在：保留每一行并记下"缺哪几维"，有缺就定位到 SKU 页签并禁止保存。
+     * 只有确实没有规格（无规格商品）时才不提交组合。
+     */
+    const combinations = (formData.combinations || []).map((combo: any, rowIndex: number) => {
+      const rawRefs: string[] = combo.specValueRefs || [];
+      const normalizedRefs = rawRefs.map((ref) => refToTempId.get(ref) ?? ref);
+      // 按规格顺序取出每个规格被选中的值（编辑器写引用时就是按规格顺序，这里按 tempId 再定位一次，避免顺序漂移）
+      const picked = specs.map((spec: any, specIndex: number) => {
+        const byIndex = spec.values.find((value: any) => value.tempId === normalizedRefs[specIndex]);
+        if (byIndex) return byIndex;
+        return spec.values.find((value: any) => normalizedRefs.includes(value.tempId));
+      });
+      return {
+        __rowIndex: rowIndex,
+        __rowLabel: rowIndex + 1,
+        __missing: specs
+          .filter((_spec: any, specIndex: number) => !picked[specIndex])
+          .map((spec: any) => spec.name),
+        id: combo.id,
+        skuCode: combo.skuCode || null,
+        combinationKey: picked.map((value: any) => value?.tempId || '').join('-'),
+        combinationName: picked.map((value: any) => value?.value || '').join('/'),
+        specValueRefs: picked.map((value: any) => value?.tempId || ''),
+        price: combo.price === '' || combo.price === undefined ? null : combo.price,
+        stock: Number(combo.stock) || 0,
+        imageUrl: combo.imageUrl || null,
+        saleable: combo.saleable || 'Y',
+      };
+    });
+
+    // 组合必须覆盖到每一个规格：缺维度就明确拦住，并告诉用户是哪几行、缺哪个规格
+    const incompleteRows = specs.length
+      ? combinations.filter((combo: any) => (combo.__missing || []).length > 0)
+      : [];
+    if (incompleteRows.length) {
+      activeTab.value = 'sku';
+      const sample = incompleteRows
+        .slice(0, 3)
+        .map((combo: any) => `第 ${combo.__rowLabel} 行（缺 ${combo.__missing.join('、')}）`)
+        .join('；');
+      createMessage.warning(
+        `有 ${incompleteRows.length} 行 SKU 组合缺少规格值：${sample}${incompleteRows.length > 3 ? ' 等' : ''}。` +
+          '请补齐这些行，或删除它们后重新生成；不完整组合不允许保存'
       );
+      return;
+    }
 
     if (specs.length && !combinations.length) {
       activeTab.value = 'sku';
@@ -1518,20 +1544,8 @@
       return;
     }
 
-    // 组合必须覆盖到每一个规格：新增规格后会缺一维，这里明确拦住并给出可执行提示
-    if (specs.length && combinations.length) {
-      const incomplete = combinations.filter((combo: any) => {
-        const refs = combo?.specValueRefs || [];
-        return refs.length !== specs.length || refs.some((ref: any) => !ref);
-      });
-      if (incomplete.length) {
-        activeTab.value = 'sku';
-        createMessage.warning(
-          `有 ${incomplete.length} 个组合缺少规格值（多因新增了规格）。请补齐这些行，或删除它们后重新生成`
-        );
-        return;
-      }
-    }
+    // 无规格商品没有 SKU，组合必须为空（否则后端会拿规格不匹配的组合去建 SKU）
+    const skuCombinations = specs.length ? combinations : [];
 
     // 商品详情（契约 3.3）：图片必须有 url、文本/富文本不能全空、视频链接可解析、每语言 ≤ 50 个
     const detailIssue = findDetailBlocksIssue();
@@ -1583,7 +1597,12 @@
           sortOrder: index,
         })),
       specs,
-      combinations,
+      // 无规格商品传空数组（显式清空），有规格时传逐行校验后的完整组合
+      combinations: skuCombinations.map((combo: any) => {
+        // 去掉只用于前端校验的临时字段，避免后端收到未知属性
+        const { __rowIndex, __rowLabel, __missing, ...rest } = combo;
+        return rest;
+      }),
       // 商品详情 / 规格参数：整体替换语义，content 传对象；空数组表示清空该商品全部语言
       detailBlocks: buildDetailBlocksPayload(),
       params: buildParamsPayload(),
