@@ -212,13 +212,16 @@
       />
       <a-space wrap>
         <span>单批处理条数：</span>
-        <a-input-number v-model:value="batchSize" :min="1" :max="1000" :precision="0" style="width: 120px" />
-        <a-button v-auth="'shop-order:compensate'" type="primary" :loading="taskLoading === 'close'" @click="runTask('close')">
-          手动触发超时关单任务
-        </a-button>
-        <a-button v-auth="'shop-order:compensate'" :loading="taskLoading === 'compensate'" @click="runTask('compensate')">
-          手动触发支付补单任务
-        </a-button>
+        <a-input-number v-model:value="batchSize" :min="1" :max="1000" :precision="0" style="width: 120px" :disabled="!canManageAllStores" />
+        <template v-if="canManageAllStores">
+          <a-button v-auth="'shop-order:compensate'" type="primary" :loading="taskLoading === 'close'" @click="runTask('close')">
+            手动触发超时关单任务
+          </a-button>
+          <a-button v-auth="'shop-order:compensate'" :loading="taskLoading === 'compensate'" @click="runTask('compensate')">
+            手动触发支付补单任务
+          </a-button>
+        </template>
+        <span v-else class="field-hint">这两个任务会扫描所有店铺的订单，仅总部/平台管理员（shop-store:manage-all）可手动触发</span>
       </a-space>
 
       <a-descriptions v-if="taskResult" bordered size="small" :column="{ xs: 2, sm: 3, xl: 6 }" class="mt-3">
@@ -235,11 +238,13 @@
 </template>
 
 <script lang="ts" setup>
-  import { computed, onMounted, ref } from 'vue';
+  import { computed, h, onMounted, ref } from 'vue';
   import dayjs, { Dayjs } from 'dayjs';
   import type { EChartsOption } from 'echarts';
+  import { Input } from 'ant-design-vue';
   import { useECharts } from '/@/hooks/web/useECharts';
   import { useMessage } from '/@/hooks/web/useMessage';
+  import { usePermission } from '/@/hooks/web/usePermission';
   import {
     statsOverview,
     statsStatus,
@@ -258,7 +263,13 @@
   } from './ShopOrder.api';
   import { formatAmount, formatRate, ORDER_TIME_FORMAT } from './ShopOrder.data';
 
-  const { createMessage } = useMessage();
+  const { createMessage, createConfirm } = useMessage();
+  const { hasPermission } = usePermission();
+  /**
+   * 运维任务会扫描**所有店铺**的订单，后端也要求 shop-store:manage-all；
+   * 前端不满足权限时不显示按钮（而不是"显示了点了才 403"）。
+   */
+  const canManageAllStores = computed(() => hasPermission('shop-store:manage-all'));
 
   // ------------------------------------------------------------------
   // 查询条件
@@ -607,10 +618,71 @@
   const taskLoading = ref<'' | 'close' | 'compensate'>('');
   const taskResult = ref<{ name: string; data: OrderTaskResult } | null>(null);
 
+  /**
+   * 批量任务二次确认。
+   *
+   * <p>旧版两个按钮直接执行：batchSize 默认 200、最高 1000，误点一次就会批量改
+   * 订单/支付状态，而且没有任何撤销入口。现在：
+   *  1) 一律先确认，写清"扫描 N 条 / 影响范围 / 不可撤销"；
+   *  2) 超过 50 条时要求**手动输入条数**才能确认，避免"连点两下就执行"。
+   */
+  function confirmTask(type: 'close' | 'compensate', size: number): Promise<void> {
+    const label = type === 'close' ? '超时关单' : '支付补单';
+    const impact = type === 'close'
+      ? `将扫描最多 ${size} 笔已过支付截止时间的待支付订单，关单前会先向渠道确认真实支付结果。`
+      : `将扫描最多 ${size} 笔结果未知的支付单，逐笔向渠道查询并把结果回写到订单。`;
+    const needTyping = size > 50;
+    const typed = ref('');
+
+    return new Promise<void>((resolve, reject) => {
+      createConfirm({
+        iconType: 'warning',
+        title: `确认执行「${label}」任务？`,
+        okText: '确认执行',
+        cancelText: '取消',
+        content: h('div', [
+          h('p', impact),
+          h('p', { style: 'color: #cf1322; font-weight: 600' }, '任务会批量改变订单/支付状态，且不可撤销。'),
+          needTyping
+            ? h('div', { style: 'margin-top: 8px' }, [
+                h('p', `本次影响条数超过 50，请手动输入「${size}」以确认：`),
+                h(Input, {
+                  value: typed.value,
+                  placeholder: String(size),
+                  'onUpdate:value': (value: any) => {
+                    typed.value = String(value ?? '');
+                  },
+                }),
+              ])
+            : null,
+        ]),
+        onOk: () => {
+          if (needTyping && typed.value.trim() !== String(size)) {
+            createMessage.warning(`请输入 ${size} 以确认执行`);
+            // 返回 reject 让确认框保持打开
+            return Promise.reject(new Error('confirm-mismatch'));
+          }
+          resolve();
+          return undefined;
+        },
+        onCancel: () => reject(new Error('cancelled')),
+      });
+    });
+  }
+
   async function runTask(type: 'close' | 'compensate') {
+    if (!canManageAllStores.value) {
+      createMessage.warning('仅总部/平台管理员可手动触发运维任务');
+      return;
+    }
     const size = Number(batchSize.value);
     if (!Number.isFinite(size) || size < 1) {
       createMessage.warning('请填写有效的单批处理条数');
+      return;
+    }
+    try {
+      await confirmTask(type, size);
+    } catch {
       return;
     }
     taskLoading.value = type;
