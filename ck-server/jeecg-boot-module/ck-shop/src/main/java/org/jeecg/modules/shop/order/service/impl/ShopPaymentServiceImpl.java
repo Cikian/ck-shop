@@ -29,6 +29,7 @@ import org.jeecg.modules.shop.order.mapper.ShopOrderRefundMapper;
 import org.jeecg.modules.shop.order.mapper.ShopPaymentNotifyLogMapper;
 import org.jeecg.modules.shop.order.pay.PaymentGateway;
 import org.jeecg.modules.shop.order.pay.PaymentGatewayRegistry;
+import org.jeecg.modules.shop.order.pay.mock.MockPayGuard;
 import org.jeecg.modules.shop.order.pay.mock.MockPaySupport;
 import org.jeecg.modules.shop.order.pay.model.PaymentModels;
 import org.jeecg.modules.shop.order.service.IShopOrderEventService;
@@ -113,6 +114,10 @@ public class ShopPaymentServiceImpl
     @Autowired
     private PaymentGatewayRegistry gatewayRegistry;
 
+    /** 模拟支付门禁（配置 + profile 双重判定，非 dev 一律不可用） */
+    @Autowired
+    private MockPayGuard mockPayGuard;
+
     @Autowired
     private IShopStockService stockService;
 
@@ -129,8 +134,14 @@ public class ShopPaymentServiceImpl
     @Autowired
     private IShopRefundService refundService;
 
-    /** 默认支付渠道。接入真实渠道后应改为 WECHAT 或 ALIPAY */
-    @Value("${ck.shop.pay.default-channel:MOCK}")
+    /**
+     * 默认支付渠道。
+     *
+     * <p><b>不再默认 MOCK</b>：旧版写死 {@code :MOCK}，配合"模拟网关默认注册"，
+     * 生产环境会静默地让所有人走模拟支付。现在必须由配置显式指定
+     * （dev 的 application-dev.yml 配 MOCK，生产配真实渠道），缺失时直接报错而不是猜一个渠道。
+     */
+    @Value("${ck.shop.pay.default-channel:}")
     private String defaultChannel;
 
     /** 支付超时时间（分钟）：与订单的 pay_deadline 保持一致 */
@@ -166,6 +177,16 @@ public class ShopPaymentServiceImpl
         }
 
         String targetChannel = StringUtils.defaultIfBlank(channel, defaultChannel).toUpperCase();
+        if (StringUtils.isBlank(targetChannel)) {
+            // 宁可报错，也不要"猜"一个渠道：默认渠道配错，用户付出去的钱会落到错误主体
+            throw new JeecgBootException("未配置默认支付渠道（ck.shop.pay.default-channel），"
+                    + "或请在前端显式传入支付渠道");
+        }
+        // 渠道白名单：模拟渠道只能在 dev 被显式启用时使用，其余情况一律按"渠道不存在"拒绝。
+        // 仅靠 gatewayRegistry 也不够——万一模拟网关被误注册到非 dev，这里仍然拦住。
+        if (PayChannel.MOCK.equalsIgnoreCase(targetChannel) && !mockPayGuard.isEnabled()) {
+            throw new JeecgBootException("模拟支付渠道未启用，请使用真实支付渠道");
+        }
         PaymentGateway gateway = gatewayRegistry.require(targetChannel);
 
         // 幂等：同一订单已有未结算的支付单就复用它，绝不产生第二笔有效支付单
@@ -685,6 +706,9 @@ public class ShopPaymentServiceImpl
     @Override
     @Transactional(rollbackFor = Exception.class)
     public boolean mockConfirm(String paymentNo, OrderContext context) {
+        // 门禁：即使有人绕过 Controller 直接调用 Service（后台任务、测试脚本），
+        // 非 dev 环境也一样拒绝，绝不允许"点一下就把订单变已支付"。
+        mockPayGuard.requireEnabled("模拟支付确认");
         ShopOrderPayment payment = getByPaymentNo(paymentNo);
         if (payment == null) {
             throw new JeecgBootException("支付单不存在");

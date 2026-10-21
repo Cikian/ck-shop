@@ -2,6 +2,7 @@ package org.jeecg.modules.shop.order.pay.impl;
 
 import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONObject;
+import jakarta.annotation.PostConstruct;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
 import org.jeecg.modules.shop.order.constant.PayChannel;
@@ -11,6 +12,7 @@ import org.jeecg.modules.shop.order.pay.model.PaymentModels;
 import org.jeecg.modules.shop.order.util.OrderNoGenerator;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Component;
 
 import javax.crypto.Mac;
@@ -42,17 +44,28 @@ import java.util.Map;
  *       这条分支能在本地被真实触发。</li>
  * </ol>
  *
- * <h3>生产环境必须关掉</h3>
- * {@code ck.shop.pay.mock.enabled=false} 会让本类不注册，
- * 于是默认渠道 MOCK 会变成"不支持的支付渠道"而直接报错——
- * 这是我们希望的失败方式：宁可报错，也不能在生产环境里让人白拿商品。
+ * <h3>生产环境必须关掉（三重门禁）</h3>
+ * <ol>
+ *   <li><b>默认关闭</b>：{@code matchIfMissing = false}，只有显式
+ *       {@code ck.shop.pay.mock.enabled=true} 才会注册本类。
+ *       历史版本这里是 {@code matchIfMissing = true}，而所有 application-*.yml 都没配这个键，
+ *       结果生产环境默认就带着一个"点一下就支付成功"的渠道。</li>
+ *   <li><b>只在 dev profile 生效</b>：{@code @Profile("dev")} 让非 dev 环境连 Bean 都不存在，
+ *       即使被人误把开关打开也不会生效。</li>
+ *   <li><b>密钥不许有默认值</b>：{@code ck.shop.pay.mock.secret} 缺失时启动直接失败。
+ *       旧版写死的 {@code ck-shop-mock-pay-secret} 是公开常量，
+ *       任何人都能拿它伪造 {@code /shop/pay/notify/MOCK} 回调。</li>
+ * </ol>
+ * 关闭后 MOCK 会变成"不支持的支付渠道"而直接报错——
+ * 这是我们希望的失败方式：宁可报错，也不能让人白拿商品。
  *
  * @author Cikian
  * @since 2026-10-14
  */
 @Slf4j
 @Component
-@ConditionalOnProperty(name = "ck.shop.pay.mock.enabled", havingValue = "true", matchIfMissing = true)
+@Profile("dev")
+@ConditionalOnProperty(name = "ck.shop.pay.mock.enabled", havingValue = "true", matchIfMissing = false)
 public class MockPaymentGateway implements PaymentGateway, MockPaySupport {
 
     /** 签名请求头 */
@@ -64,8 +77,14 @@ public class MockPaymentGateway implements PaymentGateway, MockPaySupport {
     private static final SecureRandom RANDOM = new SecureRandom();
     private static final String TIME_PATTERN = "yyyy-MM-dd HH:mm:ss";
 
-    /** 模拟渠道的签名密钥。生产接入真实渠道时会换成渠道密钥，这里的值只在校验模拟回调时使用。 */
-    @Value("${ck.shop.pay.mock.secret:ck-shop-mock-pay-secret}")
+    /**
+     * 模拟渠道的签名密钥。
+     *
+     * <p><b>没有默认值</b>：必须由 {@code CK_MOCK_PAY_SECRET} 等环境变量提供。
+     * 写死默认值等于把"伪造回调"的钥匙放在仓库里——旧版的 {@code ck-shop-mock-pay-secret}
+     * 就是这么泄露的。缺失/过短时 {@link #validateSecret()} 让应用启动失败。
+     */
+    @Value("${ck.shop.pay.mock.secret:}")
     private String mockSecret;
 
     /** 模拟"渠道拒绝"的概率（百分比 0-100）。用于验证失败分支。 */
@@ -79,6 +98,29 @@ public class MockPaymentGateway implements PaymentGateway, MockPaySupport {
     /** 回调时间戳容差（秒）：超过则认为报文来自重放攻击 */
     @Value("${ck.shop.pay.mock.notify-tolerance-seconds:300}")
     private int notifyToleranceSeconds;
+
+    /**
+     * 启动即校验密钥：宁可起不来，也不要带着可猜测的密钥对外提供"点击即支付"。
+     */
+    @PostConstruct
+    void validateSecret() {
+        if (StringUtils.isBlank(mockSecret)) {
+            throw new IllegalStateException(
+                    "模拟支付已启用（ck.shop.pay.mock.enabled=true），但未配置签名密钥 "
+                            + "ck.shop.pay.mock.secret。请通过环境变量 CK_MOCK_PAY_SECRET 提供"
+                            + "至少 32 位的随机串；代码里不再提供任何默认密钥。");
+        }
+        if (mockSecret.length() < 32) {
+            throw new IllegalStateException(
+                    "ck.shop.pay.mock.secret 长度不足 32 位，容易被暴力猜测，请更换为更长的随机串");
+        }
+        if ("ck-shop-mock-pay-secret".equals(mockSecret)) {
+            throw new IllegalStateException(
+                    "ck.shop.pay.mock.secret 仍是历史默认值 ck-shop-mock-pay-secret，"
+                            + "该值已公开泄露，任何人都能伪造模拟支付回调，请立即更换");
+        }
+        log.info("[模拟支付] 已启用（仅 dev），回调签名密钥长度={}", mockSecret.length());
+    }
 
     /**
      * 模拟"主动查询"的返回。

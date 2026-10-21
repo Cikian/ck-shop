@@ -501,6 +501,19 @@ ck:
     # 回退会让它静默展示默认店铺的商品（页面一切正常、无法察觉）。
     # 关掉后这种配置错误会直接报错，属"宁可吵也不要错"。
     allow-default-store-fallback: true
+    # 支付渠道（ck-shop）。dev 走模拟渠道；接入真实渠道后把 default-channel 改成 WECHAT/ALIPAY。
+    pay:
+      default-channel: ${CK_PAY_DEFAULT_CHANNEL:MOCK}
+      # 模拟支付：**仅 dev**。MockPaymentGateway 上是 @Profile("dev") + matchIfMissing=false，
+      # 这里不显式写 enabled: true 的话模拟网关不会注册（历史上是反过来的：不写就默认开启）。
+      mock:
+        enabled: true
+        # 回调 HMAC 密钥：**没有默认值**，必须由环境变量 CK_MOCK_PAY_SECRET 提供（≥32 位），
+        # 缺失时应用直接启动失败。代码里写死默认密钥等于把"伪造回调"的钥匙放进仓库。
+        secret: ${CK_MOCK_PAY_SECRET:}
+        # 模拟渠道拒绝概率（0-100）与处理延迟（秒）：用于验证失败/回调未到分支
+        fail-rate: ${CK_MOCK_PAY_FAIL_RATE:0}
+        delay-seconds: ${CK_MOCK_PAY_DELAY_SECONDS:0}
     # 结算价格令牌（防价格篡改/挂旧价）。
     order:
       # 签名密钥：dev 留空会退化为"进程内随机密钥"（重启即失效，仅便于本地开发）；

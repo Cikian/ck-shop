@@ -417,6 +417,13 @@ ck:
     # 【必须保持 false】解析不到店铺就报错，绝不静默回退到默认店铺。
     # 回退会让漏配 STORE_CODE 的前台站点展示默认店铺的商品（A 店卖 B 店的货，页面毫无报错）。
     allow-default-store-fallback: false
+    # 支付渠道（ck-shop）：模拟支付一律关闭；生产必须显式配置真实渠道。
+    pay:
+      # 默认渠道：留空时发起支付直接报错，绝不回退到 MOCK。
+      default-channel: ${CK_PAY_DEFAULT_CHANNEL:}
+      mock:
+        # 显式写 false：模拟网关另有 @Profile("dev") 兜底，这里保证"开没开"在配置文件里可审计。
+        enabled: false
     order:
       # 结算价格令牌签名密钥：非 dev 环境必须配置，否则 PriceTokenUtils 启动即失败；
       # 多实例部署必须各实例一致，否则 A 实例签发的令牌在 B 实例验签失败，用户无法下单。
