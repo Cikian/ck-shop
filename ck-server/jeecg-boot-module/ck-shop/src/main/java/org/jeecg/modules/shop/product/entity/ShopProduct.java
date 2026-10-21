@@ -139,7 +139,7 @@ public class ShopProduct implements Serializable {
      * 是否包邮。
      *
      * <p>库里是 {@code tinyint(1)}，这里用 {@code Boolean} 而不是 {@code Integer}：
-     * 店铺端列表接口（StoreProductCardVO）与详情接口（StoreProductDetailVO extends ShopProduct）
+     * 店铺端列表接口（StoreProductCardVO）与详情接口（StoreProductDetailVO）
      * 必须返回**同一类型**。否则同一个字段一个返回 {@code true} 另一个返回 {@code 1}，
      * 前端就得为同一个语义写两套判断，迟早出错。
      */
