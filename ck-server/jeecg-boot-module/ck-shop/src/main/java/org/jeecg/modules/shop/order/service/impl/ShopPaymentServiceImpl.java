@@ -149,6 +149,19 @@ public class ShopPaymentServiceImpl
             throw new JeecgBootException("请先登录后再支付");
         }
         ShopOrder order = requireOwnedOrder(context, orderNo);
+        /*
+         * 锁定订单行（SELECT ... FOR UPDATE，锁到事务提交）。
+         *
+         * 旧实现是"先 findPendingPayment、没有就 createPayment"，中间没有锁：
+         * 用户双击 / 前端重试两个并发请求会各自看到"还没有支付单"，于是各建一张
+         * 有效支付单。两张都能付成功，而订单只会结算一次 —— 多付的那笔只能人工退款。
+         * 加锁后第二个请求会阻塞，等第一笔支付单提交后重新查询并复用它。
+         */
+        ShopOrder lockedOrder = orderMapper.lockById(order.getId());
+        if (lockedOrder == null) {
+            throw new JeecgBootException("订单不存在或已归档");
+        }
+        order = lockedOrder;
 
         if (!"WAIT_PAY".equals(order.getOrderStatus())) {
             throw new JeecgBootException("订单当前状态为[" + order.getOrderStatus()

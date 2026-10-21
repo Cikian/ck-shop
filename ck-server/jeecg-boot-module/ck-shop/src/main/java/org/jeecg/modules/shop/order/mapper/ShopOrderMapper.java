@@ -3,6 +3,7 @@ package org.jeecg.modules.shop.order.mapper;
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
+import org.apache.ibatis.annotations.Select;
 import org.jeecg.modules.shop.order.entity.ShopOrder;
 import org.jeecg.modules.shop.order.entity.vo.OrderStatsOverviewVO;
 import org.jeecg.modules.shop.order.entity.vo.OrderStatsStatusVO;
@@ -56,6 +57,19 @@ public interface ShopOrderMapper extends BaseMapper<ShopOrder> {
     int accumulateRefundAmount(@Param("id") String id,
                                @Param("delta") BigDecimal delta,
                                @Param("operator") String operator);
+
+    /**
+     * 锁定订单行（{@code SELECT ... FOR UPDATE}）。
+     *
+     * <p>用于"先查再写"的资金场景：发起支付必须锁定订单，
+     * 否则两个并发请求会同时 {@code findPendingPayment → createPayment}，
+     * 各建一张有效支付单（用户可能真的付两次，系统只结算一次，退款很麻烦）。
+     * 锁到事务结束，第二个请求会阻塞到第一笔支付单提交后重新查询并复用它。
+     *
+     * @return 订单行；null 表示不存在或已归档
+     */
+    @Select("SELECT * FROM ck_shop_order WHERE id = #{id} AND del_flag = 0 FOR UPDATE")
+    ShopOrder lockById(@Param("id") String id);
 
     // ==================================================================
     // 统计（后台看板）
