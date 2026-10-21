@@ -9,6 +9,9 @@ rebel.xml
 ## 后端敏感配置：真实值放 .env（从 yml 抽出来的密码/密钥），只提交 .env.example
 ck-server/.env
 ck-server/**/.env
+## 管理端本地开发配置：含本机端口（PORT / VITE_PORT）等机器相关的值，只提交 .env.example
+## 注意：只忽略这一个文件；.env.development / .env.production / .env.docker 等是团队共享的构建配置，继续入库
+admin-client/.env
 ## JeecgBoot 启动时会把「在线代码生成」模板解压到运行目录的 config/ 下（运行时产物，不入库）
 **/config/jeecg/code-template-online
 
