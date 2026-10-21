@@ -559,7 +559,8 @@
 </template>
 
 <script lang="ts" setup>
-  import { computed, nextTick, reactive, ref } from 'vue';
+  import { computed, nextTick, reactive, ref, watch } from 'vue';
+  import { onBeforeRouteLeave } from 'vue-router';
   import { Empty } from 'ant-design-vue';
   import VueDraggable from 'vuedraggable';
   // 必须显式 import：模板里用的是 <j-image-upload>，靠这个 import 才能被 SFC 编译器解析。
@@ -601,6 +602,12 @@
   const confirmLoading = ref(false);
   const activeTab = ref('basic');
   const basicFormRef = ref();
+  /**
+   * 打开表单时的快照（JSON 字符串）。关闭/取消/路由离开时与当前表单比对，
+   * 有差异就提示"继续编辑 / 放弃修改"——商品表单有 7 个页签、多语言、图集、规格、
+   * SKU、详情模块，误点关闭直接丢失全部编辑，重填一次要好几分钟。
+   */
+  const initialSnapshot = ref('');
 
   const drawerWidth = '86%';
 
@@ -723,6 +730,70 @@
   };
 
   const disabled = computed(() => props.formDisabled || disableSubmit.value);
+
+  // ------------------------------------------------------------------
+  // 未保存修改（dirty）检测
+  // ------------------------------------------------------------------
+
+  /** 表单是否已被用户改过（deep watch 置位，markFormClean 复位） */
+  const dirty = ref(false);
+
+  // 只在"打开完成"之后才记录变化：初始化/回填期间的大量赋值不算用户修改
+  watch(
+    formData,
+    () => {
+      if (initialSnapshot.value) {
+        dirty.value = true;
+      }
+    },
+    { deep: true },
+  );
+
+  /** 打开表单/保存成功后调用：把当前状态记为"干净" */
+  function markFormClean() {
+    dirty.value = false;
+    initialSnapshot.value = 'ready';
+  }
+
+  /** 是否有未保存修改（只读态不提示） */
+  const isDirty = computed(() => visible.value && !disabled.value && dirty.value);
+
+  /** 无未保存修改则直接关闭；否则弹"继续编辑 / 放弃修改" */
+  function closeWithDirtyCheck(afterClose?: () => void) {
+    if (disabled.value || !isDirty.value) {
+      visible.value = false;
+      afterClose?.();
+      return;
+    }
+    createConfirm({
+      iconType: 'warning',
+      title: '有未保存的修改',
+      content: '关闭后本次修改会丢失（包括多语言文案、图集、规格、SKU 组合与商品详情模块）。',
+      okText: '放弃修改',
+      cancelText: '继续编辑',
+      onOk: () => {
+        visible.value = false;
+        afterClose?.();
+      },
+    });
+  }
+
+  // 路由离开同样要拦：抽屉还开着就切菜单，等于静默丢弃整份编辑
+  onBeforeRouteLeave((_to, _from, next) => {
+    if (!visible.value || disabled.value || !isDirty.value) {
+      next();
+      return;
+    }
+    createConfirm({
+      iconType: 'warning',
+      title: '有未保存的修改',
+      content: '离开当前页面会丢失商品表单里尚未保存的修改，确定离开吗？',
+      okText: '放弃修改并离开',
+      cancelText: '留在本页',
+      onOk: () => next(),
+      onCancel: () => next(false),
+    });
+  });
 
   /** 供父组件切换到只读详情模式 */
   function setReadonly(val: boolean) {
@@ -1209,6 +1280,9 @@
     activeDetailLang.value = languages.value[0]?.code || '';
     activeParamLang.value = languages.value[0]?.code || '';
     langFormKey.value++;
+    // 初始化完成后再打快照：之后的任何输入都算"未保存"
+    await nextTick();
+    markFormClean();
   }
 
   /** 编辑 / 详情。options.keepTab=true 用于保存后的回填，避免把用户踢回"基本信息" */
@@ -1309,6 +1383,8 @@
       activeParamLang.value = languages.value[0]?.code || '';
       await nextTick();
       langFormKey.value++;
+      // 回填完成后打快照：此时的状态视为"已保存"
+      markFormClean();
     } catch (e: any) {
       createMessage.error(e?.message || '商品详情加载失败');
     } finally {
@@ -1525,6 +1601,8 @@
         return;
       }
       createMessage.success(res.message || '保存成功');
+      // 保存成功后当前状态就是新的干净基线；否则"保存并继续编辑"时一关窗就会误报未保存
+      markFormClean();
 
       if (!continueEdit) {
         visible.value = false;
@@ -1566,7 +1644,7 @@
   }
 
   function handleCancel() {
-    visible.value = false;
+    closeWithDirtyCheck();
   }
 
   defineExpose({ add, edit, disableSubmit, setReadonly });

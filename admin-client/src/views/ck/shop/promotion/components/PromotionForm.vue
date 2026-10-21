@@ -769,7 +769,19 @@
     }
   );
 
-  defineExpose({ add, edit, submitForm });
+  /**
+   * 当前表单快照：供外层 PromotionModal 做"未保存修改"检测。
+   * 只读，不触发任何副作用。
+   */
+  function getSnapshot(): string {
+    try {
+      return JSON.stringify(formData);
+    } catch {
+      return '';
+    }
+  }
+
+  defineExpose({ add, edit, submitForm, getSnapshot });
 </script>
 
 <style lang="less" scoped>

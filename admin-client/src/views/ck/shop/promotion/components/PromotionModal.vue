@@ -21,15 +21,71 @@
 
 <script lang="ts" setup>
   import { ref, nextTick } from 'vue';
+  import { onBeforeRouteLeave } from 'vue-router';
   import PromotionForm from './PromotionForm.vue';
   import JModal from '/@/components/Modal/src/JModal/JModal.vue';
+  import { useMessage } from '/@/hooks/web/useMessage';
+
+  const { createConfirm } = useMessage();
 
   const title = ref<string>('新增活动');
   const visible = ref<boolean>(false);
   const disableSubmit = ref<boolean>(false);
   const saving = ref<boolean>(false);
   const registerForm = ref();
+  /** 打开时的表单快照：用于"关闭/取消/路由离开"时的未保存提示 */
+  const formSnapshot = ref<string>('');
   const emit = defineEmits(['register', 'success']);
+
+  /** 重新记录"干净"基线 */
+  function markClean() {
+    formSnapshot.value = registerForm.value?.getSnapshot?.() || '';
+  }
+
+  /** 有未保存修改则二次确认，否则直接关闭 */
+  function closeWithDirtyCheck() {
+    if (disableSubmit.value || !registerForm.value) {
+      visible.value = false;
+      return;
+    }
+    const current = registerForm.value?.getSnapshot?.() || '';
+    if (current === formSnapshot.value) {
+      visible.value = false;
+      return;
+    }
+    createConfirm({
+      iconType: 'warning',
+      title: '有未保存的修改',
+      content: '关闭后本次对活动与关联商品的修改会丢失，确定放弃吗？',
+      okText: '放弃修改',
+      cancelText: '继续编辑',
+      onOk: () => {
+        visible.value = false;
+      },
+    });
+  }
+
+  // 抽屉/弹窗还开着就切菜单 = 静默丢弃编辑，路由离开前先问一句
+  onBeforeRouteLeave((_to, _from, next) => {
+    if (!visible.value || disableSubmit.value || !registerForm.value) {
+      next();
+      return;
+    }
+    const current = registerForm.value?.getSnapshot?.() || '';
+    if (current === formSnapshot.value) {
+      next();
+      return;
+    }
+    createConfirm({
+      iconType: 'warning',
+      title: '有未保存的修改',
+      content: '离开当前页面会丢失促销活动里尚未保存的修改，确定离开吗？',
+      okText: '放弃修改并离开',
+      cancelText: '留在本页',
+      onOk: () => next(),
+      onCancel: () => next(false),
+    });
+  });
 
   /**
    * 新增
@@ -38,8 +94,9 @@
     title.value = '新增促销活动';
     disableSubmit.value = false;
     visible.value = true;
-    nextTick(() => {
-      registerForm.value.add();
+    nextTick(async () => {
+      await registerForm.value.add();
+      markClean();
     });
   }
 
@@ -50,8 +107,9 @@
   function edit(record) {
     title.value = disableSubmit.value ? '促销活动详情' : '编辑促销活动';
     visible.value = true;
-    nextTick(() => {
-      registerForm.value.edit(record);
+    nextTick(async () => {
+      await registerForm.value.edit(record);
+      markClean();
     });
   }
 
@@ -77,6 +135,8 @@
     saving.value = true;
     try {
       await registerForm.value.submitForm(true);
+      // 保存成功后当前状态即新的干净基线，否则"保存并继续编辑"后一关窗就误报未保存
+      markClean();
     } finally {
       saving.value = false;
     }
@@ -86,7 +146,9 @@
    * form 保存回调（只有「确认」保存成功才会走到这里）
    */
   function submitCallback() {
-    handleCancel();
+    markClean();
+    // 保存成功直接关窗，不再走未保存检查（否则会问"要不要放弃"）
+    visible.value = false;
     emit('success');
   }
 
@@ -94,7 +156,7 @@
    * 取消按钮回调事件
    */
   function handleCancel() {
-    visible.value = false;
+    closeWithDirtyCheck();
   }
 
   defineExpose({
