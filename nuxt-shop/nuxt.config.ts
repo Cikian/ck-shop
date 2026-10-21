@@ -197,6 +197,14 @@ export default defineNuxtConfig({
     storeCode: process.env.STORE_CODE || '',
 
     /**
+     * 站点名兜底（BFF `/api/store/info` 拿不到后端店铺信息时用）。
+     *
+     * 正常情况下品牌名来自 `ck_shop_store.name`；这里只在后端不可用/未配置店铺时兜底，
+     * 绝不再使用 "Nuxt Shop" 这类示例占位符。
+     */
+    storeSiteName: process.env.STORE_SITE_NAME || '',
+
+    /**
      * 本站对外访问的 origin（如 https://shop.example.com）。
      *
      * 用途：Google OAuth 的 redirect_uri 必须是一个**确定**的地址。

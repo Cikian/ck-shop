@@ -15,7 +15,10 @@ import org.jeecg.common.aspect.annotation.AutoLog;
 import org.jeecg.common.exception.JeecgBootException;
 import org.jeecg.common.system.base.controller.JeecgController;
 import org.jeecg.common.system.query.QueryGenerator;
+import org.jeecg.config.shiro.IgnoreAuth;
+import org.jeecg.modules.shop.store.StoreResolver;
 import org.jeecg.modules.shop.store.entity.ShopStore;
+import org.jeecg.modules.shop.store.entity.vo.StoreInfoVO;
 import org.jeecg.modules.shop.store.entity.vo.StoreOptionVO;
 import org.jeecg.modules.shop.store.service.IShopStoreService;
 import org.jeecgframework.poi.excel.ExcelImportUtil;
@@ -59,6 +62,27 @@ public class ShopStoreController extends JeecgController<ShopStore, IShopStoreSe
 
     @Autowired
     private IShopStoreService shopStoreService;
+
+    @Autowired
+    private StoreResolver storeResolver;
+
+    /**
+     * 店铺端公开信息（匿名）：Header/Footer/SEO 的品牌名、Logo、主题配置。
+     *
+     * <p>这是公开接口，只返回 code/name/logoUrl/themeConfig 四个字段。
+     * 店铺按请求头 X-Store-Code（或域名）解析，因此多店铺共用同一份前端代码也能拿到各自的品牌。
+     */
+    @IgnoreAuth
+    @Operation(summary = "店铺端-当前店铺公开信息")
+    @GetMapping(value = "/store-info")
+    public Result<StoreInfoVO> storeInfo(HttpServletRequest request) {
+        ShopStore store = storeResolver.resolve(request);
+        return Result.OK(new StoreInfoVO()
+                .setCode(store.getCode())
+                .setName(store.getName())
+                .setLogoUrl(store.getLogoUrl())
+                .setThemeConfig(store.getThemeConfig()));
+    }
 
     /**
      * 分页列表（管理端店铺管理页）

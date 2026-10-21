@@ -23,7 +23,7 @@
     "language": "语言"
   },
   "home": {
-    "title": "欢迎来到 Nuxt Shop",
+    "title": "欢迎来到 {name}",
     "description": "探索我们精心挑选的优质商品，享受无忧购物体验",
     "newCollection": "新品系列",
     "limitedOffer": "限时优惠",
@@ -291,7 +291,7 @@
     "profileAddresses": "收货地址",
     "profileSettings": "账户设置",
     "itemsUnit": "件",
-    "brandName": "Nuxt Shop",
+    "brandName": "Cikian Shop",
     "hotTitle": "热销爆款",
     "hotSubtitle": "人气好物 不容错过",
     "noData": "暂无数据",

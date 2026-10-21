@@ -438,14 +438,14 @@ const registerLink = computed(() => '/register')
 /**
  * 站点字标。
  *
- * ⚠️ 这里**不能**用 t('home.title')：它的值是「欢迎来到 Nuxt Shop」，
- * 放进 Logo 位置会渲染成一整句话。
+ * 品牌名来自店铺公开信息（`ck_shop_store.name`，见 /api/store/info）——
+ * 一份前端代码部署多个店铺时必须各显示各的品牌。
+ * 只有在接口不可用/未配置时才回退到 i18n 的品牌名，绝不再使用示例占位符。
  *
- * 真实店铺名在 `ck_shop_store.name`（如「户外专卖店」），但店铺端目前**没有**
- * 获取店铺信息的接口（`theme_config` 也是 NULL），所以先用这个中性字标兜底。
- * 后端补上 `GET /api/store/info` 后，这里改为读店铺名 + `logo_url` 即可。
+ * ⚠️ 这里**不能**用 t('home.title')：它的值是「欢迎来到 xxx」，放进 Logo 位置会渲染成一整句话。
  */
-const brandName = computed(() => t('shop.brandName'))
+const { storeName } = useStoreInfo()
+const brandName = computed(() => storeName.value || t('shop.brandName'))
 
 // key 里已经带 locale：切语言时 key 变化会触发 useFetch 重新请求，
 // 再写 watch: [locale] 只会让同一次切换多打一遍接口（重复请求）。

@@ -23,7 +23,7 @@
     "language": "Language"
   },
   "home": {
-    "title": "Welcome to Nuxt Shop",
+    "title": "Welcome to {name}",
     "description": "Explore our handpicked premium products and enjoy a worry-free shopping experience",
     "newCollection": "New Collection",
     "limitedOffer": "Limited Time Offer",
@@ -291,7 +291,7 @@
     "profileAddresses": "Addresses",
     "profileSettings": "Settings",
     "itemsUnit": "items",
-    "brandName": "Nuxt Shop",
+    "brandName": "Cikian Shop",
     "hotTitle": "Best sellers",
     "hotSubtitle": "Loved by our customers",
     "noData": "No data",

@@ -33,7 +33,7 @@
             <span class="brand-gradient flex h-8 w-8 items-center justify-center rounded-[10px] text-white">
               <UIcon name="lucide:zap" class="h-4 w-4" aria-hidden="true" />
             </span>
-            <span class="text-[15px] font-black tracking-tight">{{ t('shop.brandName') }}</span>
+            <span class="text-[15px] font-black tracking-tight">{{ brandName }}</span>
           </div>
           <p class="mt-3 max-w-xs text-[13px] leading-relaxed text-white/55">
             {{ t('home.description') }}
@@ -77,7 +77,7 @@
     <!-- 版权条 -->
     <div class="border-t border-white/10">
       <div class="mx-auto flex max-w-7xl flex-col gap-3 px-2 py-5 text-xs text-white/45 sm:flex-row sm:items-center sm:justify-between sm:px-3 lg:px-4">
-        <p>© {{ year }} {{ t('shop.brandName') }}. {{ t('footer.allRightsReserved') }}</p>
+        <p>© {{ year }} {{ brandName }}. {{ t('footer.allRightsReserved') }}</p>
         <div class="flex flex-wrap items-center gap-4">
           <span>{{ t('footer.privacyPolicy') }}</span>
           <span>{{ t('footer.termsOfService') }}</span>
@@ -98,6 +98,10 @@
  * 等后端字段与页面就绪后再换成真实链接（见 docs/store-redesign/后端促销字段清单.md）。
  */
 const { t } = useI18n()
+
+// 品牌名与 Header 同源（店铺公开信息），回退到 i18n 的站名
+const { storeName } = useStoreInfo()
+const brandName = computed(() => storeName.value || t('shop.brandName'))
 
 const year = new Date().getFullYear()
 

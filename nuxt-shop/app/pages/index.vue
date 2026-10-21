@@ -381,8 +381,12 @@ function loadMore() {
   pageNo.value += 1
 }
 
+// 首页标题带上真实店铺名（旧版是占位符「欢迎来到 Nuxt Shop」）
+const { storeName } = useStoreInfo()
+const siteTitle = computed(() => t('home.title', { name: storeName.value || t('shop.brandName') }))
+
 useSeoMeta({
-  title: () => t('home.title'),
+  title: () => siteTitle.value,
   description: () => t('home.description'),
 })
 </script>
