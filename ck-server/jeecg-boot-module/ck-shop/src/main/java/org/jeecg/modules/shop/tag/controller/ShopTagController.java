@@ -61,6 +61,7 @@ public class ShopTagController extends JeecgController<ShopTag, IShopTagService>
     private ShopTagTranslationMapper tagTranslationMapper;
 
     @Operation(summary = "标签-分页列表查询")
+    @RequiresPermissions("shop-tag:list")
     @GetMapping(value = "/list")
     public Result<IPage<TagListVO>> queryPageList(ShopTag shopTag,
                                                  @RequestParam(name = "pageNo", defaultValue = "1") Integer pageNo,
@@ -152,6 +153,7 @@ public class ShopTagController extends JeecgController<ShopTag, IShopTagService>
     }
 
     @Operation(summary = "标签-通过id查询")
+    @RequiresPermissions("shop-tag:list")
     @GetMapping(value = "/queryById")
     public Result<TagDTO> queryById(@RequestParam(name = "id", required = true) String id) {
         return Result.OK(shopTagService.getDtoById(id));

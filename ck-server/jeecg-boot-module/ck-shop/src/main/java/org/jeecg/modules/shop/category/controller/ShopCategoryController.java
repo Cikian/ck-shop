@@ -62,6 +62,7 @@ public class ShopCategoryController extends JeecgController<ShopCategory, IShopC
      */
     //@AutoLog(value = "商品分类-分页列表查询")
     @Operation(summary = "商品分类-分页列表查询")
+    @RequiresPermissions("shop-category:list")
     @GetMapping(value = "/list")
     public Result<IPage<ShopCategory>> queryPageList(ShopCategory shopCategory,
                                                      @RequestParam(name = "pageNo", defaultValue = "1") Integer pageNo,
@@ -151,6 +152,7 @@ public class ShopCategoryController extends JeecgController<ShopCategory, IShopC
      */
     //@AutoLog(value = "商品分类-通过id查询")
     @Operation(summary = "商品分类-通过id查询")
+    @RequiresPermissions("shop-category:list")
     @GetMapping(value = "/queryById")
     public Result<CategoryDTO> queryById(@RequestParam(name = "id", required = true) String id) {
         CategoryDTO shopCategory = shopCategoryService.getDtoById(id);

@@ -69,6 +69,7 @@ public class ShopProductController extends JeecgController<ShopProduct, IShopPro
      * 分页列表查询
      */
     @Operation(summary = "商品-分页列表查询")
+    @RequiresPermissions("shop-product:list")
     @GetMapping(value = "/list")
     public Result<IPage<ProductListVO>> queryPageList(ProductQuery query,
                                                      @RequestParam(name = "pageNo", defaultValue = "1") Integer pageNo,
@@ -144,6 +145,7 @@ public class ShopProductController extends JeecgController<ShopProduct, IShopPro
      * 通过id查询（编辑页一次性取全）
      */
     @Operation(summary = "商品-通过id查询")
+    @RequiresPermissions("shop-product:list")
     @GetMapping(value = "/queryById")
     public Result<ProductDetailVO> queryById(@RequestParam(name = "id", required = true) String id,
                                              HttpServletRequest req) {
@@ -154,6 +156,7 @@ public class ShopProductController extends JeecgController<ShopProduct, IShopPro
      * 查询某商品的 SKU 组合（列表页展开行 / SKU 库存查看）
      */
     @Operation(summary = "商品-SKU组合查询")
+    @RequiresPermissions("shop-product:list")
     @GetMapping(value = "/skuList")
     public Result<List<ProductSkuVO>> skuList(@RequestParam(name = "id", required = true) String id) {
         return Result.OK(shopProductService.listSkuByProductId(id));

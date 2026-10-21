@@ -116,6 +116,7 @@ public class ShopPromotionController extends JeecgController<ShopPromotion, ISho
      * </ul>
      */
     @Operation(summary = "促销活动-分页列表查询")
+    @RequiresPermissions("shop-promotion:list")
     @GetMapping(value = "/list")
     public Result<IPage<PromotionListVO>> queryPageList(PromotionQuery query, ShopPromotion promotion,
                                                        @RequestParam(name = "pageNo", defaultValue = "1") Integer pageNo,
@@ -156,6 +157,7 @@ public class ShopPromotionController extends JeecgController<ShopPromotion, ISho
      * 通过id查询（编辑页一次性取全：主表 + 多语言 + 关联商品）
      */
     @Operation(summary = "促销活动-通过id查询")
+    @RequiresPermissions("shop-promotion:list")
     @GetMapping(value = "/queryById")
     public Result<PromotionDTO> queryById(@RequestParam(name = "id", required = true) String id) {
         return Result.OK(shopPromotionService.getDetailById(id));

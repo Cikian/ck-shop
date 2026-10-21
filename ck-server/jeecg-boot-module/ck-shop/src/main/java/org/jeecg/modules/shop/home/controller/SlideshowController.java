@@ -190,6 +190,7 @@ public class SlideshowController {
      *
      * @param sysOrgCode 目标店铺的归属部门编码；不传时——总部看全部，运营只看本部门
      */
+    @RequiresPermissions("ck:shop:slideshow:list")
     @GetMapping("/all")
     @Operation(summary = "获取所有轮播图（以language分组）")
     public Result<?> listAll(@RequestParam(name = "sysOrgCode", required = false) String sysOrgCode) {
