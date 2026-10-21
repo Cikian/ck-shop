@@ -10,6 +10,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.jeecg.common.api.vo.Result;
 import org.jeecg.common.system.base.controller.JeecgController;
 import org.jeecg.config.shiro.IgnoreAuth;
+import org.jeecg.modules.shop.common.ShopPageUtils;
 import org.jeecg.modules.shop.product.entity.ShopProduct;
 import org.jeecg.modules.shop.product.entity.vo.StoreProductCardVO;
 import org.jeecg.modules.shop.product.entity.vo.StoreProductDetailVO;
@@ -73,19 +74,22 @@ public class ShopStoreProductController extends JeecgController<ShopProduct, ISh
                                                   @RequestParam(name = "pageSize", defaultValue = "12") Integer pageSize,
                                                   HttpServletRequest req) {
         String language = lang != null && !lang.isEmpty() ? lang : resolveLanguage(req);
+        // 匿名接口：pageSize 必须夹在 [1, 60]，否则 pageSize=1000000 会把全店商品一次拉走
+        int safePageNo = ShopPageUtils.pageNo(pageNo);
+        int safePageSize = ShopPageUtils.storePageSize(pageSize);
         String orgCode = orgScopeResolver.resolveStoreOrgCodeOrNull(storeResolver.resolve(req));
         if (orgCode == null) {
             // 店铺没绑部门（或部门被删）属于**数据缺失**，不是配置错误：
             // 返回空目录而不是 500，整站仍可访问；日志里已经 warn，运维能发现
-            return Result.OK(emptyPage(pageNo, pageSize));
+            return Result.OK(emptyPage(safePageNo, safePageSize));
         }
         return Result.OK(shopProductService.queryStorePageList(
-                orgCode, language, categoryId, keyword, pageNo, pageSize, sortBy));
+                orgCode, language, categoryId, keyword, safePageNo, safePageSize, sortBy));
     }
 
     /** 店铺归属缺失时返回的空分页（与正常分页结构一致，前端无需特殊处理） */
     private IPage<StoreProductCardVO> emptyPage(Integer pageNo, Integer pageSize) {
-        Page<StoreProductCardVO> empty = new Page<>(pageNo == null ? 1 : pageNo, pageSize == null ? 12 : pageSize, 0);
+        Page<StoreProductCardVO> empty = new Page<>(ShopPageUtils.pageNo(pageNo), ShopPageUtils.storePageSize(pageSize), 0);
         empty.setRecords(new ArrayList<>());
         return empty;
     }

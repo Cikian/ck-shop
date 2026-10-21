@@ -15,8 +15,10 @@ import org.jeecg.modules.shop.category.entity.ShopCategoryTranslation;
 import org.jeecg.modules.shop.category.mapper.ShopCategoryMapper;
 import org.jeecg.modules.shop.category.mapper.ShopCategoryTranslationMapper;
 import org.jeecg.modules.shop.common.ShopOrgUtils;
+import org.jeecg.modules.shop.common.ShopPageUtils;
 import org.jeecg.modules.shop.common.ShopSqlUtils;
 import org.jeecg.modules.shop.common.ShopOrgUtils;
+import org.jeecg.modules.shop.common.ShopPageUtils;
 import org.jeecg.modules.shop.common.util.ShopAuditUtils;
 import org.jeecg.modules.shop.product.entity.ShopProduct;
 import org.jeecg.modules.shop.product.entity.ShopProductDetailBlock;
@@ -216,7 +218,7 @@ public class ShopProductServiceImpl extends ServiceImpl<ShopProductMapper, ShopP
         // 与前台保持一致：sort_order 升序（数字越小越靠前）
         wrapper.orderByAsc("sort_order").orderByDesc("create_time");
 
-        Page<ShopProduct> page = new Page<>(pageNo == null ? 1 : pageNo, pageSize == null ? 10 : pageSize);
+        Page<ShopProduct> page = new Page<>(ShopPageUtils.pageNo(pageNo), ShopPageUtils.adminPageSize(pageSize));
         IPage<ShopProduct> pageList = super.page(page, wrapper);
 
         List<ShopProduct> records = pageList.getRecords();
@@ -240,7 +242,7 @@ public class ShopProductServiceImpl extends ServiceImpl<ShopProductMapper, ShopP
 
     /** 空分页（可见域无交集 / 标签筛不出商品时用），保持与正常分页一致的 current/size */
     private Page<ProductListVO> emptyListPage(Integer pageNo, Integer pageSize) {
-        Page<ProductListVO> empty = new Page<>(pageNo == null ? 1 : pageNo, pageSize == null ? 10 : pageSize, 0);
+        Page<ProductListVO> empty = new Page<>(ShopPageUtils.pageNo(pageNo), ShopPageUtils.adminPageSize(pageSize), 0);
         empty.setRecords(new ArrayList<>());
         return empty;
     }
@@ -506,7 +508,7 @@ public class ShopProductServiceImpl extends ServiceImpl<ShopProductMapper, ShopP
         // 排序：只按白名单映射到固定列，未知取值回落到原有默认排序（详见 applyStoreSort）
         applyStoreSort(wrapper, sortBy);
 
-        Page<ShopProduct> page = new Page<>(pageNo == null ? 1 : pageNo, pageSize == null ? 12 : pageSize);
+        Page<ShopProduct> page = new Page<>(ShopPageUtils.pageNo(pageNo), ShopPageUtils.storePageSize(pageSize));
         IPage<ShopProduct> productPage = super.page(page, wrapper);
 
         List<ShopProduct> records = productPage.getRecords();

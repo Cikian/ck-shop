@@ -9,6 +9,7 @@ import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
 import org.jeecg.common.exception.JeecgBootException;
+import org.jeecg.modules.shop.common.ShopPageUtils;
 import org.jeecg.modules.shop.common.util.ShopAuditUtils;
 import org.jeecg.modules.shop.product.entity.ShopProduct;
 import org.jeecg.modules.shop.product.entity.ShopProductTranslation;
@@ -328,8 +329,8 @@ public class ShopPromotionServiceImpl extends ServiceImpl<ShopPromotionMapper, S
     @Override
     public IPage<PromotionListVO> queryPageList(PromotionQuery query, QueryWrapper<ShopPromotion> base,
                                                 Integer pageNo, Integer pageSize) {
-        int current = pageNo == null ? 1 : pageNo;
-        int size = pageSize == null ? 10 : pageSize;
+        int current = ShopPageUtils.pageNo(pageNo);
+        int size = ShopPageUtils.adminPageSize(pageSize);
 
         // 数据可见域 = 店铺筛选 ∩ 账号可见店铺。
         // 两种"空"必须分清：null = 不限（管理员未筛选）；空列表 = 没有交集 → 空分页。
@@ -428,7 +429,8 @@ public class ShopPromotionServiceImpl extends ServiceImpl<ShopPromotionMapper, S
 
     /** 空分页（可见域无交集 / 无记录时用），保持与正常分页一致的 current/size */
     private Page<PromotionListVO> emptyListPage(Integer pageNo, Integer pageSize) {
-        Page<PromotionListVO> empty = new Page<>(pageNo == null ? 1 : pageNo, pageSize == null ? 10 : pageSize, 0);
+        Page<PromotionListVO> empty = new Page<>(
+                ShopPageUtils.pageNo(pageNo), ShopPageUtils.adminPageSize(pageSize), 0);
         empty.setRecords(new ArrayList<>());
         return empty;
     }
