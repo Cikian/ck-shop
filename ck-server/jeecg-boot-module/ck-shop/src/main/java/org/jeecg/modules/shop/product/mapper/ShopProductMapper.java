@@ -73,6 +73,30 @@ public interface ShopProductMapper extends BaseMapper<ShopProduct> {
     int countAliveByCategoryId(@Param("categoryId") String categoryId);
 
     /**
+     * 店铺端"这件商品在本店可见吗"的**最轻量**判断：只返回主键，不拉规格/图集/多语言。
+     *
+     * 用途：评价、收藏之外那些"只想要一个能/不能看结论"的接口，
+     * 没必要为了做一次可见性校验把整个商品详情查一遍（那是十几条 SQL）。
+     * 条件与商品详情完全一致：未删除 + 已上架 + 归属部门前缀匹配。
+     *
+     * @return 商品主键；不可见时返回 null
+     */
+    @Select("SELECT id FROM ck_shop_product WHERE id = #{productId} AND del_flag = 0 AND status = 'Y' "
+            + "AND sys_org_code LIKE CONCAT(#{orgCode}, '%') LIMIT 1")
+    String selectVisibleProductId(@Param("productId") String productId, @Param("orgCode") String orgCode);
+
+    /**
+     * 同上，但按 {@code spu_code} 查（前台路由/分享链接用的是 spu_code）。
+     *
+     * 存在的意义：店铺端详情接口两种标识都收（见 {@code getStoreDetail}），
+     * 而评价等"附属资源"接口如果只认主键，就会出现"商品能打开、评价区却是空的"
+     * —— 前端只是把路由参数原样传过来而已。这里让两边口径一致。
+     */
+    @Select("SELECT id FROM ck_shop_product WHERE spu_code = #{spuCode} AND del_flag = 0 AND status = 'Y' "
+            + "AND sys_org_code LIKE CONCAT(#{orgCode}, '%') LIMIT 1")
+    String selectVisibleProductIdBySpuCode(@Param("spuCode") String spuCode, @Param("orgCode") String orgCode);
+
+    /**
      * 增量维护收藏数（{@code ck_shop_product.favorite_count}）。
      *
      * <p>为什么是"库内自增"而不是"读出来 +1 再写回"：后者在并发收藏下必然丢更新

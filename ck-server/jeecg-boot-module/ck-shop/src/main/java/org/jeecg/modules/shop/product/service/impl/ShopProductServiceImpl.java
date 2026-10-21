@@ -38,6 +38,7 @@ import org.jeecg.modules.shop.product.entity.vo.DetailBlockVO;
 import org.jeecg.modules.shop.product.entity.vo.ParamVO;
 import org.jeecg.modules.shop.product.entity.vo.ProductDetailVO;
 import org.jeecg.modules.shop.product.entity.vo.ProductListVO;
+import org.jeecg.modules.shop.product.entity.vo.ProductStatVO;
 import org.jeecg.modules.shop.product.entity.vo.ProductSkuVO;
 import org.jeecg.modules.shop.product.entity.vo.StoreDetailBlockVO;
 import org.jeecg.modules.shop.product.entity.vo.StoreParamVO;
@@ -55,6 +56,7 @@ import org.jeecg.modules.shop.product.mapper.ShopProductSkuCombinationMapper;
 import org.jeecg.modules.shop.product.mapper.ShopProductSkuCombinationValueMapper;
 import org.jeecg.modules.shop.product.mapper.ShopProductSpecMapper;
 import org.jeecg.modules.shop.product.mapper.ShopProductSpecValueMapper;
+import org.jeecg.modules.shop.product.mapper.ShopProductStatMapper;
 import org.jeecg.modules.shop.product.mapper.ShopProductTranslationMapper;
 import org.jeecg.modules.shop.product.service.IShopProductService;
 import org.jeecg.modules.shop.product.util.ShopDetailBlockSupport;
@@ -123,6 +125,15 @@ public class ShopProductServiceImpl extends ServiceImpl<ShopProductMapper, ShopP
      * 保存越界拒绝；读取时越界按 0–500 夹取（历史脏数据不能把页面打成 500）。
      */
     private static final int MAX_BLOCK_MARGIN = 500;
+
+    /**
+     * 近 30 天销量的时间窗口。
+     * 由 Java 算好起点传给 SQL，SQL 里就不出现 DATE_SUB / now() 这类方言函数。
+     */
+    private static final long MONTH_MILLIS = 30L * 24 * 60 * 60 * 1000;
+
+    @Autowired
+    private ShopProductStatMapper shopProductStatMapper;
 
     @Autowired
     private ShopProductTranslationMapper translationMapper;
@@ -665,6 +676,9 @@ public class ShopProductServiceImpl extends ServiceImpl<ShopProductMapper, ShopP
         // （允许「模块回退到中文、参数用英文」这种组合，绝不逐条混排）
         vo.setDetailBlocks(loadStoreDetailBlocks(productId, lang));
         vo.setParams(loadStoreParams(productId, lang));
+        // 统计四项（已售 / 评分 / 收藏数 / 评价数）用实时聚合值覆盖冗余列：
+        // 详情页上这三个数字是用户最先看到、也最容易被"编出来的数字"毁掉信任的地方
+        applyStats(vo, loadStats(Collections.singletonList(productId)).get(productId));
         return vo;
     }
 
@@ -1597,6 +1611,13 @@ public class ShopProductServiceImpl extends ServiceImpl<ShopProductMapper, ShopP
         Map<String, TagRefVO> tagRefs = new HashMap<>();
         Map<String, List<String>> tagIdsByProduct = new HashMap<>();
         Map<String, List<ShopProductSkuCombination>> combinations = new HashMap<>();
+        /**
+         * 真实统计（销量 / 收藏数 / 评价数与评分），一次批量查询填好。
+         *
+         * 键是商品主键。为什么非要放进上下文而不是在 {@code toStoreCardVO} 里逐个查：
+         * 那就是典型的 N+1 —— 一页 12 条商品会打出 12 次聚合查询，还各自扫一遍订单明细表。
+         */
+        Map<String, ProductStatVO> stats = new HashMap<>();
     }
 
     private ListContext buildListContext(List<String> productIds, String language) {
@@ -1609,6 +1630,9 @@ public class ShopProductServiceImpl extends ServiceImpl<ShopProductMapper, ShopP
         ctx.translations = translationMapper.selectByProductIds(productIds).stream()
                 .collect(Collectors.groupingBy(ShopProductTranslation::getProductId));
         ctx.combinations = loadCombinationMap(productIds);
+
+        // 真实统计（销量 / 收藏 / 评价）：一次批量聚合，覆盖掉冗余列里的陈旧值
+        ctx.stats = loadStats(productIds);
 
         // 标签
         List<Map<String, Object>> relations = tagMapper.selectProductTagRelations(productIds);
@@ -1677,6 +1701,64 @@ public class ShopProductServiceImpl extends ServiceImpl<ShopProductMapper, ShopP
                 .collect(Collectors.groupingBy(ShopProductSkuCombination::getProductId));
     }
 
+    /**
+     * 批量加载商品的**真实统计**（销量 / 收藏数 / 评价数与评分）。
+     *
+     * 为什么店铺端展示一律走这里、而不是直接读 {@code ck_shop_product} 上的同名列：
+     * 那些列是冗余缓存，历史上被演示脚本写死过（已售 2068 / 4.5 分 / 2653 收藏全是编的）。
+     * 缓存只用于排序与后台统计；**凡是买家能看到的数字，都必须现算**。
+     */
+    private Map<String, ProductStatVO> loadStats(List<String> productIds) {
+        if (CollectionUtils.isEmpty(productIds)) {
+            return new HashMap<>();
+        }
+        List<String> distinct = productIds.stream()
+                .filter(StringUtils::isNotBlank)
+                .distinct()
+                .collect(Collectors.toList());
+        if (distinct.isEmpty()) {
+            return new HashMap<>();
+        }
+        Date monthSince = new Date(System.currentTimeMillis() - MONTH_MILLIS);
+        Map<String, ProductStatVO> stats = new HashMap<>(distinct.size());
+        for (ProductStatVO stat : shopProductStatMapper.selectStatByProductIds(distinct, monthSince)) {
+            if (stat != null && StringUtils.isNotBlank(stat.getProductId())) {
+                stats.put(stat.getProductId(), stat);
+            }
+        }
+        return stats;
+    }
+
+    /**
+     * 把真实统计覆盖到出参上（缺数据时按 0 处理）。
+     *
+     * 覆盖而不是"缓存列优先"：缓存可能过期或被人手工改过，
+     * 而买家看到的数字一旦与真实流水对不上，就是最伤信任的那种 bug。
+     */
+    private void applyStats(StoreProductCardVO vo, ProductStatVO stat) {
+        if (vo == null) {
+            return;
+        }
+        vo.setSalesCount(stat == null || stat.getSalesCount() == null ? 0 : stat.getSalesCount());
+        vo.setMonthSalesCount(stat == null || stat.getMonthSalesCount() == null ? 0 : stat.getMonthSalesCount());
+        vo.setFavoriteCount(stat == null || stat.getFavoriteCount() == null ? 0 : stat.getFavoriteCount());
+        vo.setReviewCount(stat == null || stat.getReviewCount() == null ? 0 : stat.getReviewCount());
+        vo.setRatingAvg(stat == null || stat.getRatingAvg() == null
+                ? BigDecimal.ZERO.setScale(1) : stat.getRatingAvg());
+    }
+
+    private void applyStats(StoreProductDetailVO vo, ProductStatVO stat) {
+        if (vo == null) {
+            return;
+        }
+        vo.setSalesCount(stat == null || stat.getSalesCount() == null ? 0 : stat.getSalesCount());
+        vo.setMonthSalesCount(stat == null || stat.getMonthSalesCount() == null ? 0 : stat.getMonthSalesCount());
+        vo.setFavoriteCount(stat == null || stat.getFavoriteCount() == null ? 0 : stat.getFavoriteCount());
+        vo.setReviewCount(stat == null || stat.getReviewCount() == null ? 0 : stat.getReviewCount());
+        vo.setRatingAvg(stat == null || stat.getRatingAvg() == null
+                ? BigDecimal.ZERO.setScale(1) : stat.getRatingAvg());
+    }
+
     private ProductListVO toProductListVO(ShopProduct product, ListContext ctx) {
         ProductListVO vo = new ProductListVO();
         BeanUtils.copyProperties(product, vo);
@@ -1724,11 +1806,8 @@ public class ShopProductServiceImpl extends ServiceImpl<ShopProductMapper, ShopP
         // 这里显式再写一遍是为了让"哪些字段要透出到店铺端"这件事在代码里可见，
         // 而不是藏在一次隐式拷贝里（将来实体加字段却忘了透出时，这里会立刻暴露）。
         vo.setOriginalPrice(product.getOriginalPrice());
-        vo.setSalesCount(product.getSalesCount());
-        vo.setMonthSalesCount(product.getMonthSalesCount());
-        vo.setReviewCount(product.getReviewCount());
-        vo.setRatingAvg(product.getRatingAvg());
-        vo.setFavoriteCount(product.getFavoriteCount());
+        // 统计四项一律用**实时聚合值**覆盖，绝不透出冗余列（那几列历史上被写过假数据）
+        applyStats(vo, ctx.stats.get(product.getId()));
         vo.setViewCount(product.getViewCount());
         // 实体与 VO 都是 Boolean（见 ShopProduct.freeShipping 的注释）：
         // NULL 归一成 false，前端就只需要处理"是/否"两种情况。

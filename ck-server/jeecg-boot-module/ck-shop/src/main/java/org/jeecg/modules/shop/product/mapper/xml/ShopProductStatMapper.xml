@@ -1,0 +1,125 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="org.jeecg.modules.shop.product.mapper.ShopProductStatMapper">
+
+    <!--
+      真实统计聚合（销量 / 收藏 / 评价）。
+
+      写法要点：
+        1) 三个 LEFT JOIN 的派生表各自先按 product_id 聚合，再与商品表关联 —— 不要写成
+           相关子查询（每行扫一遍订单表），一页 12 条商品就是 12 次全表扫描。
+        2) 派生表内部就用 IN 把范围夹紧到本页商品：否则每次翻页都会把整张订单明细表聚合一遍。
+        3) 全部用 COALESCE 归一：没有订单 / 没有收藏 / 没有评价的商品返回 0 而不是 NULL，
+           前端拿到 0 就按"该项不渲染"，省掉一层判空。
+        4) 近 30 天的时间起点由 Java 传参（#{monthSince}），避免 DATE_SUB / now() 这类方言函数 ——
+           同一份 SQL 在 MySQL / PostgreSQL / Oracle / 达梦下都能跑。
+    -->
+    <select id="selectStatByProductIds"
+            resultType="org.jeecg.modules.shop.product.entity.vo.ProductStatVO">
+        SELECT p.id                                                        AS productId,
+               COALESCE(s.soldQty, 0)                                      AS salesCount,
+               COALESCE(s.monthSoldQty, 0)                                 AS monthSalesCount,
+               COALESCE(f.favoriteQty, 0)                                  AS favoriteCount,
+               COALESCE(r.reviewQty, 0)                                    AS reviewCount,
+               COALESCE(r.ratingAvg, 0)                                    AS ratingAvg
+        FROM ck_shop_product p
+        LEFT JOIN (
+            SELECT oi.product_id                                            AS pid,
+                   SUM(oi.quantity - COALESCE(oi.refund_quantity, 0))        AS soldQty,
+                   SUM(CASE WHEN o.pay_time &gt;= #{monthSince}
+                            THEN oi.quantity - COALESCE(oi.refund_quantity, 0)
+                            ELSE 0 END)                                     AS monthSoldQty
+            FROM ck_shop_order_item oi
+            INNER JOIN ck_shop_order o ON o.id = oi.order_id
+            WHERE o.del_flag = 0
+              -- PAID 与 PARTIAL_REFUND 都是"收过钱"；全额退款后订单会变成 CANCELLED/REFUNDED，自动掉出统计
+              AND o.pay_status IN ('PAID', 'PARTIAL_REFUND')
+              AND o.order_status NOT IN ('CANCELLED', 'CLOSED')
+              AND oi.product_id IN
+              <foreach collection="productIds" item="pid" open="(" separator="," close=")">
+                  #{pid}
+              </foreach>
+            GROUP BY oi.product_id
+        ) s ON s.pid = p.id
+        LEFT JOIN (
+            SELECT fa.product_id                                            AS pid,
+                   COUNT(*)                                                 AS favoriteQty
+            FROM ck_shop_favorite fa
+            WHERE fa.del_flag = 0
+              AND fa.product_id IN
+              <foreach collection="productIds" item="pid" open="(" separator="," close=")">
+                  #{pid}
+              </foreach>
+            GROUP BY fa.product_id
+        ) f ON f.pid = p.id
+        LEFT JOIN (
+            SELECT rv.product_id                                            AS pid,
+                   COUNT(*)                                                 AS reviewQty,
+                   ROUND(AVG(rv.rating), 1)                                 AS ratingAvg
+            FROM ck_shop_product_review rv
+            WHERE rv.del_flag = 0
+              AND rv.status = 'Y'
+              AND rv.product_id IN
+              <foreach collection="productIds" item="pid" open="(" separator="," close=")">
+                  #{pid}
+              </foreach>
+            GROUP BY rv.product_id
+        ) r ON r.pid = p.id
+        WHERE p.id IN
+        <foreach collection="productIds" item="pid" open="(" separator="," close=")">
+            #{pid}
+        </foreach>
+    </select>
+
+    <!--
+      把上面同一口径算出的值写回 ck_shop_product 的冗余列。
+
+      子查询只碰"别的表"（订单 / 收藏 / 评价），不与被更新的 ck_shop_product 自引用，
+      因此不会触发 MySQL 的 "You can't specify target table for update in FROM clause"。
+    -->
+    <update id="refreshProductStats">
+        UPDATE ck_shop_product
+        SET sales_count = COALESCE((
+                SELECT SUM(oi.quantity - COALESCE(oi.refund_quantity, 0))
+                FROM ck_shop_order_item oi
+                INNER JOIN ck_shop_order o ON o.id = oi.order_id
+                WHERE oi.product_id = #{productId}
+                  AND o.del_flag = 0
+                  AND o.pay_status IN ('PAID', 'PARTIAL_REFUND')
+                  AND o.order_status NOT IN ('CANCELLED', 'CLOSED')
+            ), 0),
+            month_sales_count = COALESCE((
+                SELECT SUM(oi.quantity - COALESCE(oi.refund_quantity, 0))
+                FROM ck_shop_order_item oi
+                INNER JOIN ck_shop_order o ON o.id = oi.order_id
+                WHERE oi.product_id = #{productId}
+                  AND o.del_flag = 0
+                  AND o.pay_status IN ('PAID', 'PARTIAL_REFUND')
+                  AND o.order_status NOT IN ('CANCELLED', 'CLOSED')
+                  AND o.pay_time &gt;= #{monthSince}
+            ), 0),
+            favorite_count = COALESCE((
+                SELECT COUNT(*)
+                FROM ck_shop_favorite fa
+                WHERE fa.product_id = #{productId}
+                  AND fa.del_flag = 0
+            ), 0),
+            review_count = COALESCE((
+                SELECT COUNT(*)
+                FROM ck_shop_product_review rv
+                WHERE rv.product_id = #{productId}
+                  AND rv.del_flag = 0
+                  AND rv.status = 'Y'
+            ), 0),
+            rating_avg = COALESCE((
+                SELECT ROUND(AVG(rv.rating), 1)
+                FROM ck_shop_product_review rv
+                WHERE rv.product_id = #{productId}
+                  AND rv.del_flag = 0
+                  AND rv.status = 'Y'
+            ), 0)
+        WHERE id = #{productId}
+          AND del_flag = 0
+    </update>
+
+</mapper>

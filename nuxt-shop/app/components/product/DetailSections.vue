@@ -11,7 +11,7 @@
 
   区块数据来源（契约 4.2）：
     规格参数 = 新字段 params（KV）优先，为空时回退历史自动行 specRows；
-    用户评价 = 真实汇总（0 值不渲染）；
+    用户评价 = 真实汇总（分数 + 星级分布）+ 分页评价列表，条数为 0 时整块不渲染；
     商品详情 = description（简介，清洗后）+ detailBlocks（模块渲染），都空显示「暂无商品描述」；
     类似推荐 = 同分类真实商品。
 -->
@@ -86,30 +86,124 @@
         </dl>
       </section>
 
-      <!-- 2. 用户评价：后端没有评价接口，只展示真实汇总（评分 + 评价数）；无数据整块不渲染 -->
-      <section v-if="hasReview" ref="reviewSection" class="border-t border-[var(--color-line-soft)] py-10">
+      <!--
+        2. 用户评价（真实数据：汇总 + 星级分布 + 分页列表）
+
+        「0 值不渲染」：是否出现整块（以及锚点里的「用户评价」）只由 reviewTotal 决定 ——
+        reviewTotal === 0 时这块彻底不渲染，绝不会出现"0 分 / 0 条评价"的空壳。
+
+        布局：汇总卡（左）+ 星级分布（右）在桌面并排、移动端上下堆叠；下方是评价列表 + 加载更多。
+        锚点 id 仍为 review（页面内 #review 直达），滚动/高亮仍由上面的 ref 驱动。
+      -->
+      <section
+        v-if="hasReviewSection"
+        id="review"
+        ref="reviewSection"
+        class="border-t border-[var(--color-line-soft)] py-10"
+      >
         <h2 class="flex items-center gap-2 text-lg font-black text-[var(--color-ink)]">
           <span class="h-5 w-1 rounded-full bg-[var(--color-brand-500)]" aria-hidden="true"></span>
           {{ t('shop.anchorReview') }}
         </h2>
-        <div class="mt-5 flex flex-wrap items-center gap-x-6 gap-y-4">
-          <div v-if="rating !== null" class="flex items-baseline gap-1">
-            <span class="text-4xl font-black leading-none tabular text-[var(--color-brand-600)]">{{ ratingText }}</span>
-          </div>
-          <div class="space-y-2">
-            <div v-if="rating !== null" class="flex items-center gap-0.5" aria-hidden="true">
-              <UIcon
-                v-for="star in 5"
-                :key="`star-${star}`"
-                name="lucide:star"
-                class="h-4 w-4"
-                :class="star <= ratingStars ? 'fill-current text-[var(--color-accent-500)]' : 'text-[var(--color-line)]'"
-              />
+
+        <!-- 加载失败只留一行提示：不弹窗、不阻塞下方的商品详情等区块 -->
+        <p v-if="reviewError" class="mt-3 inline-flex items-center gap-1.5 text-[13px] text-[var(--color-error-600)]">
+          <UIcon name="lucide:circle-alert" class="h-4 w-4" aria-hidden="true" />
+          {{ t('review.loadError') }}
+        </p>
+
+        <!-- 汇总 + 星级分布 -->
+        <div
+          v-if="reviewSummary"
+          class="mt-5 flex flex-col gap-5 rounded-2xl bg-[var(--color-surface-secondary)] p-4 sm:p-5 lg:flex-row lg:items-center lg:gap-10"
+        >
+          <!-- 左：大分数 + 实心/空心星 + 条数（条数与列表同源，都来自 summary） -->
+          <div class="flex shrink-0 flex-wrap items-center gap-x-4 gap-y-2 lg:w-40 lg:flex-col lg:items-start lg:gap-y-1.5">
+            <div class="flex items-baseline gap-1">
+              <span class="tabular text-4xl font-black leading-none text-[var(--color-brand-600)]">{{ ratingAvgText }}</span>
+              <span class="text-[13px] text-[var(--color-muted)]">/ 5</span>
             </div>
-            <p v-if="reviewCount > 0" class="text-[13px] text-[var(--color-muted)]">
-              {{ t('shop.reviewCount', { count: reviewCount }) }}
-            </p>
+            <div class="space-y-1.5">
+              <div class="flex items-center gap-0.5" aria-hidden="true">
+                <UIcon
+                  v-for="star in 5"
+                  :key="`summary-star-${star}`"
+                  name="lucide:star"
+                  class="h-4 w-4"
+                  :class="star <= summaryStars ? 'fill-current text-[var(--color-accent-500)]' : 'text-[var(--color-line)]'"
+                />
+              </div>
+              <p class="text-[13px] text-[var(--color-muted)]">
+                {{ t('shop.reviewCount', { count: reviewTotalCount }) }}
+              </p>
+            </div>
           </div>
+
+          <!-- 右：5→1 五行分布，进度条宽度按占比（reviewBucketPercent，总数为 0 时是 0 而不是 NaN） -->
+          <div class="min-w-0 flex-1">
+            <p class="text-[13px] font-bold text-[var(--color-ink)]">{{ t('review.distributionTitle') }}</p>
+            <div class="mt-2 space-y-1.5">
+              <div
+                v-for="row in distributionRows"
+                :key="`distribution-${row.rating}`"
+                class="flex items-center gap-2.5"
+              >
+                <span class="inline-flex w-8 shrink-0 items-center justify-end gap-0.5 text-[13px] tabular text-[var(--color-muted)]">
+                  {{ row.rating }}
+                  <UIcon name="lucide:star" class="h-3 w-3 fill-current text-[var(--color-accent-500)]" aria-hidden="true" />
+                </span>
+                <span class="h-2 min-w-0 flex-1 overflow-hidden rounded-full bg-[var(--color-line)]">
+                  <span
+                    class="block h-full rounded-full bg-[var(--color-accent-500)]"
+                    :style="{ width: `${row.percent}%` }"
+                  ></span>
+                </span>
+                <span class="w-9 shrink-0 text-right text-[13px] tabular text-[var(--color-muted)]">{{ row.count }}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 评价列表：昵称（匿名走 i18n）/ 星级 / 日期 / 规格（空则整行不渲染）/ 内容（空则只剩星级） -->
+        <ul v-if="reviewList.length" class="mt-5 divide-y divide-[var(--color-line-soft)]">
+          <li
+            v-for="(review, index) in reviewList"
+            :key="`${review.id || 'review'}-${index}`"
+            class="py-5 first:pt-1 last:pb-0"
+          >
+            <div class="flex flex-wrap items-center gap-x-3 gap-y-1.5">
+              <span class="text-[13px] font-bold text-[var(--color-ink)]">{{ reviewName(review) }}</span>
+              <span class="flex items-center gap-0.5" aria-hidden="true">
+                <UIcon
+                  v-for="star in 5"
+                  :key="`${review.id || index}-star-${star}`"
+                  name="lucide:star"
+                  class="h-3.5 w-3.5"
+                  :class="star <= review.rating ? 'fill-current text-[var(--color-accent-500)]' : 'text-[var(--color-line)]'"
+                />
+              </span>
+              <span class="sr-only">{{ review.rating }} / 5</span>
+              <span v-if="review.createTime" class="tabular text-[13px] text-[var(--color-muted)]">{{ reviewDate(review.createTime) }}</span>
+            </div>
+            <p v-if="review.skuName" class="mt-1 break-words text-[13px] text-[var(--color-muted)]">{{ review.skuName }}</p>
+            <p
+              v-if="review.content"
+              class="mt-2 whitespace-pre-line break-words text-[15px] leading-relaxed text-[var(--color-ink-soft)]"
+            >{{ review.content }}</p>
+          </li>
+        </ul>
+
+        <!-- 加载更多：只负责 emit，取数在页面里（loadMore）；请求中禁用并换文案 -->
+        <div v-if="reviewHasMore" class="mt-6 flex justify-center">
+          <button
+            type="button"
+            class="ui-pill ui-pill-ghost h-10 px-5 text-[13px] disabled:cursor-not-allowed disabled:opacity-45"
+            :disabled="reviewLoadingMore"
+            :aria-busy="reviewLoadingMore ? 'true' : undefined"
+            @click="emit('load-more')"
+          >
+            {{ reviewLoadingMore ? t('review.loadingMore') : t('review.loadMore') }}
+          </button>
         </div>
       </section>
 
@@ -155,6 +249,8 @@ import type {
   StoreDetailBlock,
   StoreProductParam,
 } from '~~/types/shop-product'
+import type { StoreReview, StoreReviewSummary } from '~~/types/shop-review'
+import { reviewBucketPercent, reviewStars } from '~~/types/shop-review'
 import { sanitizeHtml } from '~~/utils/sanitize-html'
 import ProductDetailBlocks from './ProductDetailBlocks.vue'
 
@@ -169,12 +265,21 @@ const props = withDefaults(defineProps<{
   productTitle?: string
   /** 规格参数行（后端真实字段拼出，可能为空 → 整块不渲染） */
   specRows: { labelKey: string; value: string }[]
-  /** 是否有评价数据（评分或评价数）→ 决定区块与锚点是否出现 */
-  hasReview: boolean
-  rating: number | null
-  ratingText: string
-  ratingStars: number
-  reviewCount: number
+  /** 评价汇总（null = 还没有数据/加载失败）：只负责画分数与分布，不决定区块是否出现 */
+  reviewSummary?: StoreReviewSummary | null
+  /** 已加载的评价列表（第一页 + 追加的页） */
+  reviews?: StoreReview[]
+  /**
+   * 真实评价总条数 —— **唯一**决定评价区（含锚点「用户评价」）是否出现的依据。
+   * 0 条时整块不渲染（项目铁律：0 值不渲染）。
+   */
+  reviewTotal: number
+  /** 还有下一页 → 显示「加载更多」 */
+  reviewHasMore?: boolean
+  /** 正在追加下一页（按钮禁用 + 换文案） */
+  reviewLoadingMore?: boolean
+  /** 评价请求失败的可读文案；非空时只渲染一行提示，不弹窗、不阻塞其它区块 */
+  reviewError?: string
   /** 是否有推荐商品（决定是否生成「为你推荐」锚点；区块本身在页面里全宽渲染） */
   hasRelated: boolean
 }>(), {
@@ -182,7 +287,15 @@ const props = withDefaults(defineProps<{
   detailBlocks: () => [],
   params: () => [],
   productTitle: '',
+  reviewSummary: null,
+  reviews: () => [],
+  reviewHasMore: false,
+  reviewLoadingMore: false,
+  reviewError: '',
 })
+
+/** 「加载更多」只发事件：取数（loadMore）属于页面的职责 */
+const emit = defineEmits<{ 'load-more': [] }>()
 
 const { t } = useI18n()
 
@@ -194,6 +307,36 @@ const hasSpecSection = computed(() => paramRows.value.length > 0 || props.specRo
 /** 简介与富文本同一条清洗管线（契约第五节：渲染端再过一遍白名单） */
 const sanitizedDescription = computed(() => sanitizeHtml(props.description))
 const hasDescription = computed(() => sanitizedDescription.value.length > 0)
+
+// ===== 用户评价（真实数据）=====
+/** 只有真实存在评价（条数 > 0）才渲染评价区；0 条 → 区块与锚点都不出现 */
+const hasReviewSection = computed(() => props.reviewTotal > 0 && !!props.reviewSummary)
+const reviewList = computed(() => props.reviews ?? [])
+/** 大分数：summary 已归一化（reviewCount > 0 时才可能是非 0），模板里不再对可空值做运算 */
+const ratingAvgText = computed(() => (props.reviewSummary ? props.reviewSummary.ratingAvg.toFixed(1) : ''))
+const summaryStars = computed(() => reviewStars(props.reviewSummary?.ratingAvg ?? null))
+/** 条数与列表同源：都取 summary.reviewCount，不各算一套 */
+const reviewTotalCount = computed(() => props.reviewSummary?.reviewCount ?? 0)
+/** 5→1 五行分布 + 进度条宽度；总数为 0 时百分比是 0（reviewBucketPercent 已挡 NaN） */
+const distributionRows = computed(() => {
+  const total = props.reviewSummary?.reviewCount ?? 0
+  return (props.reviewSummary?.distribution ?? []).map(bucket => ({
+    rating: bucket.rating,
+    count: bucket.count,
+    percent: reviewBucketPercent(bucket.count, total),
+  }))
+})
+
+/** 昵称：匿名（或后端没给昵称）一律显示 i18n 的「匿名用户」——三语站点不把中文写死在模板里 */
+function reviewName(review: StoreReview): string {
+  if (review.anonymous || !review.username) return t('review.anonymous')
+  return review.username
+}
+
+/** 时间只显示到日：createTime 是后端统一格式的 yyyy-MM-dd HH:mm:ss */
+function reviewDate(createTime: string): string {
+  return createTime.slice(0, 10)
+}
 
 // ===== 吸顶锚点导航 =====
 // 顺序与模板一致：规格参数 → 用户评价 → 商品详情 → 类似推荐（契约 4.1）
@@ -219,7 +362,8 @@ const stickyTop = ref('var(--nav-total-height)')
 const anchorItems = computed<{ id: AnchorId; labelKey: string; el: HTMLElement | null }[]>(() => {
   const items: { id: AnchorId; labelKey: string; el: HTMLElement | null }[] = []
   if (hasSpecSection.value) items.push({ id: 'spec', labelKey: 'shop.anchorSpec', el: specSection.value })
-  if (props.hasReview) items.push({ id: 'review', labelKey: 'shop.anchorReview', el: reviewSection.value })
+  // 评价锚点只在真的有评价（reviewTotal > 0 且拿到汇总）时出现：点了没反应的死锚点不该存在
+  if (hasReviewSection.value) items.push({ id: 'review', labelKey: 'shop.anchorReview', el: reviewSection.value })
   items.push({ id: 'detail', labelKey: 'shop.anchorDetail', el: detailSection.value })
   if (props.hasRelated) items.push({ id: 'recommend', labelKey: 'shop.anchorRecommend', el: null })
   return items

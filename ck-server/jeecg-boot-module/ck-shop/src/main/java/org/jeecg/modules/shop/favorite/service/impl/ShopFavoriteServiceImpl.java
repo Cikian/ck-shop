@@ -12,15 +12,17 @@ import org.jeecg.modules.shop.favorite.entity.vo.FavoriteStatusVO;
 import org.jeecg.modules.shop.favorite.mapper.ShopFavoriteMapper;
 import org.jeecg.modules.shop.favorite.service.FavoriteContext;
 import org.jeecg.modules.shop.favorite.service.IShopFavoriteService;
-import org.jeecg.modules.shop.product.entity.ShopProduct;
+import org.jeecg.modules.shop.product.entity.vo.ProductStatVO;
 import org.jeecg.modules.shop.product.entity.vo.StoreProductCardVO;
 import org.jeecg.modules.shop.product.mapper.ShopProductMapper;
+import org.jeecg.modules.shop.product.mapper.ShopProductStatMapper;
 import org.jeecg.modules.shop.product.service.IShopProductService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
@@ -51,11 +53,17 @@ import java.util.Map;
 @Service
 public class ShopFavoriteServiceImpl extends ServiceImpl<ShopFavoriteMapper, ShopFavorite> implements IShopFavoriteService {
 
+    /** 近 30 天起点（回读统计时传给 SQL，避免 DATE_SUB 这类方言函数） */
+    private static final long MONTH_MILLIS = 30L * 24 * 60 * 60 * 1000;
+
     @Autowired
     private IShopProductService shopProductService;
 
     @Autowired
     private ShopProductMapper shopProductMapper;
+
+    @Autowired
+    private ShopProductStatMapper shopProductStatMapper;
 
     // ==================================================================
     // 状态查询
@@ -213,15 +221,30 @@ public class ShopFavoriteServiceImpl extends ServiceImpl<ShopFavoriteMapper, Sho
 
     /**
      * 变更后回读商品当前收藏数。
-     * 回读失败（商品刚好被删）时退回"卡片的旧值 + 本次增量夹到 0"的兜底，
+     *
+     * <p>读的是**收藏关系表的实时 COUNT**，不是 {@code ck_shop_product.favorite_count}：
+     * 那个冗余列在演示数据里被写死过（2653 条收藏是编的），只修一次数据不保证以后不再漂移，
+     * 而"点完收藏按钮上的数字和我的收藏列表对不上"是最容易被用户发现的那种不一致。
+     *
+     * <p>统计查询失败（商品刚好被删）时退回"卡片的旧值 + 本次增量夹到 0"的兜底，
      * 而不是把 null 抛给前端 —— 心形状态已经变更成功，不该因为一个展示数字报错。
      */
     private Integer loadFavoriteCount(String productId, Integer fallback) {
-        ShopProduct product = shopProductMapper.selectById(productId);
-        if (product != null && product.getFavoriteCount() != null) {
-            return product.getFavoriteCount();
+        try {
+            List<ProductStatVO> stats = shopProductStatMapper.selectStatByProductIds(
+                    Collections.singletonList(productId), monthSince());
+            if (!stats.isEmpty() && stats.get(0) != null && stats.get(0).getFavoriteCount() != null) {
+                return Math.max(stats.get(0).getFavoriteCount(), 0);
+            }
+        } catch (Exception e) {
+            log.warn("回读商品[{}]收藏数失败，使用兜底值", productId, e);
         }
         return fallback == null ? 0 : Math.max(fallback, 0);
+    }
+
+    /** 近 30 天起点（统计 SQL 需要，Java 侧算好以避免 SQL 方言函数） */
+    private Date monthSince() {
+        return new Date(System.currentTimeMillis() - MONTH_MILLIS);
     }
 
     private FavoriteStatusVO buildStatus(String productId, boolean favorited, Integer favoriteCount) {

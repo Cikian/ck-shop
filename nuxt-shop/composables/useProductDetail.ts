@@ -132,13 +132,18 @@ export const useProductDetail = () => {
    */
   const hasPriceRange = computed(() => (!!product.value && isPriceRange(product.value)))
 
-  /** 评分：无评价时 resolveRating 返回 null → 整块不渲染 */
+  /**
+   * 评分：无评价时 resolveRating 返回 null → 统计行里这一项不渲染。
+   *
+   * ⚠️ 这里的 rating / reviewCount 都来自商品接口（后端已改为**实时聚合评价表**的真实值），
+   * 只用于**统计行**的一个数字；评价区（分数 + 星级分布 + 列表）走 composables/useReviews.ts，
+   * 那边才是权威来源。两处口径由同一份聚合 SQL 保证一致（见 docs/真实统计与评价模块-接口契约.md）。
+   */
   const rating = computed(() => (product.value ? resolveRating(product.value) : null))
-  /** 评分的展示值 / 星星数在脚本里算好，模板只做渲染（避免模板里对可空值做运算） */
+  /** 评分的展示值在脚本里算好，模板只做渲染（避免模板里对可空值做运算） */
   const ratingText = computed(() => (rating.value === null ? '' : rating.value.toFixed(1)))
-  const ratingStars = computed(() => (rating.value === null ? 0 : Math.round(rating.value)))
 
-  /** 统计行：三项全无数据时整行不渲染（收藏数优先用收藏接口回读的最新值） */
+  /** 统计行：三项全无数据时整行不渲染（收藏数优先用收藏接口回读的最新值，那也是真实 COUNT） */
   const displayFavoriteCount = computed(() => favoriteCount.value ?? product.value?.favoriteCount ?? 0)
   const hasAnyStat = computed(() =>
     !!product.value
@@ -159,10 +164,8 @@ export const useProductDetail = () => {
     return rows
   })
 
-  /** 评价模块：有评分或有评价数才渲染 */
-  const hasReview = computed(() =>
-    !!product.value && (rating.value !== null || product.value.reviewCount > 0),
-  )
+  /** 评价区（分数/分布/列表）**不在这里**：见 composables/useReviews.ts 的 useProductReviews，
+   *  它按商品主键实时拉评价接口，0 条时整块不渲染。 */
 
   /** 展示库存：命中 SKU 用 SKU 库存，否则用商品总库存 */
   const displayStock = computed(() => combination.value?.stock ?? product.value?.stock ?? 0)
@@ -275,11 +278,9 @@ export const useProductDetail = () => {
     hasPriceRange,
     rating,
     ratingText,
-    ratingStars,
     displayFavoriteCount,
     hasAnyStat,
     specRows,
-    hasReview,
     displayStock,
     maxQuantity,
     unitPrice,

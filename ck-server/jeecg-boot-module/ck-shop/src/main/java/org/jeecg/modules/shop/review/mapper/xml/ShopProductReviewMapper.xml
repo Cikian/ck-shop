@@ -1,0 +1,83 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="org.jeecg.modules.shop.review.mapper.ShopProductReviewMapper">
+
+    <!--
+      星级分布：一次 GROUP BY 出所有桶。
+      循环查 5 次（WHERE rating = 1/2/3/4/5）能得到同样结果，但那是 5 次往返，
+      而且 5 次结果之间可能夹进别人的新评价，加起来跟总数对不上。
+    -->
+    <select id="selectRatingBuckets" resultType="java.util.Map">
+        SELECT rating AS rating,
+               COUNT(*) AS cnt
+        FROM ck_shop_product_review
+        WHERE product_id = #{productId}
+          AND del_flag = 0
+          AND status = 'Y'
+        GROUP BY rating
+    </select>
+
+    <!--
+      待评价明细：订单表 ⋈ 明细表 ⟕ 评价表。
+
+      LEFT JOIN 评价表而不是 NOT EXISTS，是为了让"已评价"的行也返回（前端要把它置灰成「已评价」）；
+      只返回未评价的行会让用户困惑"我买过的东西怎么不见了"。
+    -->
+    <select id="selectReviewableItems"
+            resultType="org.jeecg.modules.shop.review.entity.vo.StoreReviewableItemVO">
+        SELECT oi.id                                              AS orderItemId,
+               oi.product_id                                      AS productId,
+               oi.product_name                                    AS productName,
+               oi.sku_name                                        AS skuName,
+               oi.product_image                                   AS productImage,
+               oi.quantity                                        AS quantity,
+               CASE WHEN rv.id IS NULL THEN 0 ELSE 1 END          AS reviewed
+        FROM ck_shop_order_item oi
+        INNER JOIN ck_shop_order o ON o.id = oi.order_id
+        LEFT JOIN ck_shop_product_review rv
+               ON rv.order_item_id = oi.id AND rv.del_flag = 0
+        WHERE o.order_no = #{orderNo}
+          AND o.user_id = #{userId}
+          AND o.del_flag = 0
+          AND oi.del_flag = 0
+          AND o.pay_status IN ('PAID', 'PARTIAL_REFUND')
+          AND o.order_status NOT IN ('CANCELLED', 'CLOSED')
+        ORDER BY oi.create_time ASC, oi.id ASC
+    </select>
+
+    <!-- 提交前资格查询：订单状态、归属店铺、买家，全部由库里的订单明细反查，不信任前端传参 -->
+    <select id="selectReviewTarget"
+            resultType="org.jeecg.modules.shop.review.entity.vo.ReviewTargetVO">
+        SELECT oi.id                AS orderItemId,
+               oi.product_id        AS productId,
+               oi.product_name      AS productName,
+               oi.sku_name          AS skuName,
+               oi.product_image     AS productImage,
+               oi.quantity          AS quantity,
+               oi.sku_id            AS skuId,
+               o.id                 AS orderId,
+               o.order_no           AS orderNo,
+               o.store_id           AS storeId,
+               o.store_org_code     AS storeOrgCode,
+               o.user_id            AS userId,
+               o.pay_status         AS payStatus,
+               o.order_status       AS orderStatus
+        FROM ck_shop_order_item oi
+        INNER JOIN ck_shop_order o ON o.id = oi.order_id
+        WHERE oi.id = #{orderItemId}
+          AND o.user_id = #{userId}
+          AND o.del_flag = 0
+          AND oi.del_flag = 0
+        LIMIT 1
+    </select>
+
+    <!-- 已评价检查（辅助提示用；防重靠唯一索引 uk_review_order_item） -->
+    <select id="selectReviewIdByOrderItem" resultType="java.lang.String">
+        SELECT id
+        FROM ck_shop_product_review
+        WHERE order_item_id = #{orderItemId}
+          AND del_flag = 0
+        LIMIT 1
+    </select>
+
+</mapper>

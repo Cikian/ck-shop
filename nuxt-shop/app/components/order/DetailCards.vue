@@ -2,8 +2,12 @@
   订单详情正文卡片：商品明细 / 金额明细 / 收货信息 / 支付单 / 退款单 / 订单时间线
 
   从 pages/orders/[orderNo].vue 拆出（订单详情页拆组件第一步）。
-  这些卡片是**只读展示**：数据全部由 props 传入，唯一交互是「撤销退款」——
-  它只把事件抛回页面（页面持有弹层与提交状态），组件本身不发请求。
+  这些卡片是**只读展示**：数据全部由 props 传入，交互只有两处 ——「撤销退款」与
+  商品行内的「去评价」—— 它们都只把事件抛回页面（页面持有弹层与提交状态），
+  组件本身不发请求。
+
+  商品行的「去评价 / 已评价」由 reviewItems（useOrderReviews().items）决定：
+  按 orderItemId ↔ 订单行 id 匹配；匹配不到的行不渲染任何评价入口。
 
   金额只做两位小数格式化、不做任何运算；标签（订单/支付/退款状态）一律用后端字段；
   "这一行该不该渲染"统一走 utils/orderRefund.ts 的 hasNumber（有值含 0 即渲染）。
@@ -17,11 +21,11 @@
             </h2>
           </header>
           <ul class="divide-y divide-[var(--color-line-soft)]">
-            <li v-for="(item, index) in items" :key="item.id || index" class="flex gap-3 px-4 py-4">
+            <li v-for="(row, index) in rows" :key="row.item.id || index" class="flex gap-3 px-4 py-4">
               <span class="h-[68px] w-[68px] shrink-0 overflow-hidden rounded-[var(--radius-tile)] bg-[var(--color-line-soft)]">
                 <ShopImage
-                  :src="item.productImage"
-                  :alt="item.productName || ''"
+                  :src="row.item.productImage"
+                  :alt="row.item.productName || ''"
                   width="68"
                   height="68"
                   class="h-full w-full object-cover"
@@ -29,23 +33,48 @@
                 />
               </span>
               <div class="min-w-0 flex-1">
-                <p class="line-clamp-2 text-[14px] font-bold text-[var(--color-ink)]">{{ item.productName || '—' }}</p>
-                <p class="mt-1 truncate text-[12px] text-[var(--color-muted)]">{{ item.skuName || t('cart.noSpec') }}</p>
-                <p v-if="item.promotionTitle" class="mt-1 truncate text-[12px] text-[var(--color-brand-600)]">
-                  {{ t('order.promotion') }}：{{ item.promotionTitle }}
+                <p class="line-clamp-2 text-[14px] font-bold text-[var(--color-ink)]">{{ row.item.productName || '—' }}</p>
+                <p class="mt-1 truncate text-[12px] text-[var(--color-muted)]">{{ row.item.skuName || t('cart.noSpec') }}</p>
+                <p v-if="row.item.promotionTitle" class="mt-1 truncate text-[12px] text-[var(--color-brand-600)]">
+                  {{ t('order.promotion') }}：{{ row.item.promotionTitle }}
                 </p>
-                <p v-if="item.refundQuantity" class="mt-1 text-[12px] text-[var(--color-warning-600)]">
-                  {{ t('order.refundedQuantity', { count: item.refundQuantity }) }}
-                  <span v-if="isPositive(item.refundAmount)">· {{ format(item.refundAmount) }}</span>
+                <p v-if="row.item.refundQuantity" class="mt-1 text-[12px] text-[var(--color-warning-600)]">
+                  {{ t('order.refundedQuantity', { count: row.item.refundQuantity }) }}
+                  <span v-if="isPositive(row.item.refundAmount)">· {{ format(row.item.refundAmount) }}</span>
                 </p>
               </div>
               <div class="shrink-0 text-right">
-                <p class="text-[13px] tabular text-[var(--color-ink)]">{{ format(item.price) }}</p>
-                <p class="mt-1 text-[12px] tabular text-[var(--color-muted)]">× {{ item.quantity ?? 0 }}</p>
-                <p class="mt-1 text-[13px] font-bold tabular text-[var(--color-ink)]">{{ format(item.actualAmount ?? item.productAmount) }}</p>
+                <p class="text-[13px] tabular text-[var(--color-ink)]">{{ format(row.item.price) }}</p>
+                <p class="mt-1 text-[12px] tabular text-[var(--color-muted)]">× {{ row.item.quantity ?? 0 }}</p>
+                <p class="mt-1 text-[13px] font-bold tabular text-[var(--color-ink)]">{{ format(row.item.actualAmount ?? row.item.productAmount) }}</p>
+                <!--
+                  「去评价」入口：只在这一行出现在待评价明细里时才渲染。
+                  整单没有可评价项 → reviewItems 为空 → 这里什么都没有（不显示任何入口）。
+                  互斥：已评价的行只给不可点的「已评价」，绝不出现第二颗按钮。
+                -->
+                <button
+                  v-if="row.reviewable && !row.reviewable.reviewed"
+                  type="button"
+                  class="mt-2 inline-flex h-8 cursor-pointer items-center rounded-full border border-[var(--color-brand-300)] px-3.5 text-[12px] font-medium text-[var(--color-brand-600)] transition-colors duration-200 hover:border-[var(--color-brand-500)] hover:bg-[var(--color-brand-50)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-brand-500)] motion-reduce:transition-none"
+                  :aria-label="reviewEntryLabel(row.item)"
+                  @click="row.reviewable && emit('review', row.reviewable)"
+                >
+                  {{ t('review.pendingEntry') }}
+                </button>
+                <span
+                  v-else-if="row.reviewable"
+                  class="mt-2 inline-flex h-8 items-center gap-1 rounded-full bg-[var(--color-surface-secondary)] px-3.5 text-[12px] font-medium text-[var(--color-muted)]"
+                >
+                  <UIcon name="lucide:check" class="h-3.5 w-3.5" aria-hidden="true" />
+                  {{ t('review.pendingDone') }}
+                </span>
               </div>
             </li>
           </ul>
+          <!-- 待评价明细拉取失败：如实说明，而不是让入口静静消失 -->
+          <p v-if="reviewLoadFailed" class="border-t border-[var(--color-line-soft)] px-4 py-3 text-[12px] text-[var(--color-muted)]">
+            {{ t('review.loadError') }}
+          </p>
         </section>
 
         <!-- 金额明细：全部来自后端 StoreOrderDetailVO，前端只做两位小数格式化 -->
@@ -275,29 +304,65 @@ import type {
   OrderPaymentVO,
   OrderRefundVO,
 } from '~~/composables/useOrderDetail'
+import type { StoreReviewableItem } from '~~/types/shop-review'
 import { isPositive } from '~~/composables/useApiError'
 import { useStorePrice } from '~~/composables/useProducts'
 import { hasNumber, isWithdrawable, refundReasonKey } from '~~/utils/orderRefund'
 
-defineProps<{
+const props = withDefaults(defineProps<{
   detail: OrderDetailVO
   items: OrderItemVO[]
   payments: OrderPaymentVO[]
   refunds: OrderRefundVO[]
   events: OrderEventVO[]
-}>()
+  /** 待评价明细（composables/useReviews.ts 的 items）：为空 = 整单没有可评价项 */
+  reviewItems?: StoreReviewableItem[]
+  /** 待评价明细拉取失败（页面传入；只用于如实提示，不影响商品行本身的展示） */
+  reviewLoadFailed?: boolean
+}>(), {
+  reviewItems: () => [],
+  reviewLoadFailed: false,
+})
 
 const emit = defineEmits<{
   /** 点「撤销退款」：弹层与提交由页面负责 */
   (e: 'withdraw', refund: OrderRefundVO): void
+  /** 点「去评价」：把这一行对应的待评价明细交给页面（页面打开弹窗并提交） */
+  (e: 'review', item: StoreReviewableItem): void
 }>()
 
 const { t } = useI18n()
 const { format } = useStorePrice()
 
+/**
+ * 订单行 + 该行的评价状态。
+ *
+ * 匹配键是 orderItemId ↔ 订单行 id（后端两处是同一个主键）。
+ * 用 computed 一次算好，避免在模板 v-for 里反复查表 —— 也避免模板里出现 `!` 断言。
+ */
+const rows = computed(() => {
+  const byItemId = new Map<string, StoreReviewableItem>()
+  for (const reviewable of props.reviewItems) {
+    if (reviewable.orderItemId) byItemId.set(reviewable.orderItemId, reviewable)
+  }
+  return props.items.map(item => ({
+    item,
+    reviewable: item.id ? byItemId.get(String(item.id)) ?? null : null,
+  }))
+})
+
 /** 退款原因 code → 界面文案（映射表在 utils/orderRefund.ts，与后端字典一致） */
 function refundReasonLabel(reason: string): string {
   const key = refundReasonKey(reason)
   return key ? t(key) : reason
+}
+
+/**
+ * 「去评价」按钮的 aria-label：多行明细时按钮文字全是"去评价"，
+ * 读屏用户逐个 Tab 过去分不清是哪件商品，所以把商品名一起报出来。
+ */
+function reviewEntryLabel(item: OrderItemVO): string {
+  const name = String(item.productName ?? '').trim()
+  return name ? `${t('review.pendingEntry')} ${name}` : t('review.pendingEntry')
 }
 </script>

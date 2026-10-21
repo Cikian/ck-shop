@@ -121,14 +121,17 @@
 
         <!-- 商品明细 / 金额明细 / 收货信息 / 支付单 / 退款单 / 订单时间线
              组件见 components/order/DetailCards.vue：只读展示，数据由 props 传入；
-             「撤销退款」只把事件抛回本页（弹层与提交状态在这里） -->
+             「撤销退款」「去评价」都只把事件抛回本页（弹层与提交状态在这里） -->
         <OrderDetailCards
           :detail="detail"
           :items="items"
           :payments="payments"
           :refunds="refunds"
           :events="events"
+          :review-items="reviewItems"
+          :review-load-failed="reviewLoadFailed"
           @withdraw="askWithdraw"
+          @review="openReview"
         />
       </div>
       </Transition>
@@ -204,6 +207,16 @@
       :items="items"
       @applied="onRefundApplied"
     />
+
+    <!-- 评价提交弹窗：入口在商品明细行内（OrderDetailCards 抛 review 事件） -->
+    <OrderReviewDialog
+      :open="reviewState.open"
+      :item="reviewState.item"
+      :submitting="reviewSubmitting"
+      :error-message="reviewState.error"
+      @close="reviewState.open = false"
+      @submit="onReviewSubmit"
+    />
   </div>
 </template>
 <script setup lang="ts">
@@ -212,17 +225,23 @@ definePageMeta({ middleware: 'auth' })
 
 import { useStorePrice } from '~~/composables/useProducts'
 import { useOrderDetail } from '~~/composables/useOrderDetail'
+import { extractReviewErrorMessage, useOrderReviews } from '~~/composables/useReviews'
+import type { StoreReviewableItem } from '~~/types/shop-review'
 
 /**
  * 订单详情（渲染层）。
  *
  * 展示：状态 / 金额明细 / 商品 / 收货信息 / 物流 / 支付单 / 退款单 / 时间线。
- * 操作：取消订单 / 去支付 / 确认收货 / 申请退款 / 撤销退款。
+ * 操作：取消订单 / 去支付 / 确认收货 / 申请退款 / 撤销退款 / 去评价（商品行内）。
  *
  * 数据、派生与全部操作都在 composables/useOrderDetail.ts：
  *   1) 四个订单级操作按钮的可见性**只用后端下发的 canPay / canCancel / canReceive / canRefund**；
  *   2) 所有"中文标签"（订单状态、支付单状态、退款状态与类型、事件类型）都用后端字段；
  *   3) 金额只做两位小数格式化，不做任何运算。
+ *
+ * 另有一份独立数据源 composables/useReviews.ts（待评价明细）：
+ *   只用来渲染商品行内的「去评价 / 已评价」，提交走它的 submit()，
+ *   成功后它自己把该行标记为已评价 —— 本页不做"自己 +1"之类的本地心算。
  *
  * 本文件只保留模板直接依赖的两件事：i18n 文案（t）与金额格式化（format）、正数判断（isPositive）。
  */
@@ -253,6 +272,66 @@ const {
   confirmWithdraw,
   onRefundApplied,
 } = useOrderDetail()
+
+/**
+ * 待评价明细（商品行内的「去评价」入口）。
+ *
+ * - 未登录时 composable 内部直接把列表置空且**不发请求**（不产生 401 噪音），
+ *   所以这里不需要额外的错误态：没有入口 = 没有可评价项，不是报错；
+ * - 每行的入口由 items 逐行决定（页面本身不汇总，hasPending 交给行内逻辑），
+ *   整单没有可评价项时 items 为空 → 页面上一个入口都不出现；
+ * - 提交成功后 composable 会把该行 reviewed 置为 true，入口自动变成不可点的「已评价」。
+ */
+const {
+  items: reviewItems,
+  loading: reviewLoading,
+  submitting: reviewSubmitting,
+  load: loadReviews,
+  submit: submitReview,
+  error: reviewError,
+} = useOrderReviews(orderNo)
+
+const toast = useToast()
+
+/** 弹窗状态：打开的是哪一行 + 上一次提交失败时后端返回的可读文案 */
+const reviewState = reactive<{ open: boolean; item: StoreReviewableItem | null; error: string }>({
+  open: false,
+  item: null,
+  error: '',
+})
+
+/** 明细还在请求中时不要提前显示"评价加载失败" */
+const reviewLoadFailed = computed(() => !reviewLoading.value && !!reviewError.value)
+
+function openReview(item: StoreReviewableItem) {
+  reviewState.item = item
+  reviewState.error = ''
+  reviewState.open = true
+}
+
+/**
+ * 提交评价（请求由 composable 发出，本页只做"成功关闭 + 提示 / 失败就地显示"）。
+ * 失败时**不动** reviewState.item 之外的任何东西：弹窗保持打开，
+ * 用户已选的星级与已写的内容都在弹窗自己的 ref 里，不会被清空。
+ */
+async function onReviewSubmit(payload: {
+  orderItemId: string
+  rating: number
+  content: string
+  anonymous: boolean
+}) {
+  reviewState.error = ''
+  try {
+    await submitReview(payload)
+    reviewState.open = false
+    toast.add({ title: t('review.submitSuccess'), color: 'success', icon: 'lucide:check' })
+  } catch (error) {
+    reviewState.error = extractReviewErrorMessage(error, t('review.submitFailed'))
+  }
+}
+
+// 订单详情由 useOrderDetail 在 onMounted 里取（同一套写法），这里补上待评价明细
+onMounted(loadReviews)
 
 useSeoMeta({
   title: () => t('order.detailTitle'),

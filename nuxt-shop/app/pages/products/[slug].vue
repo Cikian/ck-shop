@@ -232,12 +232,14 @@
               :params="product.params"
               :product-title="product.title"
               :spec-rows="specRows"
-              :has-review="hasReview"
-              :rating="rating"
-              :rating-text="ratingText"
-              :rating-stars="ratingStars"
-              :review-count="product.reviewCount ?? 0"
+              :review-summary="reviewSummary"
+              :reviews="reviewRecords"
+              :review-total="reviewTotal"
+              :review-has-more="reviewHasMore"
+              :review-loading-more="reviewLoadingMore"
+              :review-error="reviewError"
               :has-related="related.length > 0"
+              @load-more="loadMoreReviews"
             />
           </div>
         </div>
@@ -306,6 +308,7 @@ import type { SpecSelection, StoreProductCard, StoreProductPage } from '~~/types
 import { formatCompactCount } from '~~/types/shop-product'
 import { useStorePrice } from '~~/composables/useProducts'
 import { useProductDetail } from '~~/composables/useProductDetail'
+import { useProductReviews } from '~~/composables/useReviews'
 import { useStickyAside } from '~~/composables/useStickyAside'
 import { extractCartErrorMessage, useCart } from '~~/composables/useCart'
 import { extractFavoriteErrorMessage } from '~~/composables/useFavorites'
@@ -339,7 +342,8 @@ import { useAuth } from '~~/composables/useAuth'
  *   评分 / 评价数 / 销量 / 收藏数为 0 时不渲染对应元素；
  *   规格参数优先用后端新字段 params（KV），为空时才回退真实字段（spuCode / categoryName）拼；
  *   商品详情 = description（简介）+ detailBlocks（结构化模块），两者都空显示「暂无商品描述」；
- *   评价模块只展示真实汇总（ratingAvg + reviewCount），后端没有评价接口就**不编造评价列表**。
+ *   评价区（真实数据，2026-10 本轮）：汇总分数 / 条数 / 星级分布与评价列表都来自 /api/review，
+ *     汇总与列表同源；`reviewTotal === 0` 时整块（含锚点「用户评价」）不渲染，绝不留空壳。
  */
 const route = useRoute()
 const { t, locale } = useI18n()
@@ -381,11 +385,9 @@ const {
   hasPriceRange,
   rating,
   ratingText,
-  ratingStars,
   displayFavoriteCount,
   hasAnyStat,
   specRows,
-  hasReview,
   displayStock,
   maxQuantity,
   totalPrice,
@@ -399,6 +401,35 @@ const {
   hasFastTag,
   hasTopTag,
 } = useProductDetail()
+
+// ===== 用户评价（真实数据，见 composables/useReviews.ts）=====
+// 刻意**不在 setup 顶层 await**：本页要保持 setup 同步、首屏不被多一次 RTT 阻塞。
+// 所以评价在商品数据到手后补拉一次（页面其余部分照常先渲染），商品切换时由 watch 重拉。
+// 汇总（分数/条数/分布）与首页列表来自同一个接口（/api/review），不会各算一套。
+//
+// ⚠️ 这里传的是**商品主键**，不是路由参数 slug：slug 是 spu_code（DEMO-OUT-001 那种），
+// 评价接口按 productId 取商品；传 slug 会得到"商品不存在"→ 空评价 → 评价区永远不出现。
+// 后端虽然也兼容 spu_code，但前端按主键传是最不容易出错的口径。
+const reviewProductId = computed(() => product.value?.id)
+
+const {
+  summary: reviewSummary,
+  records: reviewRecords,
+  total: reviewTotal,
+  hasMore: reviewHasMore,
+  loadingMore: reviewLoadingMore,
+  error: reviewError,
+  refresh: refreshReviews,
+  loadMore: loadMoreReviews,
+} = useProductReviews(reviewProductId)
+
+/**
+ * 商品主键到手（首屏 SSR 数据 hydrate 同步可见）或商品切换时重拉评价。
+ * immediate: true 让首次加载不需要额外依赖 onMounted 的时序；id 为空时 composable 直接跳过请求。
+ */
+watch(reviewProductId, (id) => {
+  if (id) void refreshReviews()
+}, { immediate: true })
 
 // ===== 桌面两栏吸顶 + 底部动作条对齐 + 图集高度 + 动作条释放 =====
 // asideRef 是右列 grid 子项（整行高度），panelRef 是内部 sticky 面板；
@@ -464,6 +495,8 @@ watch(
 onMounted(() => {
   // 收藏态只能客户端查（需要 access-token cookie；SSR 期间还没恢复登录态）
   void refreshFavorite()
+  // 评价**不在这里**拉：它跟着 reviewProductId 走（见上面 watch(..., { immediate: true })），
+  // 两处都调会在首屏打出两次同样的请求。
 })
 
 const isNotFound = computed(() => (error.value as any)?.statusCode === 404)
