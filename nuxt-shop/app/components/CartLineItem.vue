@@ -13,6 +13,7 @@
   <li
     class="group relative overflow-hidden transition-colors duration-200 motion-reduce:transition-none"
     :class="invalid ? 'bg-[var(--color-surface-secondary)]/55' : 'hover:bg-[var(--color-brand-50)]/45'"
+    :aria-busy="pending ? 'true' : undefined"
   >
     <!--
       两个断点的列宽必须与 cart.vue 表头完全一致，改动时两处一起改：
@@ -50,20 +51,15 @@
           class="relative block h-[72px] w-[72px] shrink-0 overflow-hidden rounded-[var(--radius-tile)] bg-[var(--color-surface-secondary)] lg:h-20 lg:w-20"
           :aria-label="t('cart.goProduct')"
         >
-          <img
-            v-if="item.coverUrl && !imageFailed"
+          <ShopImage
             :src="item.coverUrl"
             :alt="item.title"
             width="72"
             height="72"
             class="h-full w-full object-cover transition-transform duration-300 motion-reduce:transition-none"
             :class="invalid ? 'opacity-40 grayscale' : 'group-hover:scale-105'"
-            loading="lazy"
-            @error="imageFailed = true"
-          >
-          <div v-else class="flex h-full w-full items-center justify-center text-[var(--color-muted)]">
-            <UIcon name="lucide:image-off" class="h-6 w-6" :class="invalid ? 'opacity-40' : ''" aria-hidden="true" />
-          </div>
+            icon-class="h-6 w-6"
+          />
 
           <!-- 失效原因压在封面上：一眼看到"为什么灰" -->
           <span
@@ -194,12 +190,14 @@
       </div>
     </div>
 
-    <!-- 请求进行中遮罩：避免连点重复提交 -->
-    <div
-      v-if="pending"
-      class="absolute inset-0 cursor-wait bg-white/60 backdrop-blur-[1px]"
-      aria-hidden="true"
-    ></div>
+    <!-- 请求进行中遮罩：避免连点重复提交（fade 出现/消失，不再是硬切） -->
+    <Transition name="fade">
+      <div
+        v-if="pending"
+        class="absolute inset-0 cursor-wait bg-white/60 backdrop-blur-[1px]"
+        aria-hidden="true"
+      ></div>
+    </Transition>
   </li>
 </template>
 
@@ -229,9 +227,7 @@ const emit = defineEmits<{
 const { t } = useI18n()
 const { formatCompact } = useStorePrice()
 
-/** 封面失败回退占位图：外链图挂掉不该显示浏览器的"碎图 + alt" */
-const imageFailed = ref(false)
-watch(() => props.item.coverUrl, () => { imageFailed.value = false })
+// 封面失败回退由 <ShopImage> 统一处理（外链图挂掉不该显示"碎图 + alt"）
 
 /** 失效 = 不可勾选结算（下架 / 无货 / 规格失效），判定完全来自后端 */
 const invalid = computed(() => !props.item.selectable)

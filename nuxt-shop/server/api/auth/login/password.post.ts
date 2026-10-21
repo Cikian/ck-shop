@@ -29,12 +29,20 @@ export default defineEventHandler(async (event) => {
   }
 
   // 限流：这是撞库/密码喷洒的主要入口，此前完全没有任何节流。
-  // 维度取「IP + 邮箱」，既挡住单 IP 扫多账号，也挡住分布式轮换 IP 打同一账号。
+  // 两个维度：
+  //   · IP + 邮箱：挡住单 IP 扫同一账号；
+  //   · 仅 IP：挡住"一个 IP 换着邮箱撞库"（只有前一个维度时，换邮箱即可绕过）。
   enforceRateLimit(event, {
     key: 'auth:login-password',
     limit: 10,
     windowMs: 60_000,
     extra: email,
+  })
+  enforceRateLimit(event, {
+    key: 'auth:login-password:ip',
+    limit: 20,
+    windowMs: 60_000,
+    message: '登录尝试过于频繁，请稍后再试',
   })
 
   // 密码明文透传，由服务端 encryptPassword() 加密后再发给后端

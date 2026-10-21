@@ -642,7 +642,10 @@ public class LoginController {
 		Result<String> res = new Result<String>();
 		try {
 			//生成验证码，存到redis中
-			String code = RandomUtil.randomString(BASE_CHECK_CODES,4);
+			// 5 位（原为 4 位）：店铺端与管理端共用此接口。4 位字符集 36^4≈168 万，
+			// 在 60 秒有效期内配合高并发仍有被枚举的空间；5 位把空间提高 36 倍，
+			// 再叠加店铺端的「同一张图 5 次失败即作废 + 同 IP 失败限流」才够用。
+			String code = RandomUtil.randomString(BASE_CHECK_CODES,5);
 			String lowerCaseCode = code.toLowerCase();
 			String keyPrefix = Md5Util.md5Encode(key + jeecgBaseConfig.getSignatureSecret(), "utf-8");
 			String realKey = keyPrefix + lowerCaseCode;

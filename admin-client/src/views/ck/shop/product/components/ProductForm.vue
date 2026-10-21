@@ -348,13 +348,16 @@
                             :disabled="disabled"
                           />
                         </a-form-item>
-                        <a-form-item label="详细描述">
+                        <a-form-item label="商品简介">
                           <a-textarea
                             v-model:value="translationOf(lang.code).description"
                             :rows="8"
-                            placeholder="支持 HTML 富文本，店铺端详情页原样渲染"
+                            placeholder="简短介绍，展示在店铺端详情顶部；长图文请用「商品详情」页签"
                             :disabled="disabled"
                           />
+                          <span class="field-hint field-hint--block">
+                            只放一两句卖点；图片、分节、富文本等长图文请到「商品详情」页签用模块搭建
+                          </span>
                         </a-form-item>
                       </a-form>
                     </div>
@@ -401,7 +404,93 @@
           </div>
         </a-tab-pane>
 
-        <!-- ④ 规格配置 -->
+        <!-- ④ 商品详情（结构化模块编辑器 + 实时预览） -->
+        <a-tab-pane key="detail" tab="商品详情">
+          <div class="panel panel--workspace">
+            <a-alert
+              type="info"
+              show-icon
+              class="panel-alert"
+              message="商品详情按「模块」搭建，保存后店铺端按这里的顺序展示"
+              description="左侧编辑模块，右侧实时预览；不同语言的内容相互独立，可用「复制到其它语言」快速复用。老商品没有模块时，店铺端仍按「商品简介」展示，不受影响。"
+            />
+
+            <!-- 详情页签使用独立的 activeDetailLang，避免与「多语言内容」的 activeLang 抢状态 -->
+            <a-tabs v-model:activeKey="activeDetailLang" type="card" class="product-lang-tabs">
+              <a-tab-pane v-for="lang in languages" :key="lang.code" :tab="lang.name || lang.code">
+                <div class="detail-workspace">
+                  <div class="detail-workspace__editor">
+                    <ProductDetailEditor
+                      :ref="(el) => setDetailEditorRef(lang.code, el)"
+                      :blocks="detailBlocksOf(lang.code)"
+                      :language-code="lang.code"
+                      :languages="languages"
+                      :disabled="disabled"
+                      @update:blocks="(list) => setDetailBlocksOf(lang.code, list)"
+                      @copy="(target) => copyDetailBlocks(lang.code, target)"
+                    />
+                  </div>
+                  <div class="detail-workspace__preview" :style="{ width: previewColumnWidth }">
+                    <ProductDetailPreview
+                      :blocks="detailBlocksOf(lang.code)"
+                      :params="paramsOf(lang.code)"
+                      :description="translationDescriptionOf(lang.code)"
+                      :product-title="translationTitleOf(lang.code)"
+                      :lang-name="lang.name || lang.code"
+                      :device="detailDevice"
+                      @update:device="detailDevice = $event"
+                    />
+                  </div>
+                </div>
+              </a-tab-pane>
+            </a-tabs>
+          </div>
+        </a-tab-pane>
+
+        <!-- ⑤ 规格参数（展示用 KV，与「规格配置」的销售维度不同） -->
+        <a-tab-pane key="params" tab="规格参数">
+          <div class="panel panel--workspace">
+            <a-alert
+              type="info"
+              show-icon
+              class="panel-alert"
+              message="规格参数是展示用的 Key-Value，不影响 SKU 选择与价格"
+              description="例如「屏幕尺寸 / 6.7 英寸」。店铺端在「商品详情」上方整块展示；没有参数时该区块不显示（老商品沿用原有的自动行）。"
+            />
+
+            <a-tabs v-model:activeKey="activeParamLang" type="card" class="product-lang-tabs">
+              <a-tab-pane v-for="lang in languages" :key="lang.code" :tab="lang.name || lang.code">
+                <div class="detail-workspace">
+                  <div class="detail-workspace__editor">
+                    <ProductParamEditor
+                      :ref="(el) => setParamEditorRef(lang.code, el)"
+                      :params="paramsOf(lang.code)"
+                      :language-code="lang.code"
+                      :languages="languages"
+                      :specs="formData.specs"
+                      :disabled="disabled"
+                      @update:params="(list) => setParamsOf(lang.code, list)"
+                      @copy="(target) => copyParams(lang.code, target)"
+                    />
+                  </div>
+                  <div class="detail-workspace__preview" :style="{ width: previewColumnWidth }">
+                    <ProductDetailPreview
+                      :blocks="detailBlocksOf(lang.code)"
+                      :params="paramsOf(lang.code)"
+                      :description="translationDescriptionOf(lang.code)"
+                      :product-title="translationTitleOf(lang.code)"
+                      :lang-name="lang.name || lang.code"
+                      :device="detailDevice"
+                      @update:device="detailDevice = $event"
+                    />
+                  </div>
+                </div>
+              </a-tab-pane>
+            </a-tabs>
+          </div>
+        </a-tab-pane>
+
+        <!-- ⑥ 规格配置 -->
         <a-tab-pane key="specs" tab="规格配置">
           <div class="panel">
             <a-alert
@@ -415,7 +504,7 @@
           </div>
         </a-tab-pane>
 
-        <!-- ⑤ SKU 组合 -->
+        <!-- ⑦ SKU 组合 -->
         <a-tab-pane key="sku" tab="SKU 组合">
           <div class="panel">
             <a-alert
@@ -461,6 +550,19 @@
   import JImageUpload from '/@/components/Form/src/jeecg/components/JImageUpload.vue';
   import ProductSpecEditor from './ProductSpecEditor.vue';
   import ProductSkuEditor from './ProductSkuEditor.vue';
+  import ProductDetailEditor from './ProductDetailEditor.vue';
+  import ProductDetailPreview from './ProductDetailPreview.vue';
+  import ProductParamEditor from './ProductParamEditor.vue';
+  import {
+    DETAIL_BLOCK_LIMIT,
+    DETAIL_PARAM_LIMIT,
+    detailBlockForSubmit,
+    findDetailBlockError,
+    findParamError,
+    normalizeDetailBlock,
+    normalizeProductParam,
+    productParamForSubmit,
+  } from './productDetailMeta';
   import { useMessage } from '/@/hooks/web/useMessage';
   import { usePermission } from '/@/hooks/web/usePermission';
   import { listLang } from '/@/api/common/api';
@@ -473,7 +575,7 @@
   const emit = defineEmits(['ok']);
 
   const simpleImage = Empty.PRESENTED_IMAGE_SIMPLE;
-  const { createMessage } = useMessage();
+  const { createMessage, createConfirm } = useMessage();
   const { hasPermission } = usePermission();
 
   const visible = ref(false);
@@ -498,6 +600,17 @@
   /** 启用的语言列表（来自 /sys/lang，只返回 enabled='Y' 的） */
   const languages = ref<any[]>([]);
   const activeLang = ref('');
+  /**
+   * 「商品详情」「规格参数」各自持有独立的语言状态：
+   * 两个新页签和老「多语言内容」页签互不同步，避免切页签时互相把 activeLang 改掉。
+   */
+  const activeDetailLang = ref('');
+  const activeParamLang = ref('');
+  /** 预览设备宽度（详情/参数页签共用，桌面 880 / 移动 390） */
+  const detailDevice = ref<'desktop' | 'mobile'>('desktop');
+  /** 校验失败时按语言聚焦到编辑器实例 */
+  const detailEditorRefs = new Map<string, any>();
+  const paramEditorRefs = new Map<string, any>();
   /** 切换商品时用它强制重建语言表单，避免上一份校验状态残留 */
   const langFormKey = ref(0);
 
@@ -570,6 +683,10 @@
     images: [],
     specs: [],
     combinations: [],
+    /** 商品详情模块：扁平数组，元素形如 { languageCode, blockType, content, sortOrder, __uid } */
+    detailBlocks: [],
+    /** 规格参数 KV：扁平数组，元素形如 { languageCode, paramName, paramValue, sortOrder, __uid } */
+    params: [],
   });
 
   const rules = {
@@ -591,6 +708,251 @@
   /** 供父组件切换到只读详情模式 */
   function setReadonly(val: boolean) {
     disableSubmit.value = !!val;
+  }
+
+  /** 语言显示名（复制提示、校验提示用） */
+  function langDisplayName(code: string): string {
+    const hit = languages.value.find((lang: any) => lang && lang.code === code);
+    return hit?.name || code;
+  }
+
+  function translationDescriptionOf(code: string): string {
+    const hit = formData.translations.find((item: any) => item && item.languageCode === code);
+    return hit?.description || '';
+  }
+
+  function translationTitleOf(code: string): string {
+    const hit = formData.translations.find((item: any) => item && item.languageCode === code);
+    return hit?.title || '';
+  }
+
+  // ---------- 商品详情 / 规格参数：按语言读写扁平数组 ----------
+  /**
+   * 当前语言的模块（已按 sortOrder 排序）。
+   * 注意：返回的是同一个对象引用数组，编辑器里的 v-model 会直接改到 formData，预览因此实时生效。
+   */
+  function detailBlocksOf(code: string) {
+    return (formData.detailBlocks || [])
+      .filter((block: any) => block && block.languageCode === code)
+      .sort((a: any, b: any) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
+  }
+
+  /** 结构变化（增删/排序）回写：只替换当前语言，其它语言原样保留 */
+  function setDetailBlocksOf(code: string, list: any[]) {
+    const others = (formData.detailBlocks || []).filter((block: any) => block.languageCode !== code);
+    formData.detailBlocks = [...others, ...(list || []).map((block: any, index: number) => ({ ...block, languageCode: code, sortOrder: index }))];
+  }
+
+  function paramsOf(code: string) {
+    return (formData.params || [])
+      .filter((param: any) => param && param.languageCode === code)
+      .sort((a: any, b: any) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
+  }
+
+  function setParamsOf(code: string, list: any[]) {
+    const others = (formData.params || []).filter((param: any) => param.languageCode !== code);
+    formData.params = [...others, ...(list || []).map((param: any, index: number) => ({ ...param, languageCode: code, sortOrder: index }))];
+  }
+
+  /**
+   * 预览列宽：移动 390 + 内边距 ≈ 430；桌面按店铺端内容列 880（契约 3.2）。
+   *
+   * 桌面宽度用 `min(820px, 45%)` 而不是写死 880px：
+   * 抽屉宽度是 86% 视口，在 1600px 屏幕上内容区约 1330px，
+   * 520(编辑最小宽) + 880 + 20(gap) 会换行 —— 预览就跑到编辑区下方，
+   * 违背「编辑时在旁边实时看效果」的需求（实测截图确认过）。
+   * 改成百分比后，1280 以上都能并排；更窄时仍按响应式换行，不做横向挤压。
+   */
+  const previewColumnWidth = computed(() => (detailDevice.value === 'mobile' ? '430px' : 'min(820px, 45%)'));
+
+  // ---------- 编辑器实例（校验失败时聚焦） ----------
+  function setDetailEditorRef(code: string, instance: any) {
+    if (instance) {
+      detailEditorRefs.set(code, instance);
+    } else {
+      detailEditorRefs.delete(code);
+    }
+  }
+
+  function setParamEditorRef(code: string, instance: any) {
+    if (instance) {
+      paramEditorRefs.set(code, instance);
+    } else {
+      paramEditorRefs.delete(code);
+    }
+  }
+
+  // ---------- 复制到其它语言（覆盖前二次确认，契约 3.1） ----------
+  function copyDetailBlocks(sourceCode: string, targetCode: string) {
+    if (!targetCode || targetCode === sourceCode) {
+      return;
+    }
+    const source = detailBlocksOf(sourceCode);
+    if (!source.length) {
+      createMessage.warning('当前语言还没有可复制的详情模块');
+      return;
+    }
+    const existed = (formData.detailBlocks || []).filter((block: any) => block.languageCode === targetCode).length;
+    const sourceName = langDisplayName(sourceCode);
+    const targetName = langDisplayName(targetCode);
+    const doCopy = () => {
+      const cloned = source.map((block: any, index: number) => ({
+        languageCode: targetCode,
+        blockType: block.blockType,
+        // content 深拷贝，连同 radius / itemMargin / columns 一起复制
+        content: JSON.parse(JSON.stringify(block.content || {})),
+        sortOrder: index,
+        // 四方向间距是模块顶层字段，必须一起复制（契约 3.1）
+        marginTop: block.marginTop ?? 0,
+        marginRight: block.marginRight ?? 0,
+        marginBottom: block.marginBottom ?? 0,
+        marginLeft: block.marginLeft ?? 0,
+        __uid: uid('blk'),
+      }));
+      formData.detailBlocks = [...(formData.detailBlocks || []).filter((block: any) => block.languageCode !== targetCode), ...cloned];
+      activeDetailLang.value = targetCode;
+      createMessage.success(`已把${sourceName}的 ${source.length} 个模块复制到${targetName}`);
+    };
+    if (!existed) {
+      doCopy();
+      return;
+    }
+    createConfirm({
+      iconType: 'warning',
+      title: '覆盖目标语言的商品详情？',
+      content: `${targetName}已有 ${existed} 个模块，复制后将整体覆盖为${sourceName}的 ${source.length} 个模块，且不可撤销。`,
+      okText: '覆盖复制',
+      cancelText: '取消',
+      onOk: () => doCopy(),
+    });
+  }
+
+  function copyParams(sourceCode: string, targetCode: string) {
+    if (!targetCode || targetCode === sourceCode) {
+      return;
+    }
+    const source = paramsOf(sourceCode);
+    if (!source.length) {
+      createMessage.warning('当前语言还没有可复制的规格参数');
+      return;
+    }
+    const existed = (formData.params || []).filter((param: any) => param.languageCode === targetCode).length;
+    const sourceName = langDisplayName(sourceCode);
+    const targetName = langDisplayName(targetCode);
+    const doCopy = () => {
+      const cloned = source.map((param: any, index: number) => ({
+        languageCode: targetCode,
+        paramName: param.paramName,
+        paramValue: param.paramValue,
+        sortOrder: index,
+        __uid: uid('prm'),
+      }));
+      formData.params = [...(formData.params || []).filter((param: any) => param.languageCode !== targetCode), ...cloned];
+      activeParamLang.value = targetCode;
+      createMessage.success(`已把${sourceName}的 ${source.length} 条参数复制到${targetName}`);
+    };
+    if (!existed) {
+      doCopy();
+      return;
+    }
+    createConfirm({
+      iconType: 'warning',
+      title: '覆盖目标语言的规格参数？',
+      content: `${targetName}已有 ${existed} 条参数，复制后将整体覆盖为${sourceName}的 ${source.length} 条，且不可撤销。`,
+      okText: '覆盖复制',
+      cancelText: '取消',
+      onOk: () => doCopy(),
+    });
+  }
+
+  // ---------- 提交前校验（契约 3.3） ----------
+  /** 已启用语言 + 数据里出现过的其它语言（禁用语言的内容原样保留提交，不参与校验） */
+  function detailLanguageCodes(): string[] {
+    const codes: string[] = languages.value.map((lang: any) => lang?.code).filter(Boolean);
+    (formData.detailBlocks || []).forEach((block: any) => {
+      if (block?.languageCode && !codes.includes(block.languageCode)) {
+        codes.push(block.languageCode);
+      }
+    });
+    return codes;
+  }
+
+  function paramLanguageCodes(): string[] {
+    const codes: string[] = languages.value.map((lang: any) => lang?.code).filter(Boolean);
+    (formData.params || []).forEach((param: any) => {
+      if (param?.languageCode && !codes.includes(param.languageCode)) {
+        codes.push(param.languageCode);
+      }
+    });
+    return codes;
+  }
+
+  /** 返回第一个问题（只校验当前启用的语言，避免禁用语言的历史数据把人锁死） */
+  function findDetailBlocksIssue(): { languageCode: string; message: string; blockUid?: string } | null {
+    for (const lang of languages.value) {
+      const code = lang?.code;
+      if (!code) {
+        continue;
+      }
+      const blocks = detailBlocksOf(code);
+      if (blocks.length > DETAIL_BLOCK_LIMIT) {
+        return {
+          languageCode: code,
+          message: `${langDisplayName(code)}的「商品详情」有 ${blocks.length} 个模块，超过 ${DETAIL_BLOCK_LIMIT} 个上限，请精简后再保存`,
+        };
+      }
+      const error = findDetailBlockError(blocks);
+      if (error) {
+        return {
+          languageCode: code,
+          blockUid: error.block?.__uid,
+          message: `${langDisplayName(code)}：第 ${error.index + 1} 个模块${error.message}`,
+        };
+      }
+    }
+    return null;
+  }
+
+  function findParamsIssue(): { languageCode: string; message: string } | null {
+    for (const lang of languages.value) {
+      const code = lang?.code;
+      if (!code) {
+        continue;
+      }
+      const params = paramsOf(code);
+      if (params.length > DETAIL_PARAM_LIMIT) {
+        return {
+          languageCode: code,
+          message: `${langDisplayName(code)}的「规格参数」有 ${params.length} 条，超过 ${DETAIL_PARAM_LIMIT} 条上限，请精简后再保存`,
+        };
+      }
+      const error = findParamError(params);
+      if (error) {
+        return { languageCode: code, message: `${langDisplayName(code)}：${error.message}` };
+      }
+    }
+    return null;
+  }
+
+  // ---------- 提交 payload（content 传对象，剔除 __uid） ----------
+  function buildDetailBlocksPayload() {
+    const payload: any[] = [];
+    detailLanguageCodes().forEach((code) => {
+      detailBlocksOf(code).forEach((block: any, index: number) => {
+        payload.push(detailBlockForSubmit(block, code, index));
+      });
+    });
+    return payload;
+  }
+
+  function buildParamsPayload() {
+    const payload: any[] = [];
+    paramLanguageCodes().forEach((code) => {
+      paramsOf(code).forEach((param: any, index: number) => {
+        payload.push(productParamForSubmit(param, code, index));
+      });
+    });
+    return payload;
   }
 
   const recommendChecked = computed({
@@ -803,7 +1165,12 @@
       images: [],
       specs: [],
       combinations: [],
+      detailBlocks: [],
+      params: [],
     });
+    activeDetailLang.value = '';
+    activeParamLang.value = '';
+    detailDevice.value = 'desktop';
     if (!keepTab) {
       activeTab.value = 'basic';
     }
@@ -819,6 +1186,8 @@
     // 用当前启用语言铺一遍空白文案，表单即可直接编辑
     syncTranslations([]);
     activeLang.value = languages.value[0]?.code || '';
+    activeDetailLang.value = languages.value[0]?.code || '';
+    activeParamLang.value = languages.value[0]?.code || '';
     langFormKey.value++;
   }
 
@@ -832,6 +1201,8 @@
 
     if (!record?.id) {
       syncTranslations([]);
+      activeDetailLang.value = languages.value[0]?.code || '';
+      activeParamLang.value = languages.value[0]?.code || '';
       langFormKey.value++;
       return;
     }
@@ -842,6 +1213,8 @@
         createMessage.warning('未查询到商品详情');
         return;
       }
+      /** 回填时没有 languageCode 的历史行统一落到第一个启用语言 */
+      const primaryLanguageCode = languages.value[0]?.code || 'zh';
       Object.assign(formData, {
         id: detail.id,
         spuCode: detail.spuCode || '',
@@ -887,6 +1260,16 @@
           imageUrl: sku.imageUrl || '',
           saleable: sku.saleable || 'Y',
         })),
+        /*
+         * 商品详情 / 规格参数：后端返回 content 是 JSON 对象（不是字符串），直接存对象。
+         * normalizeXxx 会把契约 1.3 的字段补齐、跳过未知 blockType，并补前端 __uid。
+         */
+        detailBlocks: (detail.detailBlocks || [])
+          .map((block: any) => normalizeDetailBlock(block, primaryLanguageCode))
+          .filter((block: any) => !!block),
+        params: (detail.params || [])
+          .map((param: any) => normalizeProductParam(param, primaryLanguageCode))
+          .filter((param: any) => !!param),
       });
       reindexImages();
       // 按启用语言回填文案（直接写进 formData，模板 v-model 读写同一份数据）
@@ -901,6 +1284,8 @@
         }
       }
       activeLang.value = languages.value[0]?.code || '';
+      activeDetailLang.value = languages.value[0]?.code || '';
+      activeParamLang.value = languages.value[0]?.code || '';
       await nextTick();
       langFormKey.value++;
     } catch (e: any) {
@@ -1051,6 +1436,30 @@
       }
     }
 
+    // 商品详情（契约 3.3）：图片必须有 url、文本/富文本不能全空、视频链接可解析、每语言 ≤ 50 个
+    const detailIssue = findDetailBlocksIssue();
+    if (detailIssue) {
+      activeTab.value = 'detail';
+      activeDetailLang.value = detailIssue.languageCode;
+      createMessage.warning(detailIssue.message);
+      await nextTick();
+      await nextTick();
+      detailEditorRefs.get(detailIssue.languageCode)?.focusBlock?.(detailIssue.blockUid);
+      return;
+    }
+
+    // 规格参数（契约 3.3）：参数名、参数值必填，每语言 ≤ 100 条
+    const paramIssue = findParamsIssue();
+    if (paramIssue) {
+      activeTab.value = 'params';
+      activeParamLang.value = paramIssue.languageCode;
+      createMessage.warning(paramIssue.message);
+      await nextTick();
+      await nextTick();
+      paramEditorRefs.get(paramIssue.languageCode)?.focusFirstInvalid?.();
+      return;
+    }
+
     const payload: Record<string, any> = {
       id: formData.id || undefined,
       spuCode: formData.spuCode || undefined,
@@ -1076,6 +1485,9 @@
         })),
       specs,
       combinations,
+      // 商品详情 / 规格参数：整体替换语义，content 传对象；空数组表示清空该商品全部语言
+      detailBlocks: buildDetailBlocksPayload(),
+      params: buildParamsPayload(),
     };
     // 确保拖拽顺序被提交（后端也按数组顺序重排，双保险）
     payload.specs.forEach((spec: any, specIndex: number) => (spec.sortOrder = specIndex));
@@ -1156,6 +1568,42 @@
     margin: 0 auto;
     padding: 20px 24px 32px;
     background: #f7f8fa;
+  }
+
+  /* 「商品详情」「规格参数」页签：左编辑 + 右预览需要更宽的工作区 */
+  .panel--workspace {
+    max-width: 1680px;
+  }
+
+  .detail-workspace {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    gap: 20px;
+
+    &__editor {
+      flex: 1 1 440px;
+      min-width: 0;
+      max-width: 100%;
+    }
+
+    &__preview {
+      flex: 0 1 auto;
+      min-width: 360px;
+      max-width: 100%;
+      /* 拉伸到与左列同高，右侧预览才能在自己的容器内 sticky 吸顶 */
+      align-self: stretch;
+    }
+
+    /* 窄屏（抽屉被压窄到放不下两列）时整列堆叠，避免两块都被挤到不可用。
+       阈值推导：内容宽 ≈ 0.86 × 视口 - 88；并排需要 440 + 20 + 0.45×内容宽 ≤ 内容宽，
+       即内容宽 ≥ 836 → 视口 ≥ 1074，因此取 1080。 */
+    @media (max-width: 1080px) {
+      &__preview {
+        min-width: 0;
+        width: 100% !important;
+      }
+    }
   }
 
   /*
@@ -1347,6 +1795,13 @@
     margin-left: 8px;
     color: rgba(0, 0, 0, 0.45);
     font-size: 12px;
+  }
+
+  /* 输入框下方整行提示（如「商品简介」的说明） */
+  .field-hint--block {
+    display: block;
+    margin: 6px 0 0;
+    line-height: 1.6;
   }
 
   /* 详情页的上游链接：一行内可点击，过长时省略号收起 */

@@ -9,7 +9,13 @@
 // 约定：所有后端可选字段都写成 `xxx?: T | null` —— 后端 JSON 里显式给 null 是常态，
 // 只写 `?` 会让"字段存在但为 null"绕过类型检查。
 
-/** 订单明细（后端 StoreOrderItemVO 的子集，够画缩略图 / 行内合计即可） */
+/**
+ * 订单明细（后端 StoreOrderItemVO 的子集，够画缩略图 / 行内合计即可）。
+ *
+ * ⚠️ 这里是**唯一来源**。历史上 composables/useOrderDetail.ts 里还复制了一份
+ * 并已经漂移（那份多 productAmount/promotionTitle/refundStatus，少 actualAmount）。
+ * 本次取并集收敛到这里；useOrderDetail 改为 import + 再导出，既有调用点不用改。
+ */
 export interface OrderItemVO {
   id?: string | null
   productId?: string | null
@@ -18,9 +24,16 @@ export interface OrderItemVO {
   productImage?: string | null
   price?: number | null
   quantity?: number | null
+  /** 行原价合计（未扣优惠） */
+  productAmount?: number | null
+  /** 行实付合计 */
   actualAmount?: number | null
+  /** 命中的促销名称（没有促销时为 null/空） */
+  promotionTitle?: string | null
   refundQuantity?: number | null
   refundAmount?: number | null
+  /** 该行的退款状态（后端 refundStatus，用于行内标记"退款中/已退款"） */
+  refundStatus?: string | null
 }
 
 /** 订单列表项（后端 StoreOrderListVO） */

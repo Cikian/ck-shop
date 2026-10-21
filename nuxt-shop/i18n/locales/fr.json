@@ -1,4 +1,12 @@
 {
+  "error": {
+    "notFoundTitle": "Cette page a disparu",
+    "notFoundDesc": "Le lien est peut-être obsolète ou supprimé. Revenez à l'accueil pour continuer.",
+    "serverTitle": "Le service rencontre un problème",
+    "serverDesc": "Nous rétablissons le service. Réessayez dans un instant ou retournez à l'accueil.",
+    "backHome": "Retour à l'accueil",
+    "retry": "Recharger"
+  },
   "categories": {
     "title": "Toutes les catégories",
     "description": "Parcourir cette boutique par catégorie",
@@ -18,7 +26,9 @@
     "title": "Bienvenue sur Nuxt Shop",
     "description": "Découvrez nos produits premium soigneusement choisis et profitez d'une expérience d'achat sans souci",
     "newCollection": "Nouvelle collection",
-    "limitedOffer": "Offre limitée"
+    "limitedOffer": "Offre limitée",
+    "pauseCarousel": "Suspendre la lecture automatique",
+    "playCarousel": "Reprendre la lecture automatique"
   },
   "products": {
     "all": "Tous les produits",
@@ -48,7 +58,8 @@
       "choose": "Veuillez sélectionner toutes les options",
       "notSaleable": "Cette combinaison n'est pas en vente",
       "outOfStock": "Cette combinaison est en rupture de stock"
-    }
+    },
+    "allLoaded": "Vous avez tout vu"
   },
   "product": {
     "addToCart": "Ajouter au panier",
@@ -69,25 +80,39 @@
     "notFoundDesc": "Le produit que vous recherchez n'existe pas ou a été retiré.",
     "loadError": "Échec du chargement du produit",
     "loadErrorDesc": "Vérifiez votre connexion et réessayez",
-    "loginToAddCart": "Connectez-vous pour ajouter",
     "addedToCart": "Ajouté au panier",
     "selectSpecFirst": "Veuillez choisir toutes les options",
     "adding": "Ajout…",
     "cartHint": "Vérification en temps réel du stock et des options",
     "viewCart": "Voir le panier",
     "buying": "Traitement…",
-    "loginToBuyNow": "Connectez-vous pour acheter",
     "buyNowFailed": "Impossible de démarrer la commande. Vérifiez si votre navigateur bloque le stockage local, puis réessayez.",
     "wishlisted": "Enregistré",
+    "wishlistedShort": "Enregistré",
+    "favShort": "Favoris",
     "removeFromWishlist": "Retirer des favoris",
     "addedToWishlist": "Ajouté aux favoris",
     "removedFromWishlist": "Retiré des favoris",
-    "wishlistFailed": "Échec de l'action sur les favoris"
+    "wishlistFailed": "Échec de l'action sur les favoris",
+    "shareCopied": "Lien copié",
+    "shareFailed": "Impossible de copier le lien",
+    "quantity": "Quantité",
+    "detailImageAlt": "{title} — image {index}",
+    "imageEnlarge": "Agrandir l'image",
+    "imageLightboxLabel": "Aperçu de l'image",
+    "lightboxClose": "Fermer l'aperçu de l'image",
+    "lightboxPrev": "Image précédente",
+    "lightboxNext": "Image suivante",
+    "lightboxCounter": "{current} / {total}",
+    "videoBilibiliTitle": "Vidéo Bilibili",
+    "videoYoutubeTitle": "Vidéo YouTube",
+    "videoFileTitle": "Vidéo du produit",
+    "videoUnavailable": "Vidéo indisponible",
+    "videoUnsupported": "Votre navigateur ne prend pas en charge la lecture vidéo",
+    "specEmpty": "Aucune caractéristique"
   },
   "login": {
     "title": "Connexion",
-    "captcha": "Code de vérification",
-    "refreshCaptcha": "Cliquez pour actualiser",
     "noAccount": "Pas de compte ?",
     "register": "S'inscrire"
   },
@@ -256,7 +281,6 @@
     "likeTitle": "Vous aimerez aussi",
     "likeSubtitle": "Ajoutez un article pour en profiter",
     "loginSubtitle": "Connectez-vous pour ajouter au panier et voir vos commandes",
-    "captchaPlaceholder": "Saisissez le code",
     "profileOrders": "Commandes",
     "profileFavorites": "Favoris",
     "profileCoupons": "Coupons",
@@ -438,7 +462,10 @@
     "withdrawTitle": "Retirer cette demande de remboursement ?",
     "withdrawDesc": "Vous pourrez en refaire la demande ensuite.",
     "withdrawConfirm": "Confirmer le retrait",
-    "withdrawnToast": "Demande de remboursement retirée"
+    "withdrawnToast": "Demande de remboursement retirée",
+    "receiveConfirming": "Confirmation…",
+    "withdrawing": "Annulation…",
+    "checkoutPriceTokenMissing": "Prix mis à jour — recalcul en cours, réessayez dans un instant"
   },
   "address": {
     "title": "Adresses de livraison",
@@ -480,7 +507,8 @@
     "actionFailed": "Échec de l'opération",
     "receiverRequired": "Veuillez saisir le nom du destinataire",
     "phoneRequired": "Veuillez saisir le numéro de téléphone",
-    "detailRequired": "Veuillez saisir l'adresse détaillée"
+    "detailRequired": "Veuillez saisir l'adresse détaillée",
+    "deleting": "Suppression…"
   },
   "auth": {
     "tabsLabel": "Méthode de connexion",
@@ -511,7 +539,6 @@
     "strengthStrong": "Fort",
     "showPassword": "Afficher le mot de passe",
     "hidePassword": "Masquer le mot de passe",
-    "captchaRequired": "Veuillez saisir le code de vérification",
     "login": "Se connecter",
     "loggingIn": "Connexion en cours...",
     "loginFailed": "Échec de la connexion, veuillez réessayer",
@@ -544,6 +571,25 @@
     "goLogin": "Se connecter",
     "setPassword": "Définir un mot de passe",
     "changePassword": "Modifier le mot de passe",
-    "oldPassword": "Mot de passe actuel"
+    "oldPassword": "Mot de passe actuel",
+    "captchaHint": "Cliquer sur « Obtenir le code » lancera une vérification de sécurité.",
+    "captchaOpenFailed": "Échec du chargement de la vérification de sécurité, veuillez réessayer"
+  },
+  "captcha": {
+    "tipsSuccess": "Vérification réussie en %s s",
+    "tipsError": "Échec de la vérification, veuillez réessayer !",
+    "tipsExpired": "La vérification a expiré, veuillez vérifier à nouveau",
+    "tipsNetworkError": "Erreur réseau, veuillez réessayer plus tard",
+    "sliderTitle": "Faites glisser le curseur pour compléter le puzzle",
+    "concatTitle": "Faites glisser le curseur pour compléter le puzzle",
+    "rotateTitle": "Faites glisser le curseur pour compléter le puzzle",
+    "imageClickTitle": "Veuillez cliquer dans l'ordre :",
+    "imageClickConfirm": "Confirmer",
+    "powTitle": "Vérification de sécurité",
+    "powLoading": "Vérification en cours...",
+    "disabledTitle": "Le captcha est désactivé",
+    "closeTitle": "Fermer le captcha",
+    "refreshTitle": "Actualiser le captcha",
+    "overlayLabel": "Vérification de sécurité"
   }
 }

@@ -155,6 +155,146 @@ export interface StoreProductDetail {
   specs: StoreSpec[]
   /** 笛卡尔积中"存在"的组合；不存在的不返回 */
   combinations: StoreSkuCombination[]
+  /**
+   * 结构化详情模块（契约 1.3 / 2.2）。
+   * 已由 normalizeDetail 归一化、按 sortOrder 排序，未知 blockType 已跳过。
+   */
+  detailBlocks: StoreDetailBlock[]
+  /**
+   * 规格参数 KV（契约 1.2 / 2.2）。已按 sortOrder 排序、过滤空名/空值。
+   * 为空时店铺端回退「历史自动行」（spuCode / categoryName），老商品表现不变。
+   */
+  params: StoreProductParam[]
+}
+
+// ---------------------------------------------------------------------------
+// 商品详情模块（StoreProductDetailVO.detailBlocks，契约 1.3 / 1.4）
+// ---------------------------------------------------------------------------
+//
+// 后端 content 在接口上是 JSON **对象**（数据库里才是字符串），但历史脏数据可能两种都有，
+// 所以 normalizeDetailBlock 对字符串 content 做一次 JSON.parse 尝试，失败就跳过该块。
+// 未知 blockType：**读取时跳过**、不报错（契约 1.3 末段）。
+//
+// 1.4「模块间距」：四个 margin* 是**模块级表列**（不在 content 里），单位 px、默认 0、范围 0–500。
+// 默认 0 是为了让超长图切割后的多个 IMAGE 模块能无缝贴合；旧数据没有这些列 → 全部按 0。
+// content 内的布局字段：IMAGE/IMAGE_TEXT.radius、IMAGE_GRID.columns/itemMargin/radius，
+// 读取时一律按范围夹取（0–200 / 1–6），非法值不报错、回落到默认。
+
+/** 模块级四方向间距（契约 1.4，单位 px，默认 0，范围 0–500） */
+export interface StoreDetailBlockSpacing {
+  marginTop: number
+  marginRight: number
+  marginBottom: number
+  marginLeft: number
+}
+
+/** 宫格内每张图片的四方向间距（契约 1.3，单位 px，默认 0，范围 0–200） */
+export interface StoreDetailGridItemMargin {
+  top: number
+  right: number
+  bottom: number
+  left: number
+}
+
+/** 图片类模块里的单张图（已归一化，alt 可为空，渲染时用商品标题 + 序号兜底） */
+export interface StoreDetailImage {
+  url: string
+  alt: string | null
+}
+
+export type StoreDetailBlockType =
+  | 'IMAGE'
+  | 'IMAGE_GRID'
+  | 'IMAGE_TEXT'
+  | 'TEXT'
+  | 'RICH_TEXT'
+  | 'VIDEO'
+  | 'TITLE'
+  | 'DIVIDER'
+
+/** 整幅图片（content: { url, alt?, radius? }） */
+export interface StoreDetailBlockImage extends StoreDetailBlockSpacing {
+  type: 'IMAGE'
+  url: string
+  alt: string | null
+  /** 图片圆角 px（默认 0 = 直角，便于长图切割块无缝拼接） */
+  radius: number
+}
+
+/** 多图宫格（content: { columns, itemMargin?, radius?, images: [{url, alt?}] }，1–9 张） */
+export interface StoreDetailBlockImageGrid extends StoreDetailBlockSpacing {
+  type: 'IMAGE_GRID'
+  /** 列数 1–6（默认 2）；渲染为 repeat(columns, minmax(0, 1fr))，移动端不横向溢出 */
+  columns: number
+  /** 每格四方向间距（默认 0）；相邻两图水平间距 = 左格 right + 右格 left */
+  itemMargin: StoreDetailGridItemMargin
+  /** 图片圆角 px（默认 0） */
+  radius: number
+  images: StoreDetailImage[]
+}
+
+/** 图文（content: { url, title?, text?, layout: 'left'|'right', alt?, radius? }） */
+export interface StoreDetailBlockImageText extends StoreDetailBlockSpacing {
+  type: 'IMAGE_TEXT'
+  url: string
+  alt: string | null
+  title: string | null
+  text: string | null
+  /** 图片在左（left）还是右（right）；移动端恒为图在上 */
+  layout: 'left' | 'right'
+  /** 图片圆角 px（默认 0） */
+  radius: number
+}
+
+/** 文本段落（content: { title?, text }，text 里 \n 分段） */
+export interface StoreDetailBlockText extends StoreDetailBlockSpacing {
+  type: 'TEXT'
+  title: string | null
+  text: string
+}
+
+/** 富文本（content: { html }，渲染前必须再过一遍 sanitizeHtml） */
+export interface StoreDetailBlockRichText extends StoreDetailBlockSpacing {
+  type: 'RICH_TEXT'
+  html: string
+}
+
+/** 视频（content: { provider, url, poster? }） */
+export interface StoreDetailBlockVideo extends StoreDetailBlockSpacing {
+  type: 'VIDEO'
+  provider: 'bilibili' | 'youtube' | 'file'
+  url: string
+  poster: string | null
+}
+
+/** 小节标题（content: { text, sub? }） */
+export interface StoreDetailBlockTitle extends StoreDetailBlockSpacing {
+  type: 'TITLE'
+  text: string
+  sub: string | null
+}
+
+/** 分隔线（content: {}） */
+export interface StoreDetailBlockDivider extends StoreDetailBlockSpacing {
+  type: 'DIVIDER'
+}
+
+export type StoreDetailBlock =
+  | StoreDetailBlockImage
+  | StoreDetailBlockImageGrid
+  | StoreDetailBlockImageText
+  | StoreDetailBlockText
+  | StoreDetailBlockRichText
+  | StoreDetailBlockVideo
+  | StoreDetailBlockTitle
+  | StoreDetailBlockDivider
+
+/** 规格参数 KV（content 归一化后只剩参数名/参数值，契约 2.2 不返回 id/languageCode） */
+export interface StoreProductParam {
+  /** 参数名（后端 paramName） */
+  name: string
+  /** 参数值（后端 paramValue） */
+  value: string
 }
 
 /** 分页信封（由后端 IPage 直出，Nuxt 侧原样透传） */
@@ -317,6 +457,194 @@ export function normalizeImage(raw: unknown): StoreProductImage | null {
   }
 }
 
+/**
+ * 详情模块里的图片地址白名单：只接受 http(s):// 或 `/` 开头。
+ * 与富文本清洗（utils/sanitize-html.ts）的 img 规则一致，避免模块图成为 XSS/坏请求入口。
+ */
+function isDetailImageUrl(value: string): boolean {
+  const probe = value.replace(/[\u0000-\u0020\u007f-\u009f]/g, '').toLowerCase()
+  if (!probe) return false
+  if (probe.startsWith('data:') || probe.startsWith('javascript:') || probe.startsWith('vbscript:')) return false
+  if (probe.startsWith('/')) return true
+  return /^https?:\/\//.test(probe)
+}
+
+/**
+ * 解析模块 content。
+ * 接口契约是对象；历史脏数据/旧接口可能给 JSON 字符串，这里容错 parse 一次。
+ * 解析失败返回 null → 调用方跳过该块（契约：读取时跳过，不让整页 500）。
+ */
+function parseBlockContent(raw: unknown): Record<string, any> | null {
+  if (raw && typeof raw === 'object' && !Array.isArray(raw)) return raw as Record<string, any>
+  if (typeof raw !== 'string') return null
+  const text = raw.trim()
+  if (!text) return null
+  try {
+    const parsed: unknown = JSON.parse(text)
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) return parsed as Record<string, any>
+    return null
+  } catch {
+    return null
+  }
+}
+
+export function normalizeDetailImage(raw: unknown): StoreDetailImage | null {
+  const item = asRecord(raw)
+  const url = toNullableString(item.url)
+  if (!url || !isDetailImageUrl(url)) return null
+  return { url, alt: toNullableString(item.alt) }
+}
+
+/**
+ * 布局数值夹取（契约 1.3 / 1.4）。
+ * - 缺失 / 非法（null、''、非数字）→ fallback；
+ * - 有值 → 截断为整数并夹到 [min, max]（越界由后端保存时拒绝，读取端兜底夹取）。
+ */
+function clampLayoutNumber(value: unknown, min: number, max: number, fallback: number): number {
+  const num = toNumberOrNull(value)
+  if (num === null) return fallback
+  return Math.min(Math.max(Math.trunc(num), min), max)
+}
+
+/** 模块级四方向间距（表列字段，缺省 0，范围 0–500） */
+function normalizeBlockSpacing(raw: unknown): StoreDetailBlockSpacing {
+  const item = asRecord(raw)
+  return {
+    marginTop: clampLayoutNumber(item.marginTop, 0, 500, 0),
+    marginRight: clampLayoutNumber(item.marginRight, 0, 500, 0),
+    marginBottom: clampLayoutNumber(item.marginBottom, 0, 500, 0),
+    marginLeft: clampLayoutNumber(item.marginLeft, 0, 500, 0),
+  }
+}
+
+/** 宫格内每图四方向间距（content.itemMargin，缺省全 0，范围 0–200） */
+function normalizeGridItemMargin(raw: unknown): StoreDetailGridItemMargin {
+  const item = asRecord(raw)
+  return {
+    top: clampLayoutNumber(item.top, 0, 200, 0),
+    right: clampLayoutNumber(item.right, 0, 200, 0),
+    bottom: clampLayoutNumber(item.bottom, 0, 200, 0),
+    left: clampLayoutNumber(item.left, 0, 200, 0),
+  }
+}
+
+/** 图片圆角（content.radius，缺省 0 = 直角，范围 0–200） */
+function normalizeImageRadius(value: unknown): number {
+  return clampLayoutNumber(value, 0, 200, 0)
+}
+
+/** 归一化单个详情模块；任何不合法 / 未知类型都返回 null（外层过滤掉） */
+export function normalizeDetailBlock(raw: unknown): StoreDetailBlock | null {
+  const item = asRecord(raw)
+  const type = toNullableString(item.blockType)?.toUpperCase() ?? toNullableString(item.type)?.toUpperCase()
+  if (!type) return null
+
+  // 模块间距是表列字段，与 content 无关：先算好，所有分支都带上（缺省全 0）
+  const spacing = normalizeBlockSpacing(item)
+
+  // 分隔线不依赖 content（老数据 content 可能是空串/缺失）
+  if (type === 'DIVIDER') return { type: 'DIVIDER', ...spacing }
+
+  const content = parseBlockContent(item.content)
+  if (!content) return null
+
+  switch (type) {
+    case 'IMAGE': {
+      const url = toNullableString(content.url)
+      if (!url || !isDetailImageUrl(url)) return null
+      return {
+        type: 'IMAGE',
+        url,
+        alt: toNullableString(content.alt),
+        radius: normalizeImageRadius(content.radius),
+        ...spacing,
+      }
+    }
+    case 'IMAGE_GRID': {
+      const rawImages = Array.isArray(content.images) ? content.images : []
+      const images = rawImages
+        .map(normalizeDetailImage)
+        .filter((image): image is StoreDetailImage => image !== null)
+        .slice(0, 9)
+      if (!images.length) return null
+      return {
+        type: 'IMAGE_GRID',
+        // 契约：1–6 的任意整数（缺省 2）；越界读取端夹取
+        columns: clampLayoutNumber(content.columns, 1, 6, 2),
+        itemMargin: normalizeGridItemMargin(content.itemMargin),
+        radius: normalizeImageRadius(content.radius),
+        images,
+        ...spacing,
+      }
+    }
+    case 'IMAGE_TEXT': {
+      const url = toNullableString(content.url)
+      if (!url || !isDetailImageUrl(url)) return null
+      const layout = toNullableString(content.layout)?.toLowerCase() === 'right' ? 'right' : 'left'
+      return {
+        type: 'IMAGE_TEXT',
+        url,
+        alt: toNullableString(content.alt),
+        title: toNullableString(content.title),
+        text: toNullableString(content.text),
+        layout,
+        radius: normalizeImageRadius(content.radius),
+        ...spacing,
+      }
+    }
+    case 'TEXT': {
+      const text = toNullableString(content.text)
+      const title = toNullableString(content.title)
+      if (!text && !title) return null
+      return { type: 'TEXT', title, text: text ?? '', ...spacing }
+    }
+    case 'RICH_TEXT': {
+      const html = toNullableString(content.html)
+      if (!html) return null
+      return { type: 'RICH_TEXT', html, ...spacing }
+    }
+    case 'VIDEO': {
+      const provider = toNullableString(content.provider)?.toLowerCase()
+      const url = toNullableString(content.url)
+      if (!url || !provider) return null
+      if (provider !== 'bilibili' && provider !== 'youtube' && provider !== 'file') return null
+      return { type: 'VIDEO', provider, url, poster: toNullableString(content.poster), ...spacing }
+    }
+    case 'TITLE': {
+      const text = toNullableString(content.text)
+      if (!text) return null
+      return { type: 'TITLE', text, sub: toNullableString(content.sub), ...spacing }
+    }
+    default:
+      // 未知 blockType：读取时跳过（契约 1.3：历史脏数据不能让整页 500）
+      return null
+  }
+}
+
+function normalizeParam(raw: unknown): StoreProductParam | null {
+  const item = asRecord(raw)
+  // 接口契约字段是 paramName / paramValue；留 name/value 兜底只为兼容本地 mock
+  const name = toNullableString(item.paramName) ?? toNullableString(item.name)
+  const value = toNullableString(item.paramValue) ?? toNullableString(item.value)
+  if (!name || !value) return null
+  return { name, value }
+}
+
+/**
+ * 按 sortOrder 稳定排序原始数组。
+ * 缺失 sortOrder 的条目按原下标参与排序（保持后端顺序，不把它们排到最后）。
+ */
+function sortBySortOrder(raw: unknown[]): unknown[] {
+  return raw
+    .map((item, index) => ({
+      item,
+      index,
+      order: toNumberOrNull(asRecord(item).sortOrder),
+    }))
+    .sort((a, b) => (a.order ?? a.index) - (b.order ?? b.index))
+    .map(entry => entry.item)
+}
+
 export function normalizeDetail(raw: unknown): StoreProductDetail {
   const item = asRecord(raw)
   const card = normalizeCard(item)
@@ -331,6 +659,16 @@ export function normalizeDetail(raw: unknown): StoreProductDetail {
         .map(normalizeCombination)
         .filter((combo): combo is StoreSkuCombination => combo !== null)
     : []
+  const detailBlocks = Array.isArray(item.detailBlocks)
+    ? sortBySortOrder(item.detailBlocks)
+        .map(normalizeDetailBlock)
+        .filter((block): block is StoreDetailBlock => block !== null)
+    : []
+  const params = Array.isArray(item.params)
+    ? sortBySortOrder(item.params)
+        .map(normalizeParam)
+        .filter((param): param is StoreProductParam => param !== null)
+    : []
 
   return {
     ...card,
@@ -341,6 +679,8 @@ export function normalizeDetail(raw: unknown): StoreProductDetail {
     images,
     specs,
     combinations,
+    detailBlocks,
+    params,
   }
 }
 

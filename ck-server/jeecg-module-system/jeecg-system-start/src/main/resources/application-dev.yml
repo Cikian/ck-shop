@@ -40,14 +40,17 @@ spring:
     timeJobSend: false
     host: ${MAIL_HOST}
     # ⚠️ 端口必须显式配置，且要与下面的 TLS 开关**匹配**。
-    #    不写时 JavaMail 默认 25。本环境实测结论（探针见 .probe/MailProbe.java）：
-    #      25  + 明文         → 成功（约 2 秒）   ← 当前使用
-    #      465 + ssl          → Could not connect（该端口对本机不通）
+    #    不写时 JavaMail 默认 25。
+    #    历史结论（服务器**尚未**开启 SSL 时，探针 .probe/MailProbe.java）：
+    #      25  + 明文         → 成功（约 2 秒）   ← 当时的唯一可用组合
+    #      465 + ssl          → Could not connect（当时该端口未开）
     #      25/587 + starttls  → Could not convert socket to TLS
     #      587 + 明文         → 530 Must issue a STARTTLS command first
+    #    现状（服务器已开启 SSL，探针 .probe/SmtpTlsTrustProbe.java）：
+    #      465 + ssl          → 可用，但必须同时补下面 trust + checkserveridentity 两条
     #    踩坑提示：组合写错时表现为 "Exception reading response / Read timed out"
     #    或 "Could not convert socket to TLS"，很容易被误判成业务代码 bug。
-    port: ${MAIL_PORT:25}
+    port: ${MAIL_PORT:465}
     username: ${MAIL_USERNAME}
     password: ${MAIL_PASSWORD}
     properties:
@@ -57,8 +60,27 @@ spring:
       mail.smtp.auth: true
       # ⚠️ 必须是全限定名 mail.smtp.ssl.enable；写成 smtp.ssl.enable（漏 mail. 前缀）
       #    会被 JavaMail **静默忽略**，连接行为与预期不符且没有报错。
-      #    本环境走 25 + 明文，故显式关闭 SSL。
-      mail.smtp.ssl.enable: false
+      #    启用 SSL。
+      mail.smtp.ssl.enable: true
+      # ⚠️ 只开 ssl.enable 连不上 cikian.cn:465，会报：
+      #      SSLHandshakeException: PKIX path building failed: unable to find valid certification path
+      #    原因：该端口用的是服务器默认自签占位证书
+      #      Subject = Issuer = "O=Default Company Ltd, L=Default City, C=XX"，
+      #      **既没有 CN 也没有 SAN**（证书原件见 .probe/cikian-smtp.crt）。
+      #      JDK cacerts 里没有这个签发者，PKIX 证书链当然建不起来。
+      #    下面两条**必须同时配**，少任何一条都仍然失败（实测探针 .probe/SmtpTlsTrustProbe.java）：
+      #      只配 ssl.trust                 → CertificateException: No name matching cikian.cn found
+      #         （Angus Mail 2.0.5 起 ssl.checkserveridentity 默认就是 true，
+      #           而这张证书里没有任何主机名可比对，光跳过链校验没用）
+      #      只配 checkserveridentity=false → 仍然 PKIX path building failed
+      #      两条都配                        → TLS 握手 + AUTH 认证均成功
+      #    ⚠️ 这只是"让它先能发"，不是修好了：ssl.trust 跳过证书链校验、
+      #       checkserveridentity=false 跳过主机名校验，等于对该主机不做任何身份校验
+      #       （TLS 对被动嗅探仍有效，但挡不住中间人）。
+      #       根治办法：给邮件服务器换 CA 签发的正式证书（如 Let's Encrypt 签
+      #       cikian.cn / mail.cikian.cn），换好后把下面两条删掉即可，代码无需改动。
+      mail.smtp.ssl.trust: ${MAIL_HOST}
+      mail.smtp.ssl.checkserveridentity: false
   ## quartz定时任务,采用数据库方式
   quartz:
     job-store-type: jdbc
@@ -309,7 +331,7 @@ jeecg:
     #webapp文件路径
     webapp: /opt/webapp
   shiro:
-    excludeUrls: /bigscreen/category/**,/bigscreen/visual/**,/bigscreen/map/**,/jmreport/bigscreen2/**,/shop/account/email/send-code,/shop/account/register,/shop/account/login/**,/shop/account/google/**,/shop/account/password/reset
+    excludeUrls: /bigscreen/category/**,/bigscreen/visual/**,/bigscreen/map/**,/jmreport/bigscreen2/**,/shop/account/email/send-code,/shop/account/register,/shop/account/login/**,/shop/account/google/**,/shop/account/password/reset,/captcha/challenge,/captcha/verify
   # 短信发送方式 aliyun阿里云短信 tencent腾讯云短信
   smsSendType: aliyun
   #阿里云oss存储和大鱼短信秘钥配置
@@ -500,17 +522,48 @@ ck:
     expire: 3600
     object-dir-prefix: ${CK_OSS_OBJECT_DIR_PREFIX:ck-saas}
     api-domain: TELECOM
+  # ===== CikVerify 验证码服务（后端 SDK 代理接口；前端不直连）=====
+  captcha:
+    enabled: true
+    # 验证码服务端地址（https，服务端校验签名）
+    service-url: https://cap.cikian.cn
+    app-id: ck-shop
+    # ⚠️ 只允许放后端 .env / 部署环境变量；禁止写进前端、Git、日志。
+    #    缺失或长度 <32 时 SDK 启动即失败（fail-fast，防止误配成"没验证也能发信"）。
+    app-secret: ${CK_SHOP_CAPTCHA_SECRET}
+    timeout-millis: 3000
+    allow-insecure-http: false
+    endpoints:
+      # server.servlet.context-path=/api，所以这里写 **context 相对路径**，
+      # 最终对外路径是 /api/captcha/challenge 与 /api/captcha/verify。
+      # 若写成 /api/captcha/... 会变成 /api/api/captcha/...（404）。
+      challenge-path: /captcha/challenge
+      verify-path: /captcha/verify
+    # ticket 存 Redis：多实例共享，且消费是原子的（一次性）
+    ticket-store: redis
+    ticket-ttl-seconds: 120
+    # ticket 绑定 UA + IP，防止"别人过码、我用 ticket"
+    ticket-bind-ua: true
+    # BFF 已把真实客户端 IP 覆盖进 X-Forwarded-For，开启后 ticket 才绑定到真实用户 IP
+    trust-forwarded-for: true
   crydis:
-    enable: true                    # 必须为 true 才会初始化
-    host: ${REDIS_HOST}                 # Redis 服务器地址
-    port: ${REDIS_PORT}                 # Redis 端口，默认 6379
-    password: ${REDIS_PASSWORD:}        # Redis 密码，没有则留空
-    database: 0                     # 数据库索引，默认 0
-    timeout: 3000                   # 连接超时时间（毫秒）
-    max-active: 50                  # 最大连接数
-    max-idle: 10                    # 最大空闲连接
-    min-idle: 5                     # 最小空闲连接
-    max-wait: 3000                  # 最大等待时间（毫秒）
+    # 【必须为 false】开启 spring.main.lazy-initialization=true 后，crydis 自动装配的
+    # crydisRedisClient / crydisInit 两个 @Bean 没有任何业务 bean 依赖，永远不会被创建，
+    # Crydis.init() 也就不会执行；而 SDK 的 CrydisSupport 一旦看到 enable=true
+    # 就会把初始化责任交给该自动装配（直接 return true），结果 verify 签发 ticket 时抛
+    # IllegalStateException: Crydis 未初始化 → 接口 5000。
+    # 置为 false（或删掉本项）后，SDK 会按 ck.crydis.host/port/... 自行 Crydis.init(...)，
+    # 启动日志出现"验证码已使用内置 Crydis 初始化 Redis"。
+    enable: false
+    host: ${REDIS_HOST:127.0.0.1}   # Redis 服务器地址
+    port: ${REDIS_PORT:6379}        # Redis 端口，默认 6379
+    password: ${REDIS_PASSWORD:}    # Redis 密码，没有则留空
+    database: ${REDIS_DATABASE:0}   # 数据库索引，默认 0
+    timeout: 2000                   # 连接超时时间（毫秒）
+    max-active: 16                  # 最大连接数
+    max-idle: 8                     # 最大空闲连接
+    min-idle: 0                     # 最小空闲连接
+    max-wait: 2000                  # 最大等待时间（毫秒）
     allowed-packages:
       - cn.cikian.
       - java.util.ArrayList

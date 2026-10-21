@@ -27,6 +27,11 @@
 //   所以下面要把整个 profile 当作 userInfo 返回 —— 字段名恰好包含了前端要的
 //   realname / username / avatar / email，展示层无需改动。
 
+// 语言必须走「受支持语言」的唯一来源收敛，**不能写死 zh/en 二选一**：
+// 曾经这里是 `query.lang === 'zh' ? 'zh' : 'en'`，法语（fr）用户会被当成 en ——
+// 后端按 Accept-Language 返回的异常文案就变成英文；将来新增语言也会同样静默降级。
+import { resolveStoreLang } from '~~/types/store-locale'
+
 export interface AuthSession {
   authenticated: boolean
   userInfo: Record<string, any> | null
@@ -46,7 +51,7 @@ export default defineEventHandler(async (event): Promise<AuthSession> => {
 
   // 语言透传：后端按 Accept-Language 处理异常文案，这里沿用项目统一做法从 ?lang= 取。
   const query = getQuery(event)
-  const lang = query.lang === 'zh' ? 'zh' : 'en'
+  const lang = resolveStoreLang(query.lang, 'en')
 
   try {
     const api = createApiClient(event, { withAuth: true, lang })

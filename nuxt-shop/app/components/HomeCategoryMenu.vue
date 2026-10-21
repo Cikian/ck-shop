@@ -25,14 +25,21 @@
 
     <ul v-else class="flex flex-1 flex-col">
       <li
-        v-for="(category, index) in visibleCategories"
+        v-for="category in visibleCategories"
         :key="category.id"
         class="group relative"
+        @mouseenter="openMenu(category.id)"
+        @mouseleave="scheduleClose"
+        @focusin="openMenu(category.id)"
+        @focusout="onFocusOut"
+        @keydown.escape="closeNow"
       >
         <NuxtLinkLocale
           :to="`/categories/${category.id}`"
-          class="flex items-center gap-3 rounded-[12px] px-3 py-[11px] text-sm font-medium text-[var(--color-ink-soft)] transition-colors group-hover:bg-[var(--color-brand-50)] group-hover:text-[var(--color-brand-600)] group-focus-within:bg-[var(--color-brand-50)] group-focus-within:text-[var(--color-brand-600)]"
-          :class="index === 0 ? ACTIVE_CLASS : ''"
+          class="flex items-center gap-3 rounded-[12px] px-3 py-[11px] text-sm font-medium text-[var(--color-ink-soft)] transition-colors hover:bg-[var(--color-brand-50)] hover:text-[var(--color-brand-600)]"
+          :aria-haspopup="hasChildren(category) ? 'true' : undefined"
+          :aria-expanded="hasChildren(category) ? openId === category.id : undefined"
+          :aria-controls="hasChildren(category) ? panelId(category.id) : undefined"
         >
           <!--
             图标是**装饰性**的（分类名始终以文字展示，图标不承担语义）。
@@ -42,33 +49,47 @@
           <UIcon :name="iconFor(category.name)" class="h-[18px] w-[18px] shrink-0" aria-hidden="true" />
           <span class="min-w-0 flex-1 truncate">{{ category.name }}</span>
           <UIcon
+            v-if="hasChildren(category)"
             name="lucide:chevron-right"
-            class="h-4 w-4 shrink-0 text-[var(--color-muted)] transition-transform group-hover:translate-x-0.5"
+            class="h-4 w-4 shrink-0 text-[var(--color-muted)] transition-transform duration-200 group-hover:translate-x-0.5 motion-reduce:transition-none"
             aria-hidden="true"
           />
         </NuxtLinkLocale>
 
         <!--
-          二级分类浮层：只在真的有子分类时出现（没有子分类就没有浮层，不摆一个空面板）。
-          hover 与 focus-within 都会触发，键盘 Tab 进来同样能看到，不是"只有鼠标能用"的菜单。
+          二级分类浮层。
+
+          ⚠️ 两个关键点：
+          1) 用 `pl-2` 把"8px 空隙"变成浮层自己的内边距 —— 空隙属于浮层的命中区，
+             鼠标从一级项斜向移到浮层时不会先离开 hover 目标（之前用 ml-2，
+             中间是死区，慢一点移动浮层就消失了）。
+          2) 关闭有 120ms 延迟（scheduleClose）—— 允许用户短暂移出后再回来；
+             纯 CSS group-hover 做不了延迟，所以这里用 openId 显式控制。
+          键盘同样可用：focusin 打开、ESC 关闭、焦点离开 li 时关闭。
         -->
         <div
-          v-if="childrenOf(category).length"
-          class="invisible absolute left-full top-0 z-40 ml-2 w-56 translate-x-1 rounded-[16px] bg-white p-3 opacity-0 shadow-[var(--shadow-card-hover)] transition-all duration-200 group-hover:visible group-hover:translate-x-0 group-hover:opacity-100 group-focus-within:visible group-focus-within:translate-x-0 group-focus-within:opacity-100"
+          v-if="hasChildren(category)"
+          :id="panelId(category.id)"
+          class="absolute left-full top-0 z-40 pl-2 transition-[opacity,transform,visibility] duration-200 ease-out motion-reduce:transition-none"
+          :class="openId === category.id
+            ? 'visible translate-x-0 opacity-100'
+            : 'invisible translate-x-1 opacity-0'"
         >
-          <p class="mb-2 px-1 text-xs font-bold uppercase tracking-wider text-[var(--color-muted)]">
-            {{ category.name }}
-          </p>
-          <ul class="grid gap-0.5">
-            <li v-for="child in childrenOf(category)" :key="child.id">
-              <NuxtLinkLocale
-                :to="`/categories/${child.id}`"
-                class="block truncate rounded-[10px] px-2 py-1.5 text-[13px] text-[var(--color-ink-soft)] transition-colors hover:bg-[var(--color-brand-50)] hover:text-[var(--color-brand-600)]"
-              >
-                {{ child.name }}
-              </NuxtLinkLocale>
-            </li>
-          </ul>
+          <div class="w-56 rounded-[16px] bg-white p-3 shadow-[var(--shadow-card-hover)]">
+            <p class="mb-2 px-1 text-xs font-bold uppercase tracking-wider text-[var(--color-muted)]">
+              {{ category.name }}
+            </p>
+            <ul class="grid gap-0.5">
+              <li v-for="child in childrenOf(category)" :key="child.id">
+                <NuxtLinkLocale
+                  :to="`/categories/${child.id}`"
+                  class="block truncate rounded-[10px] px-2 py-1.5 text-[13px] text-[var(--color-ink-soft)] transition-colors hover:bg-[var(--color-brand-50)] hover:text-[var(--color-brand-600)]"
+                >
+                  {{ child.name }}
+                </NuxtLinkLocale>
+              </li>
+            </ul>
+          </div>
         </div>
       </li>
     </ul>
@@ -92,6 +113,10 @@ import type { StoreCategoryNode } from '~~/types/store-category'
  *
  * 上限 8 项：分类菜单是首屏的"导航柱"，超过 8 项会把整列撑得比右边的 Banner 高很多，
  * 首屏比例失衡。更全的分类走底部「查看全部」。
+ *
+ * 激活态：这里**不写死任何"当前分类"**。以前第一项永远带激活样式，
+ * 用户点进别的分类后左栏仍亮着第一项 —— 与 Header 那套按路由推导的高亮互相矛盾。
+ * 菜单只负责导航，激活态由 Header 承担。
  */
 const props = defineProps<{
   categories: StoreCategoryNode[]
@@ -100,11 +125,57 @@ const props = defineProps<{
 
 const { t } = useI18n()
 
-/** 默认高亮第一项（设计稿的静止态），hover / focus 时高亮跟随指针 */
-const ACTIVE_CLASS = 'bg-[var(--color-brand-50)] text-[var(--color-brand-600)] font-bold'
-
 /** 最多 8 项：菜单是首屏的"导航柱"，再多会把整列撑得比右侧 Banner 高太多 */
 const visibleCategories = computed(() => (props.categories || []).slice(0, 8))
+
+// ---------------------------------------------------------------------------
+// 二级浮层的开关（hover 延迟 + 键盘）
+// ---------------------------------------------------------------------------
+const openId = ref('')
+/** 关闭延迟：允许鼠标在「一级项 → 浮层」之间短暂离开命中区（120ms 内回来不算关闭） */
+const CLOSE_DELAY_MS = 120
+let closeTimer: ReturnType<typeof setTimeout> | null = null
+
+function cancelClose() {
+  if (closeTimer === null) return
+  clearTimeout(closeTimer)
+  closeTimer = null
+}
+
+function openMenu(id: string) {
+  cancelClose()
+  openId.value = id
+}
+
+function scheduleClose() {
+  cancelClose()
+  closeTimer = setTimeout(() => {
+    openId.value = ''
+    closeTimer = null
+  }, CLOSE_DELAY_MS)
+}
+
+function closeNow() {
+  cancelClose()
+  openId.value = ''
+}
+
+/** 键盘：焦点离开整个 li（含浮层里的链接）才关闭；在 li 内部移动不关 */
+function onFocusOut(event: FocusEvent) {
+  const next = event.relatedTarget
+  if (next instanceof Node && (event.currentTarget as HTMLElement | null)?.contains(next)) return
+  closeNow()
+}
+
+function panelId(categoryId: string): string {
+  return `home-category-panel-${categoryId}`
+}
+
+function hasChildren(category: StoreCategoryNode): boolean {
+  return (category.children?.length ?? 0) > 0
+}
+
+onUnmounted(cancelClose)
 
 /**
  * 装饰图标：按分类名做**关键词**匹配，匹配不到用中性图标。

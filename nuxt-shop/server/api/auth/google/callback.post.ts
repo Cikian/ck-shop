@@ -79,7 +79,12 @@ export default defineEventHandler(async (event) => {
   const origin = resolvePublicOrigin(event)
   const redirectUri = `${origin}${defaultCallbackPath(lang)}`
 
-  const api = createApiClient(event, { lang })
+  // ★ 这 30s 是刻意放宽的，不要并回默认的 10s：
+  //   backend 这一跳里还要去 Google 换 token（墙内经常要经代理，单次 0.2s～15s 都出现过）。
+  //   后端 OkHttp 的单次调用上限是 25s（ShopGoogleOAuthService），BFF 必须比它大，
+  //   否则 BFF 先超时 → 用户只看到"后端服务响应超时"，真正原因（Google 网络异常）被盖住；
+  //   而且 state 已经被后端消费，用户点"重试"也只会得到"登录已过期"。
+  const api = createApiClient(event, { lang, timeoutMs: 30000 })
 
   let result: { token: string; userInfo: Record<string, any>; isNewUser?: boolean }
   try {
@@ -93,10 +98,15 @@ export default defineEventHandler(async (event) => {
   } catch (error: any) {
     // 后端业务文案原样透传：
     // "state 已失效，请重新登录" / "Google 授权失败" / "该账号已被冻结" 等。
-    throw createError({
-      statusCode: error?.statusCode || 500,
-      statusMessage: error?.statusMessage || 'Google 登录失败，请稍后重试',
-    })
+    //
+    // 504 是 BFF 自己等不到后端（后端还在等 Google）时抛的：此时 state 十有八九
+    // 已被后端消费，复用同一组 code/state 重试必然失败，所以文案要直接引导
+    // 用户回登录页重新发起，而不是给一句看不出下一步的"稍后重试"。
+    const statusCode = error?.statusCode || 500
+    const statusMessage = statusCode === 504
+      ? '服务器访问 Google 超时，本次登录凭证已作废，请返回登录页重新发起 Google 登录'
+      : (error?.statusMessage || 'Google 登录失败，请稍后重试')
+    throw createError({ statusCode, statusMessage })
   }
 
   // ============================================================

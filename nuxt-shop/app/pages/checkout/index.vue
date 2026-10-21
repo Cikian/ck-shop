@@ -1,6 +1,6 @@
 <template>
   <div class="min-h-screen bg-[var(--color-cream)] pt-navbar">
-    <div class="mx-auto max-w-7xl px-2 pb-16 sm:px-3 lg:px-4">
+    <div class="mx-auto max-w-7xl px-2 pb-32 sm:px-3 lg:pb-16 lg:px-4">
       <!-- 标题行 -->
       <header class="mb-5 flex flex-wrap items-end justify-between gap-x-4 gap-y-2">
         <div>
@@ -20,8 +20,9 @@
         </NuxtLinkLocale>
       </header>
 
+      <Transition name="fade" mode="out-in">
       <!-- 未登录 -->
-      <section v-if="unauthorized" class="ui-card px-6 py-16 text-center">
+      <section v-if="unauthorized" key="unauthorized" class="ui-card px-6 py-16 text-center">
         <span class="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-[var(--color-brand-50)]">
           <UIcon name="lucide:lock" class="h-8 w-8 text-[var(--color-brand-500)]" aria-hidden="true" />
         </span>
@@ -34,7 +35,7 @@
       </section>
 
       <!-- 加载失败 -->
-      <section v-else-if="loadError" class="ui-card px-6 py-16 text-center">
+      <section v-else-if="loadError" key="error" class="ui-card px-6 py-16 text-center">
         <span class="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-[var(--color-error)]/10">
           <UIcon name="lucide:wifi-off" class="h-8 w-8 text-[var(--color-error)]" aria-hidden="true" />
         </span>
@@ -47,7 +48,7 @@
       </section>
 
       <!-- 没有待结算商品（直接从地址栏打开 /checkout，或购物车勾选已被清空） -->
-      <section v-else-if="ready && !snapshotItems.length" class="ui-card px-6 py-20 text-center">
+      <section v-else-if="ready && !snapshotItems.length" key="empty" class="ui-card px-6 py-20 text-center">
         <span class="mx-auto flex h-20 w-20 items-center justify-center rounded-full bg-[var(--color-brand-50)]">
           <UIcon name="lucide:shopping-cart" class="h-9 w-9 text-[var(--color-brand-400)]" aria-hidden="true" />
         </span>
@@ -60,7 +61,7 @@
       </section>
 
       <!-- 骨架屏 -->
-      <section v-else-if="loading || !preview" aria-busy="true" :aria-label="t('common.loading')">
+      <section v-else-if="loading || !preview" key="skeleton" aria-busy="true" :aria-label="t('common.loading')">
         <div class="lg:grid lg:grid-cols-3 lg:items-start lg:gap-6">
           <div class="space-y-5 lg:col-span-2">
             <div class="ui-card space-y-3 p-5">
@@ -81,13 +82,15 @@
       </section>
 
       <!-- 正文 -->
-      <div v-else class="lg:grid lg:grid-cols-3 lg:items-start lg:gap-6">
+      <div v-else key="content" class="lg:grid lg:grid-cols-3 lg:items-start lg:gap-6">
         <!-- 左：地址 + 商品 + 备注 -->
         <div class="space-y-5 lg:col-span-2">
           <CheckoutAddressPicker
             v-model="selectedAddressId"
             :addresses="addresses"
             :loading="addressLoading"
+            :error="addressError"
+            @retry="loadAddresses()"
           />
 
           <section class="ui-card overflow-hidden">
@@ -115,18 +118,15 @@
                 :class="item.available === false ? 'bg-[var(--color-error-50)]/60' : ''"
               >
                 <span class="h-[72px] w-[72px] shrink-0 overflow-hidden rounded-[var(--radius-tile)] bg-[var(--color-line-soft)]">
-                  <img
-                    v-if="item.productImage"
+                  <ShopImage
                     :src="item.productImage"
                     :alt="item.productName || ''"
-                    width="72"
-                    height="72"
+                    :width="72"
+                    :height="72"
                     class="h-full w-full object-cover"
-                    loading="lazy"
-                  >
-                  <span v-else class="flex h-full w-full items-center justify-center">
-                    <UIcon name="lucide:image" class="h-6 w-6 text-[var(--color-muted)]" aria-hidden="true" />
-                  </span>
+                    icon="lucide:image"
+                    icon-class="h-6 w-6 text-[var(--color-muted)]"
+                  />
                 </span>
 
                 <div class="min-w-0 flex-1">
@@ -257,15 +257,24 @@
               <span>{{ t('order.checkoutAddressRequired') }}</span>
             </p>
 
-            <button
-              type="button"
-              class="mt-5 flex h-12 w-full items-center justify-center gap-2 rounded-full bg-[var(--color-brand-500)] text-[15px] font-bold text-white transition-colors duration-200 hover:bg-[var(--color-brand-600)] disabled:cursor-not-allowed disabled:bg-[var(--color-ink)]/20 motion-reduce:transition-none"
+            <!-- 后端没下发价格令牌时按钮会是灰的：必须解释原因，不能只让用户猜 -->
+            <p
+              v-else-if="!preview.priceToken"
+              class="mt-4 flex items-start gap-1.5 rounded-[var(--radius-card-sm)] bg-[var(--color-warning-50)] px-3 py-2.5 text-[12px] font-medium text-[var(--color-warning-600)]"
+            >
+              <UIcon name="lucide:refresh-cw" class="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+              <span>{{ t('order.checkoutPriceTokenMissing') }}</span>
+            </p>
+
+            <AsyncButton
+              class="mt-5 hidden h-12 w-full items-center justify-center gap-2 rounded-full bg-[var(--color-brand-500)] text-[15px] font-bold text-white transition-colors duration-200 hover:bg-[var(--color-brand-600)] disabled:cursor-not-allowed disabled:bg-[var(--color-ink)]/20 motion-reduce:transition-none lg:flex"
+              :pending="submitting"
+              :pending-label="t('order.checkoutSubmitting')"
               :disabled="!canSubmit"
               @click="submitOrder"
             >
-              <UIcon v-if="submitting" name="lucide:loader-2" class="h-4 w-4 animate-spin" aria-hidden="true" />
-              {{ submitting ? t('order.checkoutSubmitting') : t('order.checkoutSubmit') }}
-            </button>
+              {{ t('order.checkoutSubmit') }}
+            </AsyncButton>
 
             <!-- 幂等键：进页面生成一次，之后所有重试复用（后端幂等的前提） -->
             <p class="mt-2.5 text-center text-[11px] leading-relaxed text-[var(--color-muted)]">
@@ -273,10 +282,33 @@
             </p>
           </section>
         </aside>
-      </div>
-    </div>
 
-    <SiteFooter />
+        <!--
+          移动端常驻提交条：桌面端提交按钮在右侧金额卡里，移动端不必滚到页尾。
+          fixed 不占文档流，页面容器已留 pb-32；safe-area 处理 iPhone Home 指示条。
+        -->
+        <div
+          class="fixed inset-x-0 bottom-0 z-40 border-t border-[var(--color-line-soft)] bg-white/95 px-3 pb-[calc(env(safe-area-inset-bottom)+0.5rem)] pt-2.5 shadow-[0_-4px_16px_rgba(0,0,0,0.06)] backdrop-blur lg:hidden"
+        >
+          <div class="flex items-center gap-3">
+            <div class="min-w-0 flex-1">
+              <p class="text-[11px] leading-none text-[var(--color-muted)]">{{ t('order.amountPay') }}</p>
+              <p class="price mt-1 text-[22px] leading-none">{{ format(amount?.payAmount) }}</p>
+            </div>
+            <AsyncButton
+              class="flex h-12 min-w-[150px] items-center justify-center gap-2 rounded-full bg-[var(--color-brand-500)] px-6 text-[15px] font-bold text-white transition-colors disabled:cursor-not-allowed disabled:bg-[var(--color-ink)]/20"
+              :pending="submitting"
+              :pending-label="t('order.checkoutSubmitting')"
+              :disabled="!canSubmit"
+              @click="submitOrder"
+            >
+              {{ t('order.checkoutSubmit') }}
+            </AsyncButton>
+          </div>
+        </div>
+      </div>
+      </Transition>
+    </div>
   </div>
 </template>
 
@@ -393,6 +425,8 @@ const localePath = useLocalePath()
 const route = useRoute()
 const toast = useToast()
 const { format } = useStorePrice()
+/** SSR 期也要带上 httpOnly cookie 的 fetch（loader 在 setup 阶段执行，不再等 onMounted） */
+const requestFetch = useRequestFetch()
 
 const ready = ref(false)
 const loading = ref(false)
@@ -404,6 +438,8 @@ const snapshotItems = ref<CheckoutSnapshotItem[]>([])
 const preview = ref<PreviewResult | null>(null)
 const addresses = ref<AddressItem[]>([])
 const addressLoading = ref(false)
+/** 地址簿拉取失败的原因：传给地址选择组件，用"错误+重试"替代会误导人的"还没有收货地址"空态 */
+const addressError = ref('')
 const selectedAddressId = ref<string | null>(null)
 const buyerRemark = ref('')
 
@@ -508,7 +544,7 @@ async function loadPreview() {
   if (!snapshotItems.value.length) return
   loading.value = true
   try {
-    const result = await $fetch<PreviewResult>('/api/order/preview', {
+    const result = await requestFetch<PreviewResult>('/api/order/preview', {
       method: 'POST',
       body: {
         items: snapshotItems.value.map(item => ({
@@ -535,8 +571,9 @@ async function loadPreview() {
 /** 拉地址簿并默认选中「默认地址」，没有默认地址就选第一条 */
 async function loadAddresses() {
   addressLoading.value = true
+  addressError.value = ''
   try {
-    const list = await $fetch<AddressItem[]>('/api/address/list', { query: { lang: locale.value } })
+    const list = await requestFetch<AddressItem[]>('/api/address/list', { query: { lang: locale.value } })
     const normalized = (Array.isArray(list) ? list : []).filter(item => !!item?.id)
     addresses.value = normalized
     const preferred = normalized.find(item => item.isDefault === true) ?? normalized[0]
@@ -549,13 +586,9 @@ async function loadAddresses() {
       unauthorized.value = true
       return
     }
-    // 地址拉不到不该让整个结算页白屏：金额与商品仍然可看，只是无法提交
-    toast.add({
-      title: t('order.checkoutAddress'),
-      description: readErrorMessage(error, t('order.loadErrorDesc')),
-      color: 'error',
-      icon: 'lucide:circle-alert',
-    })
+    // 地址拉不到不该让整个结算页白屏：金额与商品仍然可看，只是无法提交。
+    // 错误交给地址选择组件就地显示 + 重试，不再用 toast 一闪而过。
+    addressError.value = readErrorMessage(error, t('order.loadErrorDesc'))
   } finally {
     addressLoading.value = false
   }
@@ -628,7 +661,22 @@ async function submitOrder() {
   }
 }
 
-onMounted(bootstrap)
+/**
+ * 结算页首屏装载：**客户端专属**。
+ *
+ * 待结算清单存在 sessionStorage（服务端读不到），因此 loader 必须 `server: false`：
+ *   - SSR 输出骨架（而不是误判成"没有待结算商品"的空态）；
+ *   - 客户端 hydrate 后立刻在 setup 阶段装载，不再等 onMounted。
+ * 里面两个请求（preview/地址）用 requestFetch，客户端同源请求同样带 cookie。
+ * loader 返回 truthy（useAsyncData 的 handler 返回 undefined 会在客户端重复执行）。
+ */
+useLazyAsyncData('checkout-bootstrap', async () => {
+  // 先让出一拍：SSR 因为没有 sessionStorage 只能渲染骨架，客户端首帧也必须还是骨架，
+  // 否则水合时本地 refs 已经被同步改掉（ready=true），会与服务端 DOM 不一致。
+  await Promise.resolve()
+  await bootstrap()
+  return true
+}, { lazy: true, server: false })
 
 useSeoMeta({
   title: () => t('order.checkoutTitle'),

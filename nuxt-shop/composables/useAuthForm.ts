@@ -2,22 +2,22 @@
 //
 // 登录 / 注册 / 忘记密码三个页面的**共享表单逻辑**。
 //
-// 为什么抽出来：这三个页面有 4 段完全一样的逻辑，散在三份实现里迟早会改歪一处：
-//   1. 图形验证码（useCaptcha 的 checkKey / refreshCaptcha 调用时机完全一致）
-//   2. 发送邮箱验证码 + 60 秒倒计时（契约 4.4 明确要求）
-//   3. 密码强度评分（弱/中/强轻提示，契约要求"轻量、不弹窗、不阻断"）
-//   4. 前端字段校验 + 后端错误文案归位
+// 为什么抽出来：这三个页面有 3 段完全一样的逻辑，散在三份实现里迟早会改歪一处：
+//   1. 发送邮箱验证码 + 60 秒倒计时（契约 4.4 明确要求）
+//   2. 密码强度评分（弱/中/强轻提示，契约要求"轻量、不弹窗、不阻断"）
+//   3. 前端字段校验 + 后端错误文案归位
+//
+// 本次改造：旧的图形验证码（useCaptcha / imageBase64 / checkKey / captchaVerified）
+// 已整体删除。人机验证改为 CikVerify：页面在点击「获取验证码」时调用
+// useCikianCaptcha().open() 拿到一次性 ticket，再随 requestEmailCode 提交。
+// 本 composable 只负责「拿着 ticket 发信 + 倒计时」，不碰验证码弹窗
+// （弹窗只能在点击回调里由页面触发，且要单独处理用户关闭等错误）。
 //
 // ⚠️ 这里只做**展示层**的校验与编排：
 // 真实校验（邮箱是否已注册、验证码对不对、密码是否合规）一律以后端为准，
 // 前端校验的价值是"少发一次注定失败的请求"，绝不能替代后端校验。
 
 import { resolveAuthErrorMessage, useAuth, type EmailCodeScene } from '~~/composables/useAuth'
-// ⚠️ 必须**显式** import：本项目的 composables/ 目录在 Nuxt 的 srcDir(app/) 之外，
-// Nuxt 不会自动注册它们（同一个原因，useAuth 也必须显式 import）。
-// 漏掉这一行会导致 SSR 直接抛 "useCaptcha is not defined"，
-// 三个认证页面全部 500 —— 是实测踩过的坑，不要删。
-import { useCaptcha } from '~~/composables/useCaptcha'
 
 /** 密码强度档位：0=空 1=弱 2=中 3=强 */
 export type PasswordStrength = 0 | 1 | 2 | 3
@@ -56,22 +56,8 @@ export const scorePassword = (value: string): PasswordStrength => {
 }
 
 export const useAuthForm = () => {
-  const { t } = useI18n()
+  const { t, locale } = useI18n()
   const { sendEmailCode } = useAuth()
-  const { imageBase64, checkKey, refreshCaptcha } = useCaptcha()
-
-  // 图形验证码在三个页面上都要用，且都是"页面打开时拉一次"。
-  // onMounted 只在浏览器端执行：验证码对 SSR / SEO 毫无意义，
-  // 在服务端每次渲染都请求一张只会白白消耗后端资源。
-  onMounted(() => {
-    refreshCaptcha()
-  })
-
-  /** 图形验证码输错 / 过期后必须换一张，否则用户拿同一张失效的再试一次必然又失败 */
-  const resetCaptcha = (clearField?: { captcha: string }) => {
-    if (clearField) clearField.captcha = ''
-    refreshCaptcha()
-  }
 
   // ===== 邮箱验证码倒计时（契约 4.4：60s，禁用期间显示剩余秒数）=====
   const countdown = ref(0)
@@ -99,18 +85,24 @@ export const useAuthForm = () => {
   // 组件卸载时清掉定时器：否则用户发完验证码立刻跳走，回调还会对着已卸载的 ref 跑 60 秒
   onBeforeUnmount(stopCountdown)
 
-  const canSendCode = (email: string, captcha: string) =>
-    countdown.value <= 0 && !!email.trim() && !!captcha.trim()
+  /**
+   * 「获取验证码」按钮是否可点。
+   *
+   * 只判断两件事：倒计时结束 + 邮箱非空。人机验证在点击之后才弹出，
+   * 不需要用户预先输入任何图形码（旧版这里还要 `captcha.trim()`）。
+   */
+  const canSendCode = (email: string) => countdown.value <= 0 && !!email.trim()
 
   /**
    * 发送邮箱验证码。
    *
+   * ticket 是页面先通过 CikVerify 弹窗拿到的一次性凭证，必须原样交给 BFF：
+   * Java 端会消费它（一次性、绑定 IP+UA、120s 有效），失败即发信失败。
+   *
    * @returns 成功返回 true；失败返回 false 并把错误文案写进 `errorRef`
-   * 失败时**一定刷新图形验证码**：后端校验图形验证码是一次性的，
-   * 不管这次失败是图形码错、邮箱已注册还是触发了限流，旧的那张都已作废。
    */
   const requestEmailCode = async (
-    payload: { email: string, scene: EmailCodeScene, captcha: string },
+    payload: { email: string, scene: EmailCodeScene, ticket: string },
     errorRef: { value: string },
   ): Promise<boolean> => {
     errorRef.value = ''
@@ -118,8 +110,11 @@ export const useAuthForm = () => {
       const data = await sendEmailCode({
         email: payload.email.trim(),
         scene: payload.scene,
-        captcha: payload.captcha.trim(),
-        checkKey: checkKey.value,
+        ticket: payload.ticket,
+        // 语言必须随请求一起传：BFF 用 resolveStoreLang(body.lang) 决定 Java 端
+        // 业务错误文案（"该邮箱已注册/尚未注册/发送过于频繁"）的语言。
+        // 不传的话中文/法语站点会收到英文错误提示（曾经的真实回归）。
+        lang: locale.value,
       })
       // 倒计时以**后端**给的 cooldownSeconds 为准：后端才是限流的事实来源，
       // 前端写死 60 会让两边规则各改各的。
@@ -127,7 +122,6 @@ export const useAuthForm = () => {
       return true
     } catch (e: any) {
       errorRef.value = resolveAuthErrorMessage(e) || t('auth.sendCodeFailed')
-      resetCaptcha()
       return false
     }
   }
@@ -151,10 +145,6 @@ export const useAuthForm = () => {
   }
 
   return {
-    // 图形验证码
-    imageBase64,
-    refreshCaptcha,
-    resetCaptcha,
     // 邮箱验证码
     countdown,
     canSendCode,

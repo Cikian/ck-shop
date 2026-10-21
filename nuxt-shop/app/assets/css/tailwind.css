@@ -13,18 +13,26 @@
  * 命名约定：
  *   --color-brand-*  品牌珊瑚玫红阶梯（新页面一律用它）
  *   --color-accent-* 点缀明黄阶梯
- *   --color-primary-* / --color-accent 等**旧名保留为兼容别名**：
- *     旧页面（未参与本次重构的组件）仍引用它们，别名保证不会渲染错乱。
- *     新代码请使用 brand / ink / muted / line / cream 这套语义名。
+ *   --color-primary-* **品牌色的别名**（不是第二套颜色）：
+ *     Nuxt UI 组件的 bg-primary / text-primary 取的就是它，
+ *     所以它必须与 --color-brand-* 指向同一个色阶，详见下方 @theme。
+ *   --color-surface   卡片/药丸的**白色底**（.ui-card / .chip 依赖它）
  *
- * 字体说明：本项目**没有安装 @nuxt/fonts**（nuxt.config 里的 fonts 配置实际不生效），
- * 且中文 Web 字体动辄数 MB。因此这里使用系统字体栈，优先命中各平台最好的圆润黑体，
- * 不引入任何外部字体请求。
+ * 字体说明（2026-10 校正）：
+ *   本项目**不引入任何外部 Web 字体**，只用系统字体栈（见下方 --font-sans）：
+ *   中文 Web 字体动辄数 MB，且中文站点的首屏预算更该花在图片上。
+ *   （历史上 nuxt.config 里曾有一块 `fonts: { provider: 'bunny', families: [DM Sans] }`，
+ *   但 DM Sans 从未出现在任何 font-family 里，构建产物 @font-face 数量为 0，
+ *   是"看起来在配字体、实际什么都没发生"的空转配置，已随本次基建一并删除。
+ *   若将来确实要引外部字体：families 加 `global: true`、把字体名写进 --font-sans、
+ *   并在 nuxt.config 用 `fonts.providers.google = false` 之类显式选源。）
  */
 
 @import "tailwindcss";
 @import "@nuxt/ui";
-@import "@storefront-ui/vue/tailwind-config";
+/* 只需要它的设计 token（@theme 里的 --color-* 阶梯）；不再经由 @storefront-ui/vue 的 CSS 入口，
+ * 该包已从 devDependencies 移除。@storefront-ui/tailwind-config 现在在 dependencies（构建期 import）。 */
+@import "@storefront-ui/tailwind-config";
 
 @theme {
   /* ===== 品牌色 · 珊瑚玫红 ===== */
@@ -79,38 +87,48 @@
 
   /* ===== 兼容别名（旧页面引用） ===== */
   /*
-   * 只保留仍在被引用的：
-   *   --color-surface-secondary   app/** 里有 30 处 var(--color-surface-secondary)
+   * 卡片/药丸的**白色底**。
    *
-   * 已删除（全仓库零引用，grep 证据见本次改动说明）：
-   *   --color-background / --color-surface / --color-text / --color-text-secondary /
-   *   --color-text-muted / --color-border / --color-border-light /
-   *   --color-primary-light / --color-accent-light
+   * ⚠️ 这里曾经把 --color-surface 当成"零引用的死 token"删掉，但 .ui-card / .chip
+   * 的 `background-color: var(--color-surface)` 还在（全站 74 处 ui-card）：
+   * CSS 变量未定义时，background-color 在 computed-value 阶段变成非法值并回退到
+   * initial = transparent，也就是"卡片白底直接消失、压在奶油色页面上"。
+   * 现在补回来：卡片必须是白的，页面底色才是 --color-cream。
    */
+  --color-surface: #FFFFFF;
+
+  /* 仍在被引用（30 处）的浅灰底 */
   --color-surface-secondary: #FDF2EE;
 
   /*
-   * ⚠️ 旧 primary = 深墨色阶梯，**这一组不要当死代码删掉**。
+   * 旧 primary 名 = **品牌色别名**（不是第二套颜色）。
    *
-   * @nuxt/ui 会在自己生成的 CSS 里用 `@theme default inline` 定义同名 token
-   *   --color-primary-50..950: var(--ui-color-primary-*)
-   *   --color-primary: var(--ui-primary)
-   * "default" 的语义是"没有被覆盖时才生效"，而 @nuxt/ui 默认 primary = green。
-   * 删掉这里的覆盖，所有走 Nuxt UI primary 的组件样式会从深墨色变成绿色 ——
-   * 那是改视觉，不是删死代码。
+   * 为什么必须保留这一组：@nuxt/ui 用 `@theme default inline` 定义了
+   *   --color-primary-*: var(--ui-color-primary-*)
+   * 而 Tailwind 编译后的 bg-primary / text-primary / ring-primary 取的是
+   * --color-primary-*。如果这里覆盖成别的色阶（历史值是墨黑），
+   * Nuxt UI 的 primary 工具类就和品牌色分叉（详见 app.config.ts 的 primary: 'brand'）。
+   * 所以这一组全部指向 brand 阶梯 —— 删掉会回落到 @nuxt/ui 解析出的 brand（也一致），
+   * 但显式写出来能挡住以后有人又把它改成墨黑。
    */
-  --color-primary: #1F1A1C;
-  --color-primary-50:  #FAF7F7;
-  --color-primary-100: #F2EDEE;
-  --color-primary-200: #E4DCDE;
-  --color-primary-300: #C9BEC1;
-  --color-primary-400: #A2969A;
-  --color-primary-500: #7A6E72;
-  --color-primary-600: #5A5053;
-  --color-primary-700: #3A3134;
-  --color-primary-800: #2A2326;
-  --color-primary-900: #1F1A1C;
-  --color-primary-950: #131011;
+  --color-primary: var(--color-brand);
+  --color-primary-50: var(--color-brand-50);
+  --color-primary-100: var(--color-brand-100);
+  --color-primary-200: var(--color-brand-200);
+  --color-primary-300: var(--color-brand-300);
+  --color-primary-400: var(--color-brand-400);
+  --color-primary-500: var(--color-brand-500);
+  --color-primary-600: var(--color-brand-600);
+  --color-primary-700: var(--color-brand-700);
+  --color-primary-800: var(--color-brand-800);
+  --color-primary-900: var(--color-brand-900);
+  --color-primary-950: var(--color-brand-950);
+
+  /* ===== 动效 token（全站过渡/动画的唯一时间与曲线来源） ===== */
+  --duration-fast: 150ms;
+  --duration-base: 250ms;
+  --duration-slow: 400ms;
+  --ease-standard: cubic-bezier(0.2, 0, 0, 1);
 
   /* ===== 圆角 ===== */
   --radius-card: 20px;
@@ -277,6 +295,66 @@ body {
   border-color: var(--color-brand-300);
   color: var(--color-brand-600);
   background-color: var(--color-brand-50);
+}
+
+/*
+ * 商品页底部动作条「收藏」按钮：中性 pill（2026-10-21）。
+ *
+ * ⚠️ 不要再用 `.ui-pill-ghost` + `bg-[var(--color-cream)]` 的组合：
+ *    本文件的组件类都是**非分层**样式（没有包在 @layer utilities 里），
+ *    `.ui-pill-ghost { background-color: transparent }` 会盖掉 Tailwind 的 bg-* 工具类
+ *    —— 实测收藏按钮的背景是 rgba(0,0,0,0)。商品信息很高时，这个透明按钮会把
+ *    滚动上来的下方内容透出来（用户反馈截图）。这里给收藏按钮自己的不透明底色。
+ *
+ * 底色用白色（--color-surface）而不是奶油色：动作条的浮层底本身就是 #fff6f2（= 奶油色），
+ * 同色会让收藏按钮"看起来没有底"，也和全站的白色药丸（规格 chip、数量步进器）不统一。
+ */
+.ui-pill-fav {
+  background-color: var(--color-surface);
+  border: 1px solid var(--color-line);
+  color: var(--color-ink-soft);
+}
+
+.ui-pill-fav:hover {
+  border-color: var(--color-brand-300);
+  color: var(--color-brand-600);
+  background-color: var(--color-brand-50);
+}
+
+/* 已收藏：aria-pressed 由 Vue 绑定，状态永远以后端返回值为准 */
+.ui-pill-fav[aria-pressed='true'] {
+  border: 2px solid var(--color-brand-500);
+  background-color: var(--color-brand-50);
+  color: var(--color-brand-700);
+}
+
+/*
+ * 商品页底部动作条的浮层底（2026-10-21 需求方给定 CSS）：
+ *   border-radius: 28px;
+ *   background: #fff6f2;
+ *   box-shadow: 5px 5px 30px #e3dbd7, -5px -5px 30px #ffffff;
+ *
+ * 三个动作按钮浮在这块底上：它是不透明的，所以按钮间隙与收藏按钮下面
+ * 都不会再透出页面内容（原先是"透明容器 + 透明收藏按钮"）。
+ */
+.ui-action-dock {
+  border-radius: 28px;
+  background: #fff6f2;
+  box-shadow: 5px 5px 30px #e3dbd7, -5px -5px 30px #ffffff;
+}
+
+/*
+ * 动作条的「帘子」：贴在浮层底下方、一直盖到视口底部，用来挡住从按钮下方漏出来的内容。
+ *
+ * 只在动作条**贴底固定**时有意义；一旦动作条进入「推荐区上方 → 随页面上滚」的释放状态，
+ * 帘子会变成一块悬在内容中间、把文字切掉一截的色块，所以那时必须隐藏。
+ * 隐藏方式用 visibility（而不是 opacity）：hidden 的元素既不绘制、也不吃点击。
+ * 状态由 useStickyAside 写入 `--action-mask-visibility`（释放时为 hidden），
+ * 因此组件本身不需要额外 prop。
+ */
+.ui-action-mask {
+  background-color: var(--color-cream);
+  visibility: var(--action-mask-visibility, visible);
 }
 
 /* 价格：超大超粗，是商品名的 2 倍以上 */
@@ -481,15 +559,112 @@ body {
 .animate-fade-in-up { animation: fadeInUp 0.6s cubic-bezier(0.2, 0.6, 0.2, 1) forwards; }
 
 /* ==========================================================================
+   全局过渡类（页面 / 布局 / 列表）
+   ==========================================================================
+ *
+ * 这些类名是**跨文件契约**：nuxt.config 的 app.pageTransition / layoutTransition
+ * 和组件里的 <Transition> / <TransitionGroup> 都按名字引用，改名必须同步改调用点。
+ *
+ * 时间与曲线统一走 @theme 里的 --duration-* / --ease-standard，
+ * 不要在组件里再写裸的 `duration-300 ease-out`。
+ * prefers-reduced-motion 的处理见文件末尾的 @media 块。
+ */
+
+/* --- 页面切换：nuxt.config `app.pageTransition = { name: 'page', mode: 'out-in' }` --- */
+.page-enter-active,
+.page-leave-active {
+  transition:
+    opacity 0.18s var(--ease-standard),
+    transform 0.18s var(--ease-standard);
+}
+
+.page-enter-from {
+  opacity: 0;
+  transform: translateY(6px);
+}
+
+.page-leave-to {
+  opacity: 0;
+}
+
+/* --- 布局切换 / 局部淡入淡出：nuxt.config `app.layoutTransition = { name: 'fade' }` --- */
+.fade-enter-active,
+.fade-leave-active {
+  transition: opacity var(--duration-base) var(--ease-standard);
+}
+
+.fade-enter-from,
+.fade-leave-to {
+  opacity: 0;
+}
+
+/* --- 列表增删/排序：<TransitionGroup name="list"> ---
+ * .list-leave-active 用绝对定位，让被移除的条目脱离文档流，
+ * 剩下的条目才能用 .list-move 平滑补位（父容器需 position: relative）。 */
+.list-move,
+.list-enter-active,
+.list-leave-active {
+  transition:
+    opacity var(--duration-base) var(--ease-standard),
+    transform var(--duration-base) var(--ease-standard);
+}
+
+.list-enter-from,
+.list-leave-to {
+  opacity: 0;
+  transform: translateY(6px);
+}
+
+.list-leave-active {
+  position: absolute;
+  left: 0;
+  right: 0;
+}
+
+/* --- 骨架屏：可选使用（页面没有自有骨架时给占位块） ---
+ * 只做背景渐变扫光，不改布局尺寸；宽高由调用方的工具类决定。 */
+.skeleton {
+  background-color: var(--color-line-soft);
+  background-image: linear-gradient(
+    90deg,
+    var(--color-line-soft) 0%,
+    var(--color-surface) 45%,
+    var(--color-line-soft) 90%
+  );
+  background-size: 200% 100%;
+  border-radius: var(--radius-card-sm);
+  animation: skeleton-shimmer 1.4s linear infinite;
+  color: transparent;
+  user-select: none;
+}
+
+@keyframes skeleton-shimmer {
+  from { background-position: 200% 0; }
+  to { background-position: -200% 0; }
+}
+
+/* ==========================================================================
    可访问性
    ========================================================================== */
 
 @media (prefers-reduced-motion: reduce) {
+  /* 全局把过渡/动画压到"瞬时"，并显式关掉 html 的平滑滚动：
+   * router.options.scrollBehavior 也会读同一个媒体查询并退回 instant。 */
+  html {
+    scroll-behavior: auto;
+  }
+
   *, *::before, *::after {
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
+  }
+
+  /* 扫光动画对"减少动效"用户是干扰，直接换成静态底色 */
+  .skeleton {
+    animation: none !important;
+    background-image: none;
   }
 }
 

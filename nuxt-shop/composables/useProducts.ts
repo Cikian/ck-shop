@@ -3,7 +3,7 @@
 // 店铺端商品数据获取 + 价格格式化。
 //
 // 注意：Nuxt 4 的 srcDir 是 app/，本项目根目录下的 composables/ 不会被自动导入
-// （useAuth / useCaptcha 也都是显式 import 的），所以要这样用：
+// （useAuth / useCikianCaptcha 也都是显式 import 的），所以要这样用：
 //   import { useStoreProductList } from '~~/composables/useProducts'
 //
 // 数据链路：页面 -> Nuxt BFF(/api/products) -> createApiClient -> Java 后端
@@ -35,6 +35,14 @@ export interface StoreProductListQuery {
   keyword?: Ref<string | null | undefined>
   /** 排序；'default' 时不下发该参数，后端走默认排序 */
   sortBy?: Ref<StoreProductSort | null | undefined>
+  /**
+   * 是否在 setup 阶段立即请求（默认 true）。
+   *
+   * 传 false 的场景：调用方要把"什么时候拉"交给别的编排（例如购物车页用
+   * useLazyAsyncData('cart-likes', () => loadLikes()) 触发），
+   * 否则 setup 会先发一次、调用方再触发一次，变成重复请求。
+   */
+  immediate?: boolean
 }
 
 /**
@@ -73,7 +81,11 @@ export function useStoreProductList(options: StoreProductListQuery) {
             : undefined,
         },
       }),
-    { default: () => emptyStoreProductPage(pageSize) },
+    {
+      default: () => emptyStoreProductPage(pageSize),
+      // 只有显式 false 才关闭首次自动请求；不传时保持 Nuxt 默认（immediate: true）
+      ...(options.immediate === false ? { immediate: false } : {}),
+    },
   )
 }
 

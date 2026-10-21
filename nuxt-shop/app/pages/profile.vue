@@ -66,13 +66,14 @@
                 <div class="relative flex items-start gap-4">
                   <span class="h-16 w-16 shrink-0 overflow-hidden rounded-full border-2 border-white/40 bg-white/20">
                     <img
-                      v-if="userInfo?.avatar"
+                      v-if="userInfo?.avatar && !avatarFailed"
                       :src="userInfo.avatar"
                       :alt="displayName"
                       width="64"
                       height="64"
                       class="h-full w-full object-cover"
                       loading="lazy"
+                      @error="avatarFailed = true"
                     >
                     <span
                       v-else-if="avatarInitial"
@@ -224,9 +225,6 @@
         </div>
       </template>
     </div>
-
-    <!-- Footer -->
-    <SiteFooter />
   </div>
 </template>
 
@@ -258,10 +256,14 @@ import { useProfileFields } from '~~/composables/useProfileFields'
  *   2) **状态文字一律用后端 orderStatusLabel**，前端不自建「状态码 -> 中文」映射。
  */
 
-const { t, locale } = useI18n()
+const { t } = useI18n()
 const { userInfo, isLoggedIn, logout } = useAuth()
 const localePath = useLocalePath()
 const route = useRoute()
+
+/** 头像加载失败时回退到首字母/图标占位（外链头像会 403/被下线） */
+const avatarFailed = ref(false)
+watch(() => userInfo.value?.avatar, () => { avatarFailed.value = false })
 
 type TabKey = 'info' | 'orders' | 'favorites' | 'addresses' | 'settings'
 
@@ -348,8 +350,11 @@ const stats = computed(() => [
  * 顶部「收藏数」统计卡要立即显示真实数量，否则用户会看到"收藏数 0"却明明收藏过商品。
  *   - 未登录不打接口（个人中心未登录时走的是登录引导，不该产生必然 401 的请求）；
  *   - 已经加载过就不再重复拉（取消收藏是本地移除那一行，不需要整页重拉）。
+ *   - **只在客户端跑**：登录态已在 SSR 播种，`immediate: true` 在服务端也会命中，
+ *     会在 SSR setup 里多发一次依赖 cookie 的请求（hydration 后还会再来一次）。
  */
 watch(isLoggedIn, () => {
+  if (!import.meta.client) return
   if (isLoggedIn.value && !favoritesLoaded.value) {
     void loadFavorites()
   }
@@ -405,6 +410,9 @@ const { load: loadProfile } = useProfileAccount()
 const privateDataLoaded = ref(false)
 
 watch(isLoggedIn, () => {
+  // SSR 已播种登录态：immediate 在服务端也会命中，这 3 个 load 依赖浏览器 cookie 语义/客户端
+  // 交互状态，只应在客户端首次进页面时跑一次（否则 SSR 多发 3 个请求，且部分会 401）
+  if (!import.meta.client) return
   if (!isLoggedIn.value || privateDataLoaded.value) return
   privateDataLoaded.value = true
   void loadOrders()
@@ -440,5 +448,7 @@ async function handleLogout() {
 
 useSeoMeta({
   title: () => t('profile.title'),
+  // 个人中心是私有页面（昵称/邮箱/手机号），不允许被搜索引擎收录
+  robots: 'noindex, nofollow',
 })
 </script>

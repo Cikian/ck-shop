@@ -3,7 +3,7 @@
 // 店铺端「支持哪些语言」的**唯一来源**（single source of truth）。
 //
 // 改造前同一份语言清单散落在 3 处、必须手工同步：
-//   1) nuxt.config.ts 的 i18n.locales（code / language / 展示名 / 语言包文件 / 图标）
+//   1) nuxt.config.ts 的 i18n.locales（code / language / 展示名 / 语言包文件）
 //   2) types/shop-product.ts 的 STORE_SUPPORTED_LANGS（BFF 收敛 ?lang= / x-language 用）
 //   3) types/shop-product.ts 的 INTL_LOCALE_TAGS（zh -> zh-CN，Intl 格式化用）
 // 现在统一由本文件的 STORE_LOCALES 派生：
@@ -11,6 +11,12 @@
 //   - types/shop-product.ts：resolveStoreLang 的合法值集合、toIntlLocale 的 BCP-47 映射
 //   - server/middleware/locale.ts：判断 URL 前缀（/zh/... ）是不是受支持语言
 // 新增一门语言时只需要在这里加一条。
+//
+// 语言选择器里的**旗帜**不放这里：旗帜已改为内联 SVG（见 app/utils/locale-flag.ts 的
+// STORE_LOCALE_FLAG + app/components/LocaleFlag.vue），本文件只保留语言清单。
+// 以前这里存的是 emoji 国旗（"🇺️🇸️" 这类「区域指示符 + U+FE0F」序列），
+// U+FE0F 夹在两个区域指示符之间打断了 RGI 国旗序列，Windows 没有国旗字体就退化成
+// 两个方框字母 —— 所以语言清单不再携带任何 emoji。
 //
 // 约束：本文件**零依赖**（不 import 任何 Nuxt / Vue / 第三方模块），
 // 因为 nuxt.config.ts 会在配置加载阶段（jiti）直接 import 它。
@@ -25,15 +31,13 @@ export interface StoreLocaleDefinition {
   name: string
   /** i18n langDir（i18n/locales/）下的语言包文件名 */
   file: string
-  /** 语言选择器里的旗帜 */
-  icon: string
 }
 
 /** 支持的语言清单（顺序即语言选择器的展示顺序；第一条为默认语言） */
 export const STORE_LOCALES: readonly StoreLocaleDefinition[] = [
-  { code: 'en', language: 'en-US', name: 'English', file: 'en.json', icon: '🇺️🇸️' },
-  { code: 'zh', language: 'zh-CN', name: '中文', file: 'zh.json', icon: '🇨️🇳️' },
-  { code: 'fr', language: 'fr-FR', name: 'Français', file: 'fr.json', icon: '🇫️🇷️' },
+  { code: 'en', language: 'en-US', name: 'English', file: 'en.json' },
+  { code: 'zh', language: 'zh-CN', name: '中文', file: 'zh.json' },
+  { code: 'fr', language: 'fr-FR', name: 'Français', file: 'fr.json' },
 ]
 
 /** 默认语言：解析不出语言时的兜底（与 nuxt.config.ts 的 i18n.defaultLocale 同源） */

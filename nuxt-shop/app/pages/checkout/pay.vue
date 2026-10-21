@@ -1,17 +1,18 @@
 <template>
   <div class="min-h-screen bg-[var(--color-cream)] pt-navbar">
-    <div class="mx-auto max-w-3xl px-2 pb-16 sm:px-3 lg:px-4">
+    <div class="mx-auto max-w-3xl px-2 pb-32 sm:px-3 lg:pb-16 lg:px-4">
       <header class="mb-5">
         <h1 class="text-[26px] font-black leading-none text-[var(--color-ink)] sm:text-[32px]">
           {{ t('order.payTitle') }}
         </h1>
         <p v-if="orderNo" class="mt-2 text-[13px] tabular text-[var(--color-muted)]">
-          {{ t('order.payOrderNo') }}：{{ orderNo }}
+          {{ t('order.payOrderNo') }}: {{ orderNo }}
         </p>
       </header>
 
+      <Transition name="fade" mode="out-in">
       <!-- 缺少订单号（直接打开 /checkout/pay） -->
-      <section v-if="!orderNo" class="ui-card px-6 py-16 text-center">
+      <section v-if="!orderNo" key="missing" class="ui-card px-6 py-16 text-center">
         <span class="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-[var(--color-error)]/10">
           <UIcon name="lucide:file-question" class="h-8 w-8 text-[var(--color-error)]" aria-hidden="true" />
         </span>
@@ -22,7 +23,7 @@
       </section>
 
       <!-- 未登录 -->
-      <section v-else-if="unauthorized" class="ui-card px-6 py-16 text-center">
+      <section v-else-if="unauthorized" key="unauthorized" class="ui-card px-6 py-16 text-center">
         <span class="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-[var(--color-brand-50)]">
           <UIcon name="lucide:lock" class="h-8 w-8 text-[var(--color-brand-500)]" aria-hidden="true" />
         </span>
@@ -35,7 +36,7 @@
       </section>
 
       <!-- 加载失败 -->
-      <section v-else-if="loadError" class="ui-card px-6 py-16 text-center">
+      <section v-else-if="loadError" key="error" class="ui-card px-6 py-16 text-center">
         <span class="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-[var(--color-error)]/10">
           <UIcon name="lucide:wifi-off" class="h-8 w-8 text-[var(--color-error)]" aria-hidden="true" />
         </span>
@@ -48,14 +49,14 @@
       </section>
 
       <!-- 骨架屏 -->
-      <section v-else-if="loading || !detail" class="ui-card space-y-4 p-6" aria-busy="true" :aria-label="t('common.loading')">
+      <section v-else-if="loading || !detail" key="skeleton" class="ui-card space-y-4 p-6" aria-busy="true" :aria-label="t('common.loading')">
         <div class="h-4 w-1/3 animate-pulse rounded bg-[var(--color-line-soft)]"></div>
         <div class="h-10 w-1/2 animate-pulse rounded bg-[var(--color-line-soft)]"></div>
         <div class="h-12 w-full animate-pulse rounded-full bg-[var(--color-line-soft)]"></div>
       </section>
 
       <!-- 正文 -->
-      <template v-else>
+      <div v-else key="content">
         <!-- 已支付：不再显示支付按钮，只给"去看订单" -->
         <section v-if="paid" class="ui-card px-6 py-14 text-center">
           <span class="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-[var(--color-success-50)]">
@@ -87,7 +88,7 @@
                   {{ countdownText }}
                 </p>
                 <p v-if="payDeadlineText" class="mt-1.5 text-[12px] text-[var(--color-muted)]">
-                  {{ t('order.payDeadline') }}：{{ payDeadlineText }}
+                  {{ t('order.payDeadline') }}: {{ payDeadlineText }}
                 </p>
               </div>
             </div>
@@ -103,13 +104,13 @@
             <!-- 模拟支付声明：必须让用户（和联调同事）一眼看到这不是真支付 -->
             <p class="mt-4 flex items-start gap-2 rounded-[var(--radius-card-sm)] border border-[var(--color-warning)]/30 bg-[var(--color-warning-50)] px-3.5 py-3 text-[12px] leading-relaxed text-[var(--color-warning-600)]">
               <UIcon name="lucide:flask-conical" class="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
-              <span><strong>{{ t('order.payMockBadge') }}</strong>：{{ t('order.payMockNotice') }}</span>
+              <span><strong>{{ t('order.payMockBadge') }}</strong>: {{ t('order.payMockNotice') }}</span>
             </p>
 
             <div class="mt-5 flex flex-col gap-3 sm:flex-row">
               <button
                 type="button"
-                class="flex h-12 flex-1 items-center justify-center gap-2 rounded-full bg-[var(--color-brand-500)] text-[15px] font-bold text-white transition-colors duration-200 hover:bg-[var(--color-brand-600)] disabled:cursor-not-allowed disabled:bg-[var(--color-ink)]/20 motion-reduce:transition-none"
+                class="hidden h-12 flex-1 items-center justify-center gap-2 rounded-full bg-[var(--color-brand-500)] text-[15px] font-bold text-white transition-colors duration-200 hover:bg-[var(--color-brand-600)] disabled:cursor-not-allowed disabled:bg-[var(--color-ink)]/20 motion-reduce:transition-none lg:flex"
                 :disabled="paying || expired"
                 @click="payNow"
               >
@@ -165,11 +166,34 @@
               {{ t('order.payBackToOrder') }}
             </NuxtLinkLocale>
           </div>
-        </template>
-      </template>
-    </div>
 
-    <SiteFooter />
+          <!--
+            移动端常驻支付条：支付是本页唯一目标，不能让用户滚回上面的金额卡。
+            桌面端仍用卡内按钮；这里 lg:hidden，fixed 不占文档流（容器已留 pb-32）。
+          -->
+          <div
+            class="fixed inset-x-0 bottom-0 z-40 border-t border-[var(--color-line-soft)] bg-white/95 px-3 pb-[calc(env(safe-area-inset-bottom)+0.5rem)] pt-2.5 shadow-[0_-4px_16px_rgba(0,0,0,0.06)] backdrop-blur lg:hidden"
+          >
+            <div class="flex items-center gap-3">
+              <div class="min-w-0 flex-1">
+                <p class="text-[11px] leading-none text-[var(--color-muted)]">{{ t('order.payAmount') }}</p>
+                <p class="price mt-1 text-[22px] leading-none">{{ format(detail.payAmount) }}</p>
+              </div>
+              <button
+                type="button"
+                class="flex h-12 min-w-[150px] items-center justify-center gap-2 rounded-full bg-[var(--color-brand-500)] px-6 text-[15px] font-bold text-white transition-colors disabled:cursor-not-allowed disabled:bg-[var(--color-ink)]/20"
+                :disabled="paying || expired"
+                @click="payNow"
+              >
+                <UIcon v-if="paying" name="lucide:loader-2" class="h-4 w-4 animate-spin motion-reduce:animate-none" aria-hidden="true" />
+                {{ paying ? t('order.paying') : t('order.payNow') }}
+              </button>
+            </div>
+          </div>
+        </template>
+        </div>
+      </Transition>
+    </div>
   </div>
 </template>
 
@@ -254,6 +278,8 @@ const localePath = useLocalePath()
 const route = useRoute()
 const toast = useToast()
 const { format } = useStorePrice()
+/** SSR 期也要带上 httpOnly cookie 的 fetch（订单详情 loader 在 setup 阶段执行） */
+const requestFetch = useRequestFetch()
 
 const orderNo = computed(() => String(route.query.orderNo ?? '').trim())
 
@@ -284,7 +310,30 @@ const detailLink = computed(() => localePath({
   path: `/orders/${orderNo.value}`,
 }))
 
-const expired = computed(() => !paid.value && remainSeconds.value <= 0 && deadlineAt.value !== null)
+/**
+ * 已支付判定：payStatus 的三种终态都算"付过钱"（部分退款/已退款仍不该再支付）。
+ * 抽成函数：加载路径与水合回填路径必须用同一套判定。
+ */
+function isPaidStatus(order: OrderDetail | null): boolean {
+  const status = String(order?.payStatus ?? '')
+  return status === 'PAID' || status === 'PARTIAL_REFUND' || status === 'REFUNDED'
+}
+
+/**
+ * 是否已过期。
+ *
+ * 除了"本地倒计时归零"，还必须在订单已经不可支付（已关闭/已取消/已完成）时成立：
+ * 否则后端两个时间字段都缺失时 deadlineAt 为 null，页面会把一张早已关闭的订单
+ * 当成"还能支付"（按钮可点，只能靠后端报错兜底）。
+ */
+const CLOSED_ORDER_STATUS = new Set(['CANCELLED', 'CLOSED', 'COMPLETED', 'REFUNDED'])
+const expired = computed(() => (
+  !paid.value
+  && (
+    CLOSED_ORDER_STATUS.has(String(detail.value?.orderStatus ?? '').toUpperCase())
+    || (deadlineAt.value !== null && remainSeconds.value <= 0)
+  )
+))
 
 const countdownText = computed(() => {
   const total = Math.max(0, remainSeconds.value)
@@ -410,14 +459,17 @@ async function loadOrder() {
   loading.value = true
   loadError.value = ''
   try {
-    const result = await $fetch<OrderDetail>('/api/order/detail', {
+    const result = await requestFetch<OrderDetail>('/api/order/detail', {
       query: { orderNo: orderNo.value, lang: locale.value },
     })
     detail.value = result
-    paid.value = result?.payStatus === 'PAID' || result?.payStatus === 'PARTIAL_REFUND' || result?.payStatus === 'REFUNDED'
+    paid.value = isPaidStatus(result)
     anchorDeadline(result)
-    startTicking()
-    if (!paid.value) startPolling()
+    // 定时器只在客户端启动：SSR 阶段 setInterval 会挂在 Node 进程里，每个请求漏一个
+    if (import.meta.client) {
+      startTicking()
+      if (!paid.value) startPolling()
+    }
   } catch (error) {
     if (isUnauthorizedError(error)) {
       unauthorized.value = true
@@ -530,7 +582,38 @@ async function refreshPaidStatus() {
  */
 const prepayRequestId = createIdempotencyKey('pay')
 
-onMounted(loadOrder)
+/**
+ * SSR 直出支付页：loader 在 setup 期执行（不再等 onMounted），
+ * 配合 requestFetch 让 SSR 请求带上 httpOnly cookie；lazy 只影响客户端导航。
+ *
+ * 返回值是**可序列化快照**：详情/失败/未登录结论随 payload 回到客户端，
+ * 水合首帧直接回填 detail / paid / 倒计时，避免"服务端渲染了正文、客户端却闪骨架"
+ * 这种 hydration 不一致。
+ */
+const { data: payBoot } = useLazyAsyncData('checkout-pay', async () => {
+  await loadOrder()
+  return {
+    detail: detail.value,
+    unauthorized: unauthorized.value,
+    failed: !!loadError.value,
+  }
+}, { lazy: true })
+
+if (payBoot.value) {
+  if (payBoot.value.unauthorized) {
+    unauthorized.value = true
+  } else if (payBoot.value.failed) {
+    if (!loadError.value) loadError.value = t('order.loadErrorDesc')
+  } else if (payBoot.value.detail) {
+    detail.value = payBoot.value.detail
+    paid.value = isPaidStatus(payBoot.value.detail)
+    anchorDeadline(payBoot.value.detail)
+    if (import.meta.client) {
+      startTicking()
+      if (!paid.value) startPolling()
+    }
+  }
+}
 onBeforeUnmount(() => {
   stopPolling()
   stopTicking()

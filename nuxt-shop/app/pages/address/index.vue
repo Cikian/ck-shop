@@ -19,8 +19,9 @@
         </button>
       </header>
 
+      <Transition name="fade" mode="out-in">
       <!-- 未登录 -->
-      <section v-if="unauthorized" class="ui-card px-6 py-16 text-center">
+      <section v-if="unauthorized" key="unauthorized" class="ui-card px-6 py-16 text-center">
         <span class="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-[var(--color-brand-50)]">
           <UIcon name="lucide:lock" class="h-8 w-8 text-[var(--color-brand-500)]" aria-hidden="true" />
         </span>
@@ -33,7 +34,7 @@
       </section>
 
       <!-- 加载失败 -->
-      <section v-else-if="loadError" class="ui-card px-6 py-16 text-center">
+      <section v-else-if="loadError" key="error" class="ui-card px-6 py-16 text-center">
         <span class="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-[var(--color-error)]/10">
           <UIcon name="lucide:wifi-off" class="h-8 w-8 text-[var(--color-error)]" aria-hidden="true" />
         </span>
@@ -46,7 +47,7 @@
       </section>
 
       <!-- 骨架屏 -->
-      <section v-else-if="loading && !addresses.length" class="space-y-4" aria-busy="true" :aria-label="t('common.loading')">
+      <section v-else-if="addrPending && !addresses.length" key="skeleton" class="space-y-4" aria-busy="true" :aria-label="t('common.loading')">
         <div v-for="index in 3" :key="index" class="ui-card space-y-3 p-5">
           <div class="h-4 w-1/4 animate-pulse rounded bg-[var(--color-line-soft)]"></div>
           <div class="h-3 w-2/3 animate-pulse rounded bg-[var(--color-line-soft)]"></div>
@@ -54,7 +55,7 @@
       </section>
 
       <!-- 空态 -->
-      <section v-else-if="!addresses.length" class="ui-card px-6 py-20 text-center">
+      <section v-else-if="!addresses.length" key="empty" class="ui-card px-6 py-20 text-center">
         <span class="mx-auto flex h-20 w-20 items-center justify-center rounded-full bg-[var(--color-brand-50)]">
           <UIcon name="lucide:map-pin-off" class="h-9 w-9 text-[var(--color-brand-400)]" aria-hidden="true" />
         </span>
@@ -67,7 +68,8 @@
       </section>
 
       <!-- 列表 -->
-      <ul v-else class="space-y-4">
+      <div v-else key="content">
+        <TransitionGroup name="list" tag="ul" class="relative space-y-4">
         <li v-for="address in addresses" :key="address.id" class="ui-card p-5">
           <div class="flex flex-wrap items-start justify-between gap-x-4 gap-y-2">
             <div class="min-w-0 flex-1">
@@ -127,7 +129,9 @@
             </div>
           </div>
         </li>
-      </ul>
+        </TransitionGroup>
+      </div>
+      </Transition>
     </div>
 
     <!-- 新增 / 编辑弹层 -->
@@ -243,20 +247,20 @@
         <div class="flex w-full justify-end gap-3">
           <button
             type="button"
-            class="cursor-pointer rounded-full border border-[var(--color-line)] px-5 py-2.5 text-sm font-semibold text-[var(--color-ink-soft)] transition-colors duration-200 hover:bg-[var(--color-surface-secondary)] motion-reduce:transition-none"
+            class="cursor-pointer rounded-full border border-[var(--color-line)] px-5 py-2.5 text-sm font-semibold text-[var(--color-ink-soft)] transition-colors duration-200 hover:bg-[var(--color-surface-secondary)] disabled:cursor-not-allowed disabled:opacity-50 motion-reduce:transition-none"
             :disabled="formState.pending"
             @click="formState.open = false"
           >
             {{ t('common.cancel') }}
           </button>
-          <button
-            type="button"
+          <AsyncButton
             class="cursor-pointer rounded-full bg-[var(--color-brand-500)] px-5 py-2.5 text-sm font-semibold text-white transition-colors duration-200 hover:bg-[var(--color-brand-600)] disabled:cursor-not-allowed disabled:opacity-50 motion-reduce:transition-none"
-            :disabled="formState.pending"
+            :pending="formState.pending"
+            :pending-label="t('address.saving')"
             @click="submitForm"
           >
-            {{ formState.pending ? t('address.saving') : t('common.save') }}
-          </button>
+            {{ t('common.save') }}
+          </AsyncButton>
         </div>
       </template>
     </UModal>
@@ -277,19 +281,17 @@
           >
             {{ t('common.cancel') }}
           </button>
-          <button
-            type="button"
+          <AsyncButton
             class="cursor-pointer rounded-full bg-[var(--color-error)] px-5 py-2.5 text-sm font-semibold text-white transition-colors duration-200 hover:bg-[var(--color-error-600)] disabled:cursor-not-allowed disabled:opacity-50 motion-reduce:transition-none"
-            :disabled="deleteState.pending"
+            :pending="deleteState.pending"
+            :pending-label="t('address.deleting')"
             @click="confirmDelete"
           >
             {{ t('address.deleteConfirm') }}
-          </button>
+          </AsyncButton>
         </div>
       </template>
     </UModal>
-
-    <SiteFooter />
   </div>
 </template>
 
@@ -332,12 +334,17 @@ interface AddressVO {
 
 const { t, locale } = useI18n()
 const toast = useToast()
+/** SSR 期也要带上 httpOnly cookie 的 fetch（loader 在 setup 阶段执行） */
+const requestFetch = useRequestFetch()
 
 const loading = ref(false)
 const mutating = ref(false)
 const loadError = ref('')
 const unauthorized = ref(false)
 const addresses = ref<AddressVO[]>([])
+
+/** 快速重复操作时只应用最后一次请求的响应（例如连点"设为默认"） */
+let loadSeq = 0
 
 const formState = reactive({ open: false, id: '', pending: false })
 const deleteState = reactive({ open: false, pending: false, id: '' })
@@ -366,20 +373,23 @@ function notifyError(error: unknown) {
 }
 
 async function loadAddresses() {
+  const seq = ++loadSeq
   loading.value = true
   loadError.value = ''
   try {
-    const list = await $fetch<AddressVO[]>('/api/address/list', { query: { lang: locale.value } })
+    const list = await requestFetch<AddressVO[]>('/api/address/list', { query: { lang: locale.value } })
+    if (seq !== loadSeq) return
     addresses.value = (Array.isArray(list) ? list : []).filter(item => !!item?.id)
     unauthorized.value = false
   } catch (error) {
+    if (seq !== loadSeq) return
     if (isUnauthorizedError(error)) {
       unauthorized.value = true
       return
     }
     loadError.value = readErrorMessage(error, t('address.loadErrorDesc'))
   } finally {
-    loading.value = false
+    if (seq === loadSeq) loading.value = false
   }
 }
 
@@ -546,7 +556,27 @@ async function confirmDelete() {
   }
 }
 
-onMounted(loadAddresses)
+/**
+ * SSR 直出地址簿：loader 在 setup 期执行（不再等 onMounted），
+ * 配合 requestFetch 让 SSR 请求带上 httpOnly cookie。
+ *
+ * 返回值是**可序列化快照**：地址列表/失败与登录结论随 payload 回到客户端，
+ * 否则水合首帧本地 refs 是初始值，会与服务端渲染的列表/空态不一致。
+ */
+const { data: addrBoot, pending: addrPending } = useLazyAsyncData('address-book', async () => {
+  await loadAddresses()
+  return {
+    addresses: addresses.value,
+    unauthorized: unauthorized.value,
+    failed: !!loadError.value,
+  }
+}, { lazy: true })
+
+if (addrBoot.value) {
+  addresses.value = addrBoot.value.addresses
+  if (addrBoot.value.unauthorized) unauthorized.value = true
+  if (addrBoot.value.failed && !loadError.value) loadError.value = t('address.loadErrorDesc')
+}
 
 useSeoMeta({
   title: () => t('address.title'),

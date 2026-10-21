@@ -19,18 +19,14 @@
           <ul class="divide-y divide-[var(--color-line-soft)]">
             <li v-for="(item, index) in items" :key="item.id || index" class="flex gap-3 px-4 py-4">
               <span class="h-[68px] w-[68px] shrink-0 overflow-hidden rounded-[var(--radius-tile)] bg-[var(--color-line-soft)]">
-                <img
-                  v-if="item.productImage"
+                <ShopImage
                   :src="item.productImage"
                   :alt="item.productName || ''"
                   width="68"
                   height="68"
                   class="h-full w-full object-cover"
-                  loading="lazy"
-                >
-                <span v-else class="flex h-full w-full items-center justify-center">
-                  <UIcon name="lucide:image" class="h-5 w-5 text-[var(--color-muted)]" aria-hidden="true" />
-                </span>
+                  icon-class="h-5 w-5"
+                />
               </span>
               <div class="min-w-0 flex-1">
                 <p class="line-clamp-2 text-[14px] font-bold text-[var(--color-ink)]">{{ item.productName || '—' }}</p>

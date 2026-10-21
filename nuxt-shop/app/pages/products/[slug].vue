@@ -1,8 +1,9 @@
 <template>
-  <div class="min-h-screen bg-[var(--color-cream)] pt-navbar">
+  <div class="min-h-screen bg-[var(--color-cream)] pt-navbar" :style="pageStyle">
+    <Transition name="fade" mode="out-in">
     <!-- ===================== 加载态 ===================== -->
-    <div v-if="pending" class="mx-auto max-w-7xl px-2 py-10 sm:px-3 lg:px-4">
-      <div class="grid gap-10 lg:grid-cols-2 lg:gap-12">
+    <div v-if="pending" key="skeleton" class="mx-auto max-w-[1600px] px-4 py-10">
+      <div class="grid gap-10 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)] lg:gap-x-8">
         <div class="space-y-4">
           <div class="ui-card aspect-square animate-pulse bg-[var(--color-surface-secondary)]"></div>
           <div class="grid grid-cols-5 gap-3">
@@ -21,7 +22,7 @@
     </div>
 
     <!-- ===================== 404 ===================== -->
-    <div v-else-if="isNotFound" class="mx-auto max-w-7xl px-2 py-20 text-center sm:px-3 lg:px-4">
+    <div v-else-if="isNotFound" key="not-found" class="mx-auto max-w-[1600px] px-4 py-20 text-center">
       <span class="mx-auto flex h-20 w-20 items-center justify-center rounded-full bg-[var(--color-surface-secondary)]">
         <UIcon name="lucide:package-x" class="h-10 w-10 text-[var(--color-brand-500)]" aria-hidden="true" />
       </span>
@@ -37,7 +38,7 @@
     </div>
 
     <!-- ===================== 其它错误 ===================== -->
-    <div v-else-if="error || !product" class="mx-auto max-w-7xl px-2 py-20 text-center sm:px-3 lg:px-4">
+    <div v-else-if="error || !product" key="error" class="mx-auto max-w-[1600px] px-4 py-20 text-center">
       <span class="mx-auto flex h-20 w-20 items-center justify-center rounded-full bg-[var(--color-error-50)]">
         <UIcon name="lucide:wifi-off" class="h-10 w-10 text-[var(--color-error)]" aria-hidden="true" />
       </span>
@@ -54,223 +55,280 @@
       </div>
     </div>
 
-    <!-- ===================== 商品详情 ===================== -->
-    <div v-else class="mx-auto max-w-7xl px-2 sm:px-3 lg:px-4">
-      <!-- 面包屑 -->
-      <nav class="no-scrollbar flex items-center gap-2 overflow-x-auto py-5 text-[13px] text-[var(--color-muted)]" :aria-label="t('cart.breadcrumbLabel')">
-        <NuxtLinkLocale to="/" class="flex shrink-0 items-center gap-1 transition-colors hover:text-[var(--color-brand-600)]">
-          <UIcon name="lucide:home" class="h-3.5 w-3.5" aria-hidden="true" />
-          {{ t('common.home') }}
-        </NuxtLinkLocale>
-        <UIcon name="lucide:chevron-right" class="h-3.5 w-3.5 shrink-0 text-[var(--color-line)]" aria-hidden="true" />
-        <NuxtLinkLocale to="/products" class="shrink-0 transition-colors hover:text-[var(--color-brand-600)]">
-          {{ t('products.all') }}
-        </NuxtLinkLocale>
-        <template v-if="product.categoryName">
-          <UIcon name="lucide:chevron-right" class="h-3.5 w-3.5 shrink-0 text-[var(--color-line)]" aria-hidden="true" />
-          <NuxtLinkLocale
-            v-if="product.categoryId"
-            :to="`/categories/${product.categoryId}`"
-            class="shrink-0 transition-colors hover:text-[var(--color-brand-600)]"
-          >
-            {{ product.categoryName }}
-          </NuxtLinkLocale>
-          <span v-else class="shrink-0">{{ product.categoryName }}</span>
-        </template>
-        <UIcon name="lucide:chevron-right" class="h-3.5 w-3.5 shrink-0 text-[var(--color-line)]" aria-hidden="true" />
-        <span class="line-clamp-1 font-medium text-[var(--color-ink-soft)]">{{ product.title }}</span>
-      </nav>
+    <!-- =================================================================
+         商品详情（2026-10 布局改版）
 
-      <!-- ===================== 上半部：左图右信息 ===================== -->
-      <div class="grid gap-8 lg:grid-cols-2 lg:gap-12">
-        <!-- 左：图集（组件见 components/product/Gallery.vue；当前图下标仍由本页持有，切规格时会重置） -->
-        <ProductGallery
-          v-model:active-index="activeImageIndex"
-          :main-image="mainImage"
-          :gallery="gallery"
-          :title="product.title"
-          :is-recommend="product.isRecommend === 'Y'"
-          :badges="imageBadges"
+         桌面（≥1024px）：grid 两列 3fr / 2fr
+           左列 = 图集（row1）+ 锚点与四区块（row2），随页面滚动；
+           右列 = 信息面板，跨两行（align-self: stretch），内部 position: sticky 吸顶。
+           面板的 top 由 useStickyAside 按「内容高度 vs 可用高度」动态算：
+           内容不高 → 钉在 header 下方；内容超长 → 先随页面滚到全部露出再吸底。
+
+         移动端（<1024px）：同一份 DOM 按自然顺序单列流动
+           图集 → 信息面板 → 锚点 → 四区块；动作条固定底部通栏。
+
+         ⚠️ 单一滚动条：右列及任何祖先都**不能**出现 overflow:auto/scroll，
+            否则会出现第二个滚动条；滚轮必须直接落到 window 上。
+
+         DOM 顺序刻意是「图集 → 面板 → 区块」：移动端直接是正确阅读顺序；
+         桌面端再用 grid 的显式行列把它摆成左列两段 + 右列一段（不能用 DOM 顺序拆成左右列）。
+         ================================================================= -->
+    <div v-else key="content">
+      <!-- ===== sticky zone：两栏 grid + 动作条 =====
+           推荐区移出本 zone（见下方全宽 section），于是：
+             · 右列 sticky 的容纳高度 = 本 zone 的 grid 高度，滚到推荐区前自然释放；
+             · 动作条由 useStickyAside 监听滚动：zone 结束前固定，结束后随页面上移、不遮挡推荐。 -->
+      <div ref="zoneRef" data-sticky-zone class="relative mx-auto max-w-[1600px] px-4">
+        <div data-product-grid class="lg:-mt-6 lg:grid lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
+          <!-- ===== 左列 row1：图集（无面包屑、无心形收藏） ===== -->
+          <div ref="galleryRef" data-product-gallery class="min-w-0 pt-4 sm:pt-5 lg:col-start-1 lg:row-start-1 lg:pt-6 lg:pr-8">
+            <ProductGallery
+              v-model:active-index="activeImageIndex"
+              :main-image="mainImage"
+              :gallery="gallery"
+              :title="product.title"
+              :is-recommend="product.isRecommend === 'Y'"
+              :badges="imageBadges"
+              @share="handleShare"
+            />
+          </div>
+
+          <!-- ===== 右列：信息面板（桌面跨两行 + 内部 sticky） =====
+               asideRef 是 grid 子项（高度随整行 stretch），panelRef 是真正 sticky 的面板。
+               两者分开：sticky 只能作用在"比父级矮"的元素上，父级必须是整行高度。 -->
+          <aside
+            ref="asideRef" data-product-aside
+            class="mt-6 min-w-0 lg:relative lg:z-10 lg:col-start-2 lg:row-span-2 lg:row-start-1 lg:mt-0 lg:bg-[var(--color-cream)] lg:pt-6"
+            :style="asideStyle"
+          >
+          <div ref="panelRef" data-product-panel class="lg:sticky" :style="panelStyle">
+            <!-- 分类 + 商品编码 -->
+            <div class="flex flex-wrap items-center gap-x-4 gap-y-1 text-[13px]">
+              <span v-if="product.categoryName" class="inline-flex items-center gap-1 font-bold text-[var(--color-brand-600)]">
+                <UIcon name="lucide:bookmark" class="h-3.5 w-3.5" aria-hidden="true" />
+                {{ product.categoryName }}
+              </span>
+              <span v-if="product.spuCode" class="text-[var(--color-muted)]">
+                {{ t('product.spuCode') }}: {{ product.spuCode }}
+              </span>
+            </div>
+
+            <h1 class="mt-2.5 text-2xl font-black leading-tight text-[var(--color-ink)] sm:text-3xl">
+              {{ product.title }}
+            </h1>
+            <p v-if="product.subTitle" class="mt-2 text-sm text-[var(--color-muted)]">
+              {{ product.subTitle }}
+            </p>
+
+            <!-- 价格块：超大现价 + 划线价 + 直降价签 -->
+            <div class="price-block mt-5 px-5 py-4">
+              <div class="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+                <span class="price text-[38px] leading-none sm:text-[42px]">{{ priceText }}</span>
+                <span v-if="product.unit" class="text-sm text-[var(--color-muted)]">/ {{ product.unit }}</span>
+              </div>
+              <div v-if="priceView.showOriginal || priceView.discountAmount !== null" class="mt-2.5 flex flex-wrap items-center gap-2">
+                <span v-if="priceView.showOriginal" class="price-strike text-sm">
+                  {{ formatCompact(priceView.originalPrice) }}
+                </span>
+                <span v-if="priceView.discountAmount !== null" class="badge badge-hot">
+                  {{ t('shop.discountOff', { amount: formatCompact(priceView.discountAmount) }) }}
+                </span>
+              </div>
+              <!--
+                价格区间提示：**必须先占位再隐藏，不能用 v-if 移除**。
+                选中具体规格后这句提示就不该再出现，但用 v-if 直接把它从 DOM 删掉会让价格块矮一行，
+                它下面的所有内容（统计行、规格、按钮…）整体上移 —— 用户点规格时页面会"跳"一下。
+                改用 visibility:hidden 保留占位：它不参与绘制、不进入无障碍树，但**仍然占高度**，
+                于是价格块高度在"未选规格 ↔ 已选规格"之间恒定不变。
+                外层还用 hasPriceRange 兜一道：不跨价格区间的商品（本来就不会出现这句提示）
+                不预留这一行，避免白白多出一段空白。
+              -->
+              <p
+                v-if="hasPriceRange"
+                class="mt-2 text-xs text-[var(--color-muted)]"
+                :class="{ invisible: !showRangeHint }"
+              >
+                {{ t('products.priceRangeHint') }}
+              </p>
+            </div>
+
+            <!-- 统计行：销量 / 评分 / 收藏，各自为 0 时该项不渲染 -->
+            <div v-if="hasAnyStat" class="mt-4 flex flex-wrap items-center gap-x-5 gap-y-2 text-[13px] text-[var(--color-muted)]">
+              <span v-if="product.salesCount > 0" class="inline-flex items-center gap-1.5">
+                <UIcon name="lucide:flame" class="h-4 w-4 text-[var(--color-brand-500)]" aria-hidden="true" />
+                {{ t('shop.sold', { count: formatCompactCount(product.salesCount) }) }}
+              </span>
+              <span v-if="rating !== null" class="inline-flex items-center gap-1.5">
+                <UIcon name="lucide:star" class="h-4 w-4 fill-current text-[var(--color-accent-500)]" aria-hidden="true" />
+                {{ ratingText }}
+              </span>
+              <span v-if="displayFavoriteCount > 0" class="inline-flex items-center gap-1.5">
+                <UIcon name="lucide:heart" class="h-4 w-4 text-[var(--color-brand-400)]" aria-hidden="true" />
+                {{ t('shop.profileFavorites') }} {{ formatCompactCount(displayFavoriteCount) }}
+              </span>
+            </div>
+
+            <!-- 库存 -->
+            <div class="mt-4 flex flex-wrap items-center gap-2 text-[13px]">
+              <span
+                class="h-2.5 w-2.5 rounded-full"
+                :class="displayStock > 0 ? 'bg-[var(--color-success)]' : 'bg-[var(--color-error)]'"
+                aria-hidden="true"
+              ></span>
+              <span class="font-bold" :class="displayStock > 0 ? 'text-[var(--color-success-600)]' : 'text-[var(--color-error-600)]'">
+                {{ displayStock > 0 ? t('products.stock.inStock') : t('products.stock.outOfStock') }}
+              </span>
+              <span v-if="displayStock > 0" class="text-[var(--color-muted)]">
+                {{ t('products.stock.remaining', { count: displayStock }) }}
+              </span>
+            </div>
+
+            <!-- 规格选择器（核心交互：不存在 / 不可售组合置灰） -->
+            <div v-if="hasSpecs" class="mt-7">
+              <h2 class="text-sm font-bold text-[var(--color-ink)]">{{ t('products.spec.title') }}</h2>
+              <div class="mt-3">
+                <ProductSpecPicker
+                  :specs="specs"
+                  :combinations="combinations"
+                  :selected="selected"
+                  @update:selected="onSelectionChange"
+                />
+              </div>
+
+              <!-- 组合状态提示 -->
+              <p
+                v-if="unavailableNotice"
+                class="mt-3 inline-flex items-center gap-2 text-sm"
+                :class="unavailableNotice.error ? 'text-[var(--color-error-600)]' : 'text-[var(--color-muted)]'"
+              >
+                <UIcon :name="unavailableNotice.error ? 'lucide:ban' : 'lucide:info'" class="h-4 w-4" aria-hidden="true" />
+                {{ unavailableNotice.text }}
+              </p>
+              <p v-else-if="combination" class="mt-3 inline-flex items-center gap-2 text-sm text-[var(--color-ink-soft)]">
+                <UIcon name="lucide:package-check" class="h-4 w-4 text-[var(--color-success)]" aria-hidden="true" />
+                {{ combination.combinationName || combination.combinationKey }}
+              </p>
+            </div>
+
+            <!-- 面板底部：数量 / 合计 / 提示 / 服务标签（三个动作按钮已移到固定动作条） -->
+            <ProductPurchaseBar
+              :quantity="quantity"
+              :max-quantity="maxQuantity"
+              :total-price="totalPrice"
+              :buyable="buyable"
+              :has-fast-tag="hasFastTag"
+              :has-top-tag="hasTopTag"
+              :free-shipping="!!product.freeShipping"
+              @change-quantity="changeQuantity"
+            />
+          </div>
+        </aside>
+
+          <!-- ===== 左列 row2：锚点导航 + 三区块（锚点只在左列内吸顶） ===== -->
+          <div data-product-sections class="mt-2 min-w-0 lg:col-start-1 lg:row-start-2 lg:mt-0 lg:pr-8">
+            <ProductDetailSections
+              :description="product.description"
+              :detail-blocks="product.detailBlocks"
+              :params="product.params"
+              :product-title="product.title"
+              :spec-rows="specRows"
+              :has-review="hasReview"
+              :rating="rating"
+              :rating-text="ratingText"
+              :rating-stars="ratingStars"
+              :review-count="product.reviewCount ?? 0"
+              :has-related="related.length > 0"
+            />
+          </div>
+        </div>
+
+        <!-- ===== 底部动作条（在 sticky zone 内）=====
+             桌面：先固定在视口右下（宽度=右列），滚到 zone 底部（= 推荐区上方）后随页面上移、不遮挡推荐；
+             移动端：固定底部通栏，同样在「为你推荐」前释放（第 4 轮）——否则推荐区/页脚会被压住。
+             left/width/transform 由 useStickyAside 注入（:style 透传到组件根节点）。 -->
+        <ProductStickyActionBar
+          v-if="!pending && !isNotFound && !error && product"
+          :adding="adding"
+          :add-to-cart-label="addToCartLabel"
+          :can-add-to-cart="canAddToCart"
+          :buying="buying"
+          :buy-now-label="buyNowLabel"
+          :can-buy-now="canBuyNow"
           :favorited="favorited"
           :favorite-pending="favoritePending"
-          @share="handleShare"
+          :style="barStyle"
+          @add-to-cart="handleAddToCart"
+          @buy-now="handleBuyNow"
           @toggle-favorite="handleToggleFavorite"
         />
-        <!-- 右：商品信息（保持原有全部功能） -->
-        <div class="flex flex-col">
-          <!-- 分类 + 商品编码 -->
-          <div class="flex flex-wrap items-center gap-x-4 gap-y-1 text-[13px]">
-            <span v-if="product.categoryName" class="inline-flex items-center gap-1 font-bold text-[var(--color-brand-600)]">
-              <UIcon name="lucide:bookmark" class="h-3.5 w-3.5" aria-hidden="true" />
-              {{ product.categoryName }}
-            </span>
-            <span v-if="product.spuCode" class="text-[var(--color-muted)]">
-              {{ t('product.spuCode') }}: {{ product.spuCode }}
-            </span>
-          </div>
-
-          <h1 class="mt-2.5 text-2xl font-black leading-tight text-[var(--color-ink)] sm:text-3xl">
-            {{ product.title }}
-          </h1>
-          <p v-if="product.subTitle" class="mt-2 text-sm text-[var(--color-muted)]">
-            {{ product.subTitle }}
-          </p>
-
-          <!-- 价格块：超大现价 + 划线价 + 直降价签 -->
-          <div class="price-block mt-5 px-5 py-4">
-            <div class="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-              <span class="price text-[38px] leading-none sm:text-[42px]">{{ priceText }}</span>
-              <span v-if="product.unit" class="text-sm text-[var(--color-muted)]">/ {{ product.unit }}</span>
-            </div>
-            <div v-if="priceView.showOriginal || priceView.discountAmount !== null" class="mt-2.5 flex flex-wrap items-center gap-2">
-              <span v-if="priceView.showOriginal" class="price-strike text-sm">
-                {{ formatCompact(priceView.originalPrice) }}
-              </span>
-              <span v-if="priceView.discountAmount !== null" class="badge badge-hot">
-                {{ t('shop.discountOff', { amount: formatCompact(priceView.discountAmount) }) }}
-              </span>
-            </div>
-            <!--
-              价格区间提示：**必须先占位再隐藏，不能用 v-if 移除**。
-              选中具体规格后这句提示就不该再出现，但用 v-if 直接把它从 DOM 删掉会让价格块矮一行，
-              它下面的所有内容（统计行、规格、按钮…）整体上移 —— 用户点规格时页面会"跳"一下。
-              改用 visibility:hidden 保留占位：它不参与绘制、不进入无障碍树，但**仍然占高度**，
-              于是价格块高度在"未选规格 ↔ 已选规格"之间恒定不变。
-              外层还用 hasPriceRange 兜一道：不跨价格区间的商品（本来就不会出现这句提示）
-              不预留这一行，避免白白多出一段空白。
-            -->
-            <p
-              v-if="hasPriceRange"
-              class="mt-2 text-xs text-[var(--color-muted)]"
-              :class="{ invisible: !showRangeHint }"
-            >
-              {{ t('products.priceRangeHint') }}
-            </p>
-          </div>
-
-          <!-- 统计行：销量 / 评分 / 收藏，各自为 0 时该项不渲染 -->
-          <div v-if="hasAnyStat" class="mt-4 flex flex-wrap items-center gap-x-5 gap-y-2 text-[13px] text-[var(--color-muted)]">
-            <span v-if="product.salesCount > 0" class="inline-flex items-center gap-1.5">
-              <UIcon name="lucide:flame" class="h-4 w-4 text-[var(--color-brand-500)]" aria-hidden="true" />
-              {{ t('shop.sold', { count: formatCompactCount(product.salesCount) }) }}
-            </span>
-            <span v-if="rating !== null" class="inline-flex items-center gap-1.5">
-              <UIcon name="lucide:star" class="h-4 w-4 fill-current text-[var(--color-accent-500)]" aria-hidden="true" />
-              {{ ratingText }}
-            </span>
-            <span v-if="displayFavoriteCount > 0" class="inline-flex items-center gap-1.5">
-              <UIcon name="lucide:heart" class="h-4 w-4 text-[var(--color-brand-400)]" aria-hidden="true" />
-              {{ t('shop.profileFavorites') }} {{ formatCompactCount(displayFavoriteCount) }}
-            </span>
-          </div>
-
-          <!-- 库存 -->
-          <div class="mt-4 flex flex-wrap items-center gap-2 text-[13px]">
-            <span
-              class="h-2.5 w-2.5 rounded-full"
-              :class="displayStock > 0 ? 'bg-[var(--color-success)]' : 'bg-[var(--color-error)]'"
-              aria-hidden="true"
-            ></span>
-            <span class="font-bold" :class="displayStock > 0 ? 'text-[var(--color-success-600)]' : 'text-[var(--color-error-600)]'">
-              {{ displayStock > 0 ? t('products.stock.inStock') : t('products.stock.outOfStock') }}
-            </span>
-            <span v-if="displayStock > 0" class="text-[var(--color-muted)]">
-              {{ t('products.stock.remaining', { count: displayStock }) }}
-            </span>
-          </div>
-
-          <!-- 规格选择器（核心交互：不存在 / 不可售组合置灰） -->
-          <div v-if="hasSpecs" class="mt-7">
-            <h2 class="text-sm font-bold text-[var(--color-ink)]">{{ t('products.spec.title') }}</h2>
-            <div class="mt-3">
-              <ProductSpecPicker
-                :specs="specs"
-                :combinations="combinations"
-                :selected="selected"
-                @update:selected="onSelectionChange"
-              />
-            </div>
-
-            <!-- 组合状态提示 -->
-            <p
-              v-if="unavailableNotice"
-              class="mt-3 inline-flex items-center gap-2 text-sm"
-              :class="unavailableNotice.error ? 'text-[var(--color-error-600)]' : 'text-[var(--color-muted)]'"
-            >
-              <UIcon :name="unavailableNotice.error ? 'lucide:ban' : 'lucide:info'" class="h-4 w-4" aria-hidden="true" />
-              {{ unavailableNotice.text }}
-            </p>
-            <p v-else-if="combination" class="mt-3 inline-flex items-center gap-2 text-sm text-[var(--color-ink-soft)]">
-              <UIcon name="lucide:package-check" class="h-4 w-4 text-[var(--color-success)]" aria-hidden="true" />
-              {{ combination.combinationName || combination.combinationKey }}
-            </p>
-          </div>
-
-          <!-- 操作区（两行两列）+ 合计 + 服务标签：组件见 components/product/PurchaseBar.vue
-               数量/收藏态/加载态由本页持有（与规格选择、后端关系耦合），组件只渲染并抛回动作 -->
-          <ProductPurchaseBar
-            :quantity="quantity"
-            :max-quantity="maxQuantity"
-            :can-buy-now="canBuyNow"
-            :buying="buying"
-            :buy-now-label="buyNowLabel"
-            :favorited="favorited"
-            :favorite-pending="favoritePending"
-            :can-add-to-cart="canAddToCart"
-            :adding="adding"
-            :add-to-cart-label="addToCartLabel"
-            :total-price="totalPrice"
-            :buyable="buyable"
-            :has-fast-tag="hasFastTag"
-            :has-top-tag="hasTopTag"
-            :free-shipping="!!product.freeShipping"
-            @change-quantity="changeQuantity"
-            @buy-now="handleBuyNow"
-            @add-to-cart="handleAddToCart"
-            @toggle-favorite="handleToggleFavorite"
-          />
-        </div>
       </div>
 
-      <!-- 下半部：吸顶锚点导航 + 单列四区块（商品详情 → 规格参数 → 用户评价 → 为你推荐）
-           组件见 components/product/DetailSections.vue：锚点高亮/滚动依赖这四块的 DOM，
-           放在同一组件里就不必把 DOM 引用传回页面再传下来。 -->
-      <ProductDetailSections
-        :description="product.description"
-        :spec-rows="specRows"
-        :has-review="hasReview"
-        :rating="rating"
-        :rating-text="ratingText"
-        :rating-stars="ratingStars"
-        :review-count="product.reviewCount ?? 0"
-        :related="related"
-      />
+      <!-- ===== 为你推荐：横跨页面容器的全宽区块（第 2 轮移出左列）=====
+           桌面 6 列、移动 2 列，复用首页同款 StoreProductCard；数据取 7 条排除当前后展示 6 条。
+           锚点「为你推荐」由 DetailSections 按 #product-recommend 解析并滚动到这里。 -->
+      <section
+        id="product-recommend"
+        data-product-recommend
+        class="mx-auto mt-8 max-w-[1600px] border-t border-[var(--color-line-soft)] px-4 pb-16 pt-10"
+      >
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <h2 class="flex items-center gap-2 text-lg font-black text-[var(--color-ink)]">
+            <span class="h-5 w-1 rounded-full bg-[var(--color-brand-500)]" aria-hidden="true"></span>
+            {{ t('shop.anchorRecommend') }}
+          </h2>
+          <NuxtLinkLocale
+            to="/products"
+            class="inline-flex items-center gap-1 text-[13px] font-bold text-[var(--color-brand-600)] transition-colors hover:text-[var(--color-brand-700)]"
+          >
+            {{ t('common.viewMore') }}
+            <UIcon name="lucide:arrow-right" class="h-3.5 w-3.5" aria-hidden="true" />
+          </NuxtLinkLocale>
+        </div>
+        <div v-if="related.length" class="mt-5 grid grid-cols-2 gap-4 sm:gap-5 lg:grid-cols-6 lg:gap-6">
+          <StoreProductCard
+            v-for="item in related"
+            :key="item.id"
+            :product="item"
+          />
+        </div>
+        <p v-else class="mt-5 text-sm text-[var(--color-muted)]">{{ t('shop.noData') }}</p>
+      </section>
     </div>
-
-    <SiteFooter />
+    </Transition>
   </div>
 </template>
 
 <script setup lang="ts">
-import type { SpecSelection } from '~~/types/shop-product'
+// 商品详情用 View Transitions 做页面级过场（nuxt.config 的 experimental.viewTransition 由基建开启）
+definePageMeta({ viewTransition: true })
+
+import type { SpecSelection, StoreProductCard, StoreProductPage } from '~~/types/shop-product'
 import { formatCompactCount } from '~~/types/shop-product'
-import { useStorePrice, useStoreProductList } from '~~/composables/useProducts'
+import { useStorePrice } from '~~/composables/useProducts'
 import { useProductDetail } from '~~/composables/useProductDetail'
+import { useStickyAside } from '~~/composables/useStickyAside'
 import { extractCartErrorMessage, useCart } from '~~/composables/useCart'
 import { extractFavoriteErrorMessage } from '~~/composables/useFavorites'
 import { writeCheckoutSnapshot } from '~~/composables/useCheckoutSnapshot'
 import { useAuth } from '~~/composables/useAuth'
 
 /**
- * 商品详情页。
+ * 商品详情页（2026-10 第 4 轮布局调整）。
  *
- * 布局契约（用户明确要求）：
- *   上半部 = 左图集 / 右信息 两栏；
- *   下半部 = **单列竖向堆叠**，四个模块依次为 商品详情 → 规格参数 → 用户评价 → 为你推荐，
- *           模块之间只有极浅分隔线，绝不并排成多栏。
+ * 布局契约（docs/商品页布局与底部动作条-设计说明.md，含「八、第 2 轮调整」）：
+ *   · 桌面 ≥1024px：左列 60%（图集 + 锚点 + 规格参数/评价/详情，随页面滚动）
+ *                  + 右列 40% 商品信息面板（吸顶）；
+ *   · 图集：竖排缩略图在左、主图在右；主图高度 = 100dvh - header - 56px，
+ *     底边与动作条浮层底底边同在 viewport-32px（高度由 useStickyAside 测量，首帧 CSS 回退）；
+ *   · 右列吸顶由 useStickyAside 动态计算 top（内容不高→header 下；超长→滚到全部露出再吸底），
+ *     右列任何祖先都没有 overflow：**全程只有浏览器级滚动条**；
+ *   · 底部动作条：桌面固定右下、宽度=右列；移动 fixed 通栏 + 安全区；
+ *     桌面/移动端都在滚到「为你推荐」前（sticky zone 结束）后随页面上移，不遮挡推荐，回滚恢复；
+ *   · 「为你推荐」移出左列，作为 zone 之后横跨页面容器的全宽区块（桌面 6 列 / 移动 2 列）；
+ *   · 移动端单列顺序：图集 → 信息面板 → 锚点 → 三区块 → 全宽推荐。
  *
- * 购买闭环（2026-10-14 扩充）：
- *   加入购物车 / **立即购买** / **收藏** 三个动作都在右侧信息区，
+ * 购买闭环（2026-10-14 扩充，本轮只搬家不改语义）：
+ *   加入购物车 / **立即购买** / **收藏** 三个动作现在都在底部动作条，
  *   口径完全一致——未登录先引导登录、有规格必须选全、规格组合必须可售；
  *   三个动作都不做本地乐观更新，全部以服务端返回的状态为准：
  *     · 加购后购物车整体由 useCart 用后端返回值替换；
@@ -279,16 +337,19 @@ import { useAuth } from '~~/composables/useAuth'
  *
  * 数据契约：所有模块都遵守「零值不渲染」——
  *   评分 / 评价数 / 销量 / 收藏数为 0 时不渲染对应元素；
- *   规格参数只用后端真实字段（spuCode / categoryName）拼，没有数据的行不出现；
+ *   规格参数优先用后端新字段 params（KV），为空时才回退真实字段（spuCode / categoryName）拼；
+ *   商品详情 = description（简介）+ detailBlocks（结构化模块），两者都空显示「暂无商品描述」；
  *   评价模块只展示真实汇总（ratingAvg + reviewCount），后端没有评价接口就**不编造评价列表**。
  */
 const route = useRoute()
-const { t } = useI18n()
+const { t, locale } = useI18n()
 const toast = useToast()
 const localePath = useLocalePath()
 const { isLoggedIn } = useAuth()
 const { addItem } = useCart()
-const { format, formatCompact } = useStorePrice()
+const { formatCompact } = useStorePrice()
+/** SSR/客户端都能带上会话头的 fetch（推荐位/后续客户端补取都用它） */
+const requestFetch = useRequestFetch()
 
 // 数据与派生状态全部来自 composables/useProductDetail.ts ——
 // 该页面曾近 1060 行，先把数据层收拢，模板拆组件时才有清晰边界。
@@ -304,7 +365,6 @@ const {
   activeImageIndex,
   selected,
   favorited,
-  favoriteCount,
   favoritePending,
   refreshFavorite,
   toggleFavorite,
@@ -313,7 +373,6 @@ const {
   hasSpecs,
   combination,
   selectionComplete,
-  isSkuSellable,
   gallery,
   mainImage,
   priceView,
@@ -329,7 +388,6 @@ const {
   hasReview,
   displayStock,
   maxQuantity,
-  unitPrice,
   totalPrice,
   buyable,
   unavailableNotice,
@@ -338,26 +396,70 @@ const {
   canBuyNow,
   buyNowLabel,
   imageBadges,
-  tagCodes,
   hasFastTag,
   hasTopTag,
-} = await useProductDetail()
+} = useProductDetail()
 
-// ===== 为你推荐：同分类真实商品，排除当前商品，最多 4 张 =====
-// 这段留在页面而不是 composable：它要按「详情里的 categoryId」过滤，必须等详情拿到后再发起；
-// 而 async composable 在自身 await 之后已脱离 setup 上下文，不能再调 useStoreProductList。
-const relatedPageNo = ref(1)
-const { data: relatedPage } = await useStoreProductList({
-  pageNo: relatedPageNo,
-  pageSize: 5,
-  categoryId: computed(() => product.value?.categoryId ?? undefined),
-})
-const related = computed(() =>
-  (relatedPage.value?.records ?? []).filter(item => item.id !== product.value?.id).slice(0, 4),
+// ===== 桌面两栏吸顶 + 底部动作条对齐 + 图集高度 + 动作条释放 =====
+// asideRef 是右列 grid 子项（整行高度），panelRef 是内部 sticky 面板；
+// galleryRef 用来算主图高度（底边对齐动作条底边）；zoneRef 用来在推荐区前释放动作条。
+// composable 只在 resize / ResizeObserver / 语言切换时重算面板 top，滚动时只算动作条释放。
+const asideRef = ref<HTMLElement | null>(null)
+const panelRef = ref<HTMLElement | null>(null)
+const galleryRef = ref<HTMLElement | null>(null)
+const zoneRef = ref<HTMLElement | null>(null)
+const { panelStyle, asideStyle, pageStyle, barStyle } = useStickyAside({ asideRef, panelRef, galleryRef, zoneRef })
+
+// ===== 为你推荐：同分类真实商品，排除当前商品后展示 6 条（pageSize 至少 7）=====
+// 详情页不再 await 取推荐：详情就绪后再补一次请求即可（推荐位在页面底部，不需要进 SSR）。
+// 以前它是一个顶层 await，把整页导航多阻塞一个 RTT；现在只影响页面底部那一块。
+const related = ref<StoreProductCard[]>([])
+
+watch(
+  () => [product.value?.id, product.value?.categoryId] as const,
+  async ([id, categoryId]) => {
+    if (!id) return
+    try {
+      // 先取同分类「类似推荐」；pageSize=7 是为了排除当前商品后仍有 6 条
+      const result = categoryId
+        ? await requestFetch<StoreProductPage>('/api/products', {
+            query: { lang: locale.value, pageNo: 1, pageSize: 7, categoryId },
+          })
+        : null
+      const seen = new Set<string>([id])
+      const items: StoreProductCard[] = []
+      for (const item of result?.records ?? []) {
+        if (seen.has(item.id)) continue
+        seen.add(item.id)
+        items.push(item)
+      }
+      // 分类里不够 6 条时，用全站商品补足（仍排除当前商品、去重）
+      if (items.length < 6) {
+        try {
+          const fallback = await requestFetch<StoreProductPage>('/api/products', {
+            query: { lang: locale.value, pageNo: 1, pageSize: 12 },
+          })
+          for (const item of fallback?.records ?? []) {
+            if (seen.has(item.id)) continue
+            seen.add(item.id)
+            items.push(item)
+            if (items.length >= 6) break
+          }
+        } catch {
+          // 补位失败不影响已有推荐
+        }
+      }
+      related.value = items.slice(0, 6)
+    } catch {
+      // 推荐位失败不影响主信息：保持为空即可，不弹错误
+      related.value = []
+    }
+  },
+  { immediate: true },
 )
 
 // 锚点导航（吸顶 + 滚动高亮 + 点击滚动）随下半部区块一起搬进 components/product/DetailSections.vue：
-// 它依赖那四块的 DOM 引用与"是否渲染"，放在同一组件里比分传 DOM 更清晰。
+// 它依赖左列三块的 DOM 引用与"是否渲染"；「为你推荐」锚点由它按 #product-recommend 解析到页面全宽区块。
 
 onMounted(() => {
   // 收藏态只能客户端查（需要 access-token cookie；SSR 期间还没恢复登录态）
@@ -393,8 +495,10 @@ async function handleShare() {
   if (!import.meta.client) return
   try {
     await navigator.clipboard.writeText(window.location.href)
+    toast.add({ title: t('product.shareCopied'), color: 'success', icon: 'lucide:link' })
   } catch {
-    // 剪贴板不可用时静默降级（与重构前一致的行为）
+    // 剪贴板不可用（非 HTTPS / 权限被拒）时也要如实告知，不能静默
+    toast.add({ title: t('product.shareFailed'), color: 'error', icon: 'lucide:circle-alert' })
   }
 }
 

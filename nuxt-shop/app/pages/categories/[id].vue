@@ -20,7 +20,7 @@
           {{ t('categories.title') }}
         </NuxtLinkLocale>
         <UIcon name="lucide:chevron-right" class="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
-        <span class="font-bold text-[var(--color-ink)]">{{ currentCategory?.name || categoryId }}</span>
+        <span class="font-bold text-[var(--color-ink)]">{{ currentCategory?.name || t('categories.title') }}</span>
       </nav>
 
       <header class="mb-7 mt-4 sm:mb-9">
@@ -32,9 +32,11 @@
         </p>
       </header>
 
+      <Transition name="fade" mode="out-in">
       <!-- 加载骨架 -->
       <div
         v-if="pending"
+        key="skeleton"
         class="product-grid"
         aria-busy="true"
       >
@@ -45,12 +47,14 @@
             <div class="h-4 w-full rounded bg-[var(--color-line-soft)]"></div>
             <div class="h-4 w-2/3 rounded bg-[var(--color-line-soft)]"></div>
             <div class="h-6 w-1/3 rounded bg-[var(--color-line-soft)]"></div>
+            <!-- 加购按钮占位：与真实卡片高度对齐，减少骨架→内容时的 CLS -->
+            <div class="h-9 w-full rounded-full bg-[var(--color-line-soft)]"></div>
           </div>
         </div>
       </div>
 
       <!-- 错误态 -->
-      <div v-else-if="error" class="ui-card flex flex-col items-center px-6 py-16 text-center">
+      <div v-else-if="error" key="error" class="ui-card flex flex-col items-center px-6 py-16 text-center">
         <span class="flex h-16 w-16 items-center justify-center rounded-full bg-[var(--color-error-50)] text-[var(--color-error-600)]">
           <UIcon name="lucide:wifi-off" class="h-7 w-7" aria-hidden="true" />
         </span>
@@ -63,7 +67,7 @@
       </div>
 
       <!-- 空态：该分类下确实没有在售商品 -->
-      <div v-else-if="!records.length" class="ui-card flex flex-col items-center px-6 py-16 text-center">
+      <div v-else-if="!records.length" key="empty" class="ui-card flex flex-col items-center px-6 py-16 text-center">
         <span class="flex h-16 w-16 items-center justify-center rounded-full bg-[var(--color-brand-50)] text-[var(--color-brand-500)]">
           <UIcon name="lucide:package-search" class="h-7 w-7" aria-hidden="true" />
         </span>
@@ -75,27 +79,25 @@
       </div>
 
       <!-- 商品网格：统一用新的 StoreProductCard（价格/角标/统计的渲染契约都在组件里） -->
-      <template v-else>
-        <div class="product-grid">
-          <StoreProductCard v-for="product in records" :key="product.id" :product="product" />
-        </div>
+      <div v-else key="content" class="product-grid">
+        <StoreProductCard v-for="product in records" :key="product.id" :product="product" />
+      </div>
+      </Transition>
 
-        <!-- 分页（后端分页：pageNo / pageSize） -->
-        <PaginationBar
-          :current="currentPage"
-          :total="totalPages"
-          variant="outline"
-          margin="mt-10"
-          :label="t('products.pagination')"
-          :prev-label="t('products.prev')"
-          :next-label="t('products.next')"
-          @change="goToPage"
-        />
-      </template>
+      <!-- 分页（后端分页：pageNo / pageSize） -->
+      <PaginationBar
+        v-if="!pending && !error && records.length"
+        :current="currentPage"
+        :total="totalPages"
+        :disabled="pending"
+        variant="outline"
+        margin="mt-10"
+        :label="t('products.pagination')"
+        :prev-label="t('products.prev')"
+        :next-label="t('products.next')"
+        @change="goToPage"
+      />
     </div>
-
-    <!-- Footer：与首页 / 商品列表 / 个人中心保持一致（登录页是唯一不加页脚的页面） -->
-    <SiteFooter />
   </div>
 </template>
 
@@ -115,7 +117,7 @@ const categoryId = computed(() => String(route.params.id || ''))
 // 分类名从分类树里取（一次请求，用于标题与面包屑）。
 // 语言：query 带 lang，key 带 locale + 当前分类 id —— 切语言/切分类都要重新请求，
 // 否则标题与面包屑会停留在上一个语言/上一个分类的缓存。
-const { data: categories } = await useFetch<StoreCategoryNode[]>('/api/categories', {
+const { data: categories } = useFetch<StoreCategoryNode[]>('/api/categories', {
   query: computed(() => ({ lang: locale.value })),
   key: computed(() => `store-categories-${categoryId.value}-${locale.value}`),
   default: () => [],
@@ -140,7 +142,7 @@ const {
   pending,
   error,
   refresh,
-} = await useStoreProductList({
+} = useStoreProductList({
   pageNo,
   pageSize,
   categoryId,
@@ -151,22 +153,23 @@ const total = computed(() => page.value?.total ?? 0)
 const currentPage = computed(() => page.value?.current || pageNo.value)
 const totalPages = computed(() => Math.max(1, page.value?.pages ?? 0))
 
-// 切换分类时回到第 1 页，否则会停留在上一个分类的页码上
-watch(categoryId, () => {
-  pageNo.value = 1
-})
-
 function goToPage(target: number) {
   const next = Math.min(Math.max(target, 1), totalPages.value)
   if (next === currentPage.value) return
   pageNo.value = next
   if (import.meta.client) {
-    window.scrollTo({ top: 0, behavior: 'smooth' })
+    window.scrollTo({
+      top: 0,
+      behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth',
+    })
   }
 }
 
 useSeoMeta({
   title: () => currentCategory.value?.name || t('categories.title'),
-  description: () => t('categories.description'),
+  // description 带上当前分类名，避免所有分类页共用同一段通用介绍
+  description: () => currentCategory.value?.name
+    ? `${currentCategory.value.name} - ${t('categories.description')}`
+    : t('categories.description'),
 })
 </script>

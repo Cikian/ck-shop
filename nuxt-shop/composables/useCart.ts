@@ -19,6 +19,7 @@ import type { StoreCart, StoreCartCount, StoreCartItem } from '~~/types/shop-car
 import { emptyCart, normalizeCart, normalizeCartCount, sumSelected } from '~~/types/shop-cart'
 import { useAuth } from '~~/composables/useAuth'
 import { isUnauthorizedError, readErrorMessage } from '~~/composables/useApiError'
+import { useLatestRequest } from '~~/composables/useLatestRequest'
 
 /**
  * 后端业务错误的可读文案（JeecgBoot 的中文 message 会透传到 statusMessage）。
@@ -28,12 +29,22 @@ export function extractCartErrorMessage(error: unknown, fallback: string): strin
   return readErrorMessage(error, fallback)
 }
 
+/**
+ * 购物车角标相关的 useState key。
+ *
+ * ⚠️ 对外导出是因为 **SSR 播种**（app/middleware/auth-seed.global.ts）要在
+ * "没有组件实例、不方便调用整个 useCart()"的地方写同一份状态。
+ * 改这里的字符串会同时让播种失效 —— 两处必须一起改。
+ */
+export const CART_COUNT_STATE_KEY = 'store-cart-count'
+export const CART_UNAUTHORIZED_STATE_KEY = 'store-cart-unauthorized'
+
 export const useCart = () => {
   const cart = useState<StoreCart>('store-cart', () => emptyCart())
-  const count = useState<StoreCartCount>('store-cart-count', () => ({ totalItems: 0, totalQuantity: 0 }))
+  const count = useState<StoreCartCount>(CART_COUNT_STATE_KEY, () => ({ totalItems: 0, totalQuantity: 0 }))
   const loading = useState<boolean>('store-cart-loading', () => false)
   const mutating = useState<boolean>('store-cart-mutating', () => false)
-  const unauthorized = useState<boolean>('store-cart-unauthorized', () => false)
+  const unauthorized = useState<boolean>(CART_UNAUTHORIZED_STATE_KEY, () => false)
   const selectedIds = useState<string[]>('store-cart-selected', () => [])
   /**
    * 是否已经做过一次"默认全选"。
@@ -48,6 +59,21 @@ export const useCart = () => {
   // 在 setup 阶段取一次 locale：动作函数是"稍后被用户点击触发"的，
   // 那时再调用 useI18n() 属于脱离 setup 上下文，容易拿到不可靠的实例。
   const { locale } = useI18n()
+
+  /**
+   * SSR 也要能带上 httpOnly cookie 取购物车。
+   *
+   * 普通 $fetch 在服务端是"服务端 → 自己的 Nitro"，**不会**自动转发浏览器的 cookie，
+   * 于是 SSR 阶段永远 401、购物车/角标只能等客户端再拉一次（首屏空窗 + 多一个 RTT）。
+   * useRequestFetch() 在服务端会转发当前请求的 cookie，客户端则等价于 $fetch。
+   *
+   * 必须在 setup 阶段取一次并捕获下来（动作函数是 later 被点击触发的）。
+   */
+  const requestFetch = useRequestFetch()
+
+  // latest-wins 守卫：购物车整体状态/角标只接受"最后一次请求"的结果
+  const cartGuard = useLatestRequest()
+  const countGuard = useLatestRequest()
 
   const items = computed(() => cart.value.items)
   const summary = computed(() => cart.value.summary)
@@ -117,14 +143,21 @@ export const useCart = () => {
       selectedIds.value = []
       return cart.value
     }
+    // latest-wins：连续调用 fetchCart（切语言/进购物车页 + Header 同时拉）时，
+    // 只让最后一次的结果落到共享状态上，避免旧响应覆盖新响应。
+    const isLatest = cartGuard.begin()
     loading.value = true
     try {
-      const next = normalizeCart(await $fetch('/api/cart', { query: { lang: locale.value } }))
+      const next = normalizeCart(await requestFetch('/api/cart', { query: { lang: locale.value } }))
+      if (!isLatest()) return next
       unauthorized.value = false
       applyCart(next)
       ensureDefaultSelection()
       return next
     } catch (error) {
+      // 过期请求的错误不能覆盖状态：更晚的请求还在路上（或已成功），
+      // 这里静默返回当前状态，把"失败"的判定交给最后一次请求。
+      if (!isLatest()) return cart.value
       if (isUnauthorizedError(error)) {
         unauthorized.value = true
         cart.value = emptyCart()
@@ -133,8 +166,22 @@ export const useCart = () => {
       }
       throw error
     } finally {
-      loading.value = false
+      // 旧请求不许把 loading 关掉：更新的请求可能还在路上
+      if (isLatest()) loading.value = false
     }
+  }
+
+  /**
+   * 页面级「重新拉购物车」。
+   *
+   * 页面会把它交给 useLazyAsyncData('cart-page', () => reload())：
+   *   · 返回**购物车对象**（而非 undefined）—— useAsyncData 的 handler 必须返回 truthy，
+   *     否则 Nuxt 会在客户端重复执行一次（见 Nuxt useAsyncData 文档）；
+   *   · 出错时按 fetchCart 的语义抛给调用方（购物车页的 reload 会捕获成 loadError，
+   *     页面需要错误态时用那个；这里不吞异常，避免"点了重试却没反应"）。
+   */
+  async function reload(): Promise<StoreCart> {
+    return await fetchCart()
   }
 
   /** 只刷新角标（顶部导航用，失败静默：角标不该干扰页面主体） */
@@ -145,10 +192,14 @@ export const useCart = () => {
       unauthorized.value = true
       return
     }
+    const isLatest = countGuard.begin()
     try {
-      count.value = normalizeCartCount(await $fetch('/api/cart/count'))
+      const next = normalizeCartCount(await requestFetch('/api/cart/count'))
+      if (!isLatest()) return
+      count.value = next
       unauthorized.value = false
     } catch (error) {
+      if (!isLatest()) return
       // ★ 401/403 说明 cookie 里的 token 已经失效（登录过期），
       // 但 localStorage 的 user-info 还在，isLoggedIn 仍是 true。
       // 这里必须把本地登录态一起清掉，否则顶部会一直显示头像 + 旧角标，
@@ -172,7 +223,7 @@ export const useCart = () => {
   }): Promise<StoreCart> {
     mutating.value = true
     try {
-      const next = normalizeCart(await $fetch('/api/cart/items', {
+      const next = normalizeCart(await requestFetch('/api/cart/items', {
         method: 'POST',
         body: {
           productId: params.productId,
@@ -198,7 +249,7 @@ export const useCart = () => {
   async function updateQuantity(itemId: string, quantity: number): Promise<StoreCart> {
     mutating.value = true
     try {
-      const next = normalizeCart(await $fetch(`/api/cart/items/${encodeURIComponent(itemId)}`, {
+      const next = normalizeCart(await requestFetch(`/api/cart/items/${encodeURIComponent(itemId)}`, {
         method: 'PUT',
         body: { quantity, source: 'cart', lang: locale.value },
       }))
@@ -212,7 +263,7 @@ export const useCart = () => {
   async function removeItem(itemId: string): Promise<StoreCart> {
     mutating.value = true
     try {
-      const next = normalizeCart(await $fetch(`/api/cart/items/${encodeURIComponent(itemId)}`, {
+      const next = normalizeCart(await requestFetch(`/api/cart/items/${encodeURIComponent(itemId)}`, {
         method: 'DELETE',
         query: { lang: locale.value },
       }))
@@ -226,7 +277,7 @@ export const useCart = () => {
   async function batchRemove(ids: string[]): Promise<StoreCart> {
     mutating.value = true
     try {
-      const next = normalizeCart(await $fetch('/api/cart/batch-remove', {
+      const next = normalizeCart(await requestFetch('/api/cart/batch-remove', {
         method: 'POST',
         body: { ids, source: 'cart', lang: locale.value },
       }))
@@ -240,7 +291,7 @@ export const useCart = () => {
   async function clearCart(): Promise<StoreCart> {
     mutating.value = true
     try {
-      const next = normalizeCart(await $fetch('/api/cart', {
+      const next = normalizeCart(await requestFetch('/api/cart', {
         method: 'DELETE',
         query: { lang: locale.value },
       }))
@@ -254,7 +305,7 @@ export const useCart = () => {
   async function clearInvalid(): Promise<StoreCart> {
     mutating.value = true
     try {
-      const next = normalizeCart(await $fetch('/api/cart/invalid', {
+      const next = normalizeCart(await requestFetch('/api/cart/invalid', {
         method: 'DELETE',
         query: { lang: locale.value },
       }))
@@ -290,6 +341,8 @@ export const useCart = () => {
     toggleSelectAll,
     // actions
     fetchCart,
+    /** 页面级重新拉取（useLazyAsyncData('cart-page', () => reload()) 的入口） */
+    reload,
     refreshCount,
     addItem,
     updateQuantity,

@@ -14,16 +14,23 @@
     class="flex flex-wrap items-center justify-center gap-2"
     :class="margin"
     :aria-label="label"
+    :aria-busy="disabled ? 'true' : undefined"
   >
-    <button
+    <!--
+      翻页按钮用 AsyncButton：加载中显示转圈（pending）+ 禁用，而不是只把按钮变灰。
+      注意 pending 与"已经在第一页/最后一页"的 disabled 是两件事：
+      前者给"正在加载"的反馈，后者是边界状态。
+    -->
+    <AsyncButton
       type="button"
       :class="edgeButtonClass"
-      :disabled="disabled || current <= 1"
+      :pending="disabled"
+      :disabled="current <= 1"
       @click="emit('change', current - 1)"
     >
       <UIcon name="lucide:chevron-left" class="h-4 w-4" aria-hidden="true" />
       <span class="hidden sm:inline">{{ prevLabel }}</span>
-    </button>
+    </AsyncButton>
 
     <!-- info：不渲染页码窗口，只给一行「第 x / 共 y 页」 -->
     <span v-if="variant === 'info'" class="px-2 tabular text-[var(--color-muted)]" :class="infoTextClass">
@@ -37,6 +44,7 @@
         :key="pageNumber"
         type="button"
         :class="pageButtonClass(pageNumber)"
+        :disabled="disabled"
         :aria-current="pageNumber === current ? 'page' : undefined"
         @click="emit('change', pageNumber)"
       >
@@ -44,15 +52,16 @@
       </button>
     </template>
 
-    <button
+    <AsyncButton
       type="button"
       :class="edgeButtonClass"
-      :disabled="disabled || current >= total"
+      :pending="disabled"
+      :disabled="current >= total"
       @click="emit('change', current + 1)"
     >
       <span class="hidden sm:inline">{{ nextLabel }}</span>
       <UIcon name="lucide:chevron-right" class="h-4 w-4" aria-hidden="true" />
-    </button>
+    </AsyncButton>
   </nav>
 </template>
 
@@ -125,12 +134,15 @@ const edgeButtonClass = computed(() => {
 function pageButtonClass(pageNumber: number): string | string[] {
   if (props.variant === 'outline') {
     return [
-      'flex h-10 min-w-[44px] cursor-pointer items-center justify-center rounded-full border px-3 text-sm font-bold transition-colors motion-reduce:transition-none',
+      'flex h-10 min-w-[44px] cursor-pointer items-center justify-center rounded-full border px-3 text-sm font-bold transition-colors disabled:cursor-not-allowed disabled:opacity-40 motion-reduce:transition-none',
       pageNumber === props.current
         ? 'border-[var(--color-brand-500)] bg-[var(--color-brand-500)] text-white'
         : 'border-[var(--color-line)] bg-white text-[var(--color-ink-soft)] hover:border-[var(--color-brand-300)] hover:text-[var(--color-brand-600)]',
     ]
   }
-  return ['chip min-w-[38px] tabular', pageNumber === props.current ? 'chip-active' : '']
+  return [
+    'chip min-w-[38px] tabular disabled:cursor-not-allowed disabled:opacity-40',
+    pageNumber === props.current ? 'chip-active' : '',
+  ]
 }
 </script>

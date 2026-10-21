@@ -19,15 +19,29 @@ import { writeCheckoutSnapshot } from '~~/composables/useCheckoutSnapshot'
 import { useStorePrice, useStoreProductList } from '~~/composables/useProducts'
 import { useLoginLink } from '~~/composables/useLoginLink'
 import { toNumberOrNull } from '~~/types/shop-product'
-import type { StoreCartItem } from '~~/types/shop-cart'
+import type { StoreProductCard } from '~~/types/shop-product'
+import type { StoreCart, StoreCartItem } from '~~/types/shop-cart'
 
-export const useCartPage = async () => {
+/**
+ * 购物车页的数据与操作层。
+ *
+ * 为什么是**同步**函数（不再 async）：
+ *   取数时机交给页面用 useLazyAsyncData 编排 —— 页面会写
+ *     const { reload, loadLikes } = useCartPage()
+ *     useLazyAsyncData('cart-page', () => reload())
+ *     useLazyAsyncData('cart-likes', () => loadLikes())
+ *   这样 SSR 能带上 cookie 把购物车渲染出来，客户端导航又不会被阻塞，
+ *   而且不需要在 composable 内部 await 之后继续调用 Vue composable
+ *   （以前那个 await 让函数后半段脱离 setup 上下文，是踩过的坑）。
+ */
+export const useCartPage = () => {
   const { t, locale } = useI18n()
   const localePath = useLocalePath()
   const toast = useToast()
   const { formatCompact } = useStorePrice()
 
   const {
+    cart,
     items,
     summary,
     loading,
@@ -182,8 +196,35 @@ export const useCartPage = async () => {
   // ---------------------------------------------------------------------------
 
   const likePageNo = ref(1)
-  const { data: likePage } = await useStoreProductList({ pageNo: likePageNo, pageSize: 4 })
+
+  /**
+   * 「猜你喜欢」的取数通道。
+   *
+   * useStoreProductList 必须在 setup 里调用（内部要 useI18n / useAsyncData），
+   * 但这里**不 await**，而且 `immediate: false`：真正的请求由页面通过
+   * useLazyAsyncData('cart-likes', () => loadLikes()) 触发，避免 setup 阶段
+   * 先发一次、页面再触发一次（重复请求）。
+   */
+  const {
+    data: likePage,
+    pending: likesPending,
+    error: likesError,
+    refresh: refreshLikes,
+  } = useStoreProductList({ pageNo: likePageNo, pageSize: 4, immediate: false })
+
   const likeProducts = computed(() => likePage.value?.records ?? [])
+
+  /**
+   * 拉取「猜你喜欢」。
+   *
+   * 页面契约：`useLazyAsyncData('cart-likes', () => loadLikes())`。
+   * 返回值必须是 truthy（空数组也是 truthy）——useAsyncData 的 handler 返回
+   * undefined 时 Nuxt 会在客户端再执行一次。
+   */
+  async function loadLikes(): Promise<StoreProductCard[]> {
+    await refreshLikes()
+    return likePage.value?.records ?? []
+  }
 
   // ---------------------------------------------------------------------------
   // 交互（逻辑与重构前保持一致）
@@ -313,12 +354,20 @@ export const useCartPage = async () => {
     await navigateTo(localePath('/checkout'))
   }
 
-  async function reload() {
+  /**
+   * 重新拉取购物车（页面用 useLazyAsyncData('cart-page', () => reload()) 调）。
+   *
+   * 返回购物车对象而不是 void：useAsyncData 的 handler 必须返回 truthy，
+   * 否则 Nuxt 会在客户端重复执行一次；出错时把文案收进 loadError 并回退到
+   * 当前（空）购物车，页面因此能同时拿到"加载失败"和"可渲染的默认值"。
+   */
+  async function reload(): Promise<StoreCart> {
     loadError.value = ''
     try {
-      await fetchCart()
+      return await fetchCart()
     } catch (error) {
       loadError.value = extractCartErrorMessage(error, t('cart.loadErrorDesc'))
+      return cart.value
     } finally {
       ready.value = true
     }
@@ -363,6 +412,9 @@ export const useCartPage = async () => {
     payable,
     savedAmount,
     likeProducts,
+    likesPending,
+    likesError,
+    loadLikes,
     confirmCopy,
     askConfirm,
     runConfirmedAction,

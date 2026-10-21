@@ -31,7 +31,11 @@
 		<!-- cikian服务 -->
 		<ck.oss.version>0.3.0</ck.oss.version>
 		<ck.log.version>1.5.34</ck.log.version>
-		<ck.crydis.version>0.2.5</ck.crydis.version>
+		<!-- crydis 0.2.6 是 captcha-client-spring-boot-starter 1.0.0 的传递依赖版本，
+		     显式对齐，避免 base-core 的旧版本在依赖仲裁中胜出导致运行期版本偏移 -->
+		<ck.crydis.version>0.2.6</ck.crydis.version>
+		<!-- CikVerify 验证码服务 Java SDK：线上正式发布版，从 CikianMaven 解析 -->
+		<ck.captcha.version>1.0.0</ck.captcha.version>
 
 		<jeecgboot.version>3.9.5</jeecgboot.version>
 		<jeecg-starter.version>3.9.5</jeecg-starter.version>
@@ -98,6 +102,19 @@
     </modules>
 
 	<repositories>
+		<!-- Cikian 仓库：cn.cikian:*（验证码 SDK、crydis、log3、cik-oss）的发布源。
+		     放在首位，确保这些制品从正式仓库解析，而不是回落到本地手工安装的副本。 -->
+		<repository>
+			<id>CikianMaven</id>
+			<name>Cikian Maven Repository</name>
+			<url>https://mvnrep.cikian.cn/repository/public/</url>
+			<releases>
+				<enabled>true</enabled>
+			</releases>
+			<snapshots>
+				<enabled>false</enabled>
+			</snapshots>
+		</repository>
 		<repository>
             <id>aliyun</id>
             <name>aliyun Repository</name>

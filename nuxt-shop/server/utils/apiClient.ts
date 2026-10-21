@@ -10,6 +10,7 @@
 
 import type { H3Event } from 'h3'
 import { signMd5Utils } from './signMd5'
+import { getClientIp } from './clientIp'
 import { STORE_INTL_LOCALE_TAGS } from '~~/types/store-locale'
 
 interface BackendEnvelope<T = unknown> {
@@ -59,7 +60,7 @@ function resolveFailureStatus(httpStatus: number | undefined, envelopeCode: unkn
 
 export function createApiClient(
   event: H3Event,
-  options: { withAuth?: boolean; lang?: string } = {}
+  options: { withAuth?: boolean; lang?: string; timeoutMs?: number; rawEnvelope?: boolean } = {}
 ) {
   const config = useRuntimeConfig(event)
   const signUtils = signMd5Utils({ signSecret: config.signSecret })
@@ -112,6 +113,20 @@ export function createApiClient(
     headers['X-Store-Code'] = storeCode
   }
 
+  /**
+   * 真实客户端 IP：BFF 是唯一知道浏览器地址的一层，Java 后端的
+   * `remoteAddr` 只会是这台 BFF 自己。
+   *
+   * 这里**无条件覆盖**同名请求头（新建 headers 对象，不复用浏览器传入的值），
+   * 浏览器伪造的 X-Client-IP 不会透传；后端侧只在请求来自内网代理时采信该头
+   * （见 ShopAccountSupport#resolveClientIp），两层一起才安全。
+   * 用途：后端按 IP 限流（发验证码/登录/注册）与登录日志。
+   */
+  const clientIp = getClientIp(event)
+  if (clientIp && clientIp !== 'unknown') {
+    headers['X-Client-IP'] = clientIp
+  }
+
   return $fetch.create({
     baseURL: config.apiBaseUrl,
 
@@ -122,8 +137,12 @@ export function createApiClient(
      * await 这个调用的 Nitro 请求会**一直挂着**，而 SSR 期间
      * app/middleware/auth.ts、首页/商品页的 setup 都在等它 ——
      * 结果是整个前台所有服务端渲染页面一起变慢甚至超时，而不是"降级展示"。
+     *
+     * 默认 10s 是给普通 CRUD 的；登录、OAuth 这类**后端内部还要再访问第三方**
+     * 的接口必须用 timeoutMs 单独放宽，否则 BFF 会先于后端超时，
+     * 用户只能看到"后端服务响应超时"，看不到真正的原因（见 google/callback.post.ts）。
      */
-    timeout: Number(config.apiTimeoutMs) || 10000,
+    timeout: Number(options.timeoutMs) || Number(config.apiTimeoutMs) || 10000,
 
     /**
      * 重试刻意关闭（ofetch 默认会对部分失败的 GET 自动重试一次）。
@@ -157,6 +176,25 @@ export function createApiClient(
       const body = response._data as BackendEnvelope
 
       if (body && typeof body === 'object' && 'success' in body) {
+        /**
+         * rawEnvelope：把 `{code,msg,data,success}` 原样交回调用方，不做 JeecgBoot
+         * `Result` 解包，也不在 success:false 时抛错。
+         *
+         * 为什么需要它：CikVerify 的 Java SDK 自动注册的 `/captcha/challenge|verify`
+         * 返回的是 `ApiResult`（字段 code/msg/data），但 **JeecgBoot 的全局
+         * ResponseBodyAdvice 又给它补了 success 字段**，于是形如
+         *   { code: 200, msg: "OK", data: {...}, success: true }
+         * 本函数默认逻辑会把 success:true 的响应解包成 `body.result` —— 那个字段
+         * 根本不存在，`_data` 直接变成 undefined（challenge 全部被当成空响应，
+         * BFF 只能回 502）；success:false 时又会抛错，把 403/4000 的
+         * `{code,msg,data}` 信封整个丢掉。
+         *
+         * 验证码网关的契约是"HTTP 200 + 业务 code"，前端 @cikian/captcha-web 也按
+         * `res.code === 200` 判定，所以这条链路必须原样透传信封。
+         */
+        if (options.rawEnvelope) {
+          return
+        }
         if (!body.success) {
           throw createError({
             statusCode: resolveFailureStatus(response.status, body.code),

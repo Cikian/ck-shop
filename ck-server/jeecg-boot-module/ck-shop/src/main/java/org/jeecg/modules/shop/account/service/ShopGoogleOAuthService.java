@@ -19,6 +19,7 @@ import java.io.UnsupportedEncodingException;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.util.Base64;
 import java.util.UUID;
 
 /**
@@ -39,8 +40,16 @@ import java.util.UUID;
  * 不接受调用方指定的 state（否则等于没有 CSRF 防护）。
  *
  * <b>HTTP 客户端</b>：用项目已有的 okhttp（jeecg-boot-base-core 传递依赖）。
- * 超时设短（连接 5s / 读取 10s）：Google 的 API 在墙内可能超时，
- * 而这个调用在登录路径上，卡 30 秒会让用户以为站点挂了。
+ * 超时（连接 5s / 读取 20s / 单次调用 25s）：Google 的 API 在墙内经常要经过
+ * 代理、时快时慢（实测同一台机器 0.2s～15s 都有），10s 读取超时会把"慢但能用"
+ * 的请求误杀成登录失败；而登录路径又不能让用户无限等待，所以用 callTimeout
+ * 给单次调用封顶，再配合 BFF 侧的 30s 超时（见 nuxt-shop/server/api/auth/google/callback.post.ts），
+ * 保证后端总能先于 BFF 返回真实错误，而不是被 BFF 的"后端服务响应超时"盖住。
+ *
+ * <b>为什么优先用 id_token 而不是 userinfo</b>：授权码流程里 token 端点本来就会
+ * 返回 id_token（scope 含 openid），里面的 sub / email / name / picture 与 userinfo
+ * 是同一批声明。直接解析 id_token 可以把"两次跨境请求"降成"一次"，少一次失败机会，
+ * 也少一次网络往返。只有 id_token 缺失/校验不过时才回退 userinfo（保留兜底）。
  *
  * @author Cikian
  * @version 1.0
@@ -57,16 +66,35 @@ public class ShopGoogleOAuthService {
 
     private final OkHttpClient httpClient;
 
+    /**
+     * userinfo 兜底专用客户端：超时更短。
+     *
+     * 主路径只用 token 端点一次请求（上限 25s）；万一 id_token 不可用还要再打一次
+     * userinfo，两次叠加不能超过 BFF 的 30s，所以兜底这次给 4s 封顶
+     * （健康网络下 userinfo 实测 0.2～0.3s，4s 足够；慢到 4s 还没结果的话，
+     * 这次登录本来也已经不可用了，不如尽快失败并让用户重新发起）。
+     */
+    private final OkHttpClient userInfoHttpClient;
+
     public ShopGoogleOAuthService(GoogleOAuthProperties properties, RedisUtil redisUtil) {
         this.properties = properties;
         this.redisUtil = redisUtil;
         this.httpClient = new OkHttpClient.Builder()
                 .connectTimeout(Duration.ofSeconds(5))
-                .readTimeout(Duration.ofSeconds(10))
+                .readTimeout(Duration.ofSeconds(20))
                 .writeTimeout(Duration.ofSeconds(10))
+                // 单次调用（DNS + 建连 + TLS + 读取）的总上限：
+                // 读取超时只约束"两次数据之间的间隔"，代理卡住时仍可能拖很久；
+                // 25s 比 BFF 的 30s 小，才能保证用户看到的是后端的真实失败原因。
+                .callTimeout(Duration.ofSeconds(25))
                 // 不自动跟随重定向：token 端点不该返回 3xx，
                 // 若真返回了，跟随到别的域会把 client_secret 带过去
                 .followRedirects(false)
+                .build();
+        // 复用同一个连接池/调度器，只收紧这一次兜底调用的时间预算
+        this.userInfoHttpClient = this.httpClient.newBuilder()
+                .readTimeout(Duration.ofSeconds(4))
+                .callTimeout(Duration.ofSeconds(4))
                 .build();
     }
 
@@ -134,11 +162,15 @@ public class ShopGoogleOAuthService {
     // ==================================================================
 
     /**
-     * 用授权码换 access_token。
+     * 用授权码换 access_token，并顺带取出 id_token。
+     *
+     * <p>id_token 是 Google 在 token 端点直接返回的 JWT（scope 含 openid 时必然存在），
+     * 调用方应优先用 {@link #parseIdToken(String)} 从里面取用户信息，
+     * 只有它缺失/校验不过时才回退 {@link #fetchUserInfo(String)}。</p>
      *
      * @throws JeecgBootException 网络异常 / Google 返回错误 / 返回体缺 access_token
      */
-    public String exchangeAccessToken(String code, String redirectUri) {
+    public TokenResult exchangeCode(String code, String redirectUri) {
         if (!properties.isConfigured()) {
             throw new JeecgBootException(properties.notConfiguredMessage());
         }
@@ -158,22 +190,114 @@ public class ShopGoogleOAuthService {
                 .post(body)
                 .build();
 
-        JSONObject json = execute(request, "换取 Google access_token 失败");
+        JSONObject json = execute(httpClient, request, "换取 Google access_token 失败");
         String accessToken = json.getString("access_token");
         if (StringUtils.isBlank(accessToken)) {
             log.warn("Google token 响应缺少 access_token，error={}，error_description={}",
                     json.getString("error"), json.getString("error_description"));
             throw new JeecgBootException("Google 登录失败：未能获取授权凭证，请重试或改用邮箱登录");
         }
-        return accessToken;
+        return new TokenResult(accessToken, json.getString("id_token"));
     }
 
     // ==================================================================
-    // 3) access_token → userinfo
+    // 2.5) id_token → 用户信息（首选，避免第二次跨境请求）
+    // ==================================================================
+
+    /** Google 签发的 id_token 的 issuer（历史上有带/不带 https:// 两种写法） */
+    private static final String GOOGLE_ISSUER = "https://accounts.google.com";
+    private static final String GOOGLE_ISSUER_SHORT = "accounts.google.com";
+
+    /**
+     * 从 id_token（JWT）里解析并校验用户信息。
+     *
+     * <p><b>安全说明</b>：按 OpenID Connect Core 3.1.3.7，id_token 是
+     * <i>通过 TLS 直接从 token 端点</i>拿到的，此时允许用 TLS 服务端校验替代
+     * 签名校验（JWT 的签名防的是"别人伪造/篡改"，而这里整段响应来自 Google
+     * 的 TLS 连接）。因此本方法不验签，但仍必须校验：</p>
+     * <ul>
+     *   <li>iss：必须是 Google 的 issuer；</li>
+     *   <li>aud：必须是本应用自己的 client_id（防"别的应用的 id_token"被塞进来）；</li>
+     *   <li>exp：必须未过期（留 60s 时钟偏差）；</li>
+     *   <li>sub：必须存在（账号唯一标识）。</li>
+     * </ul>
+     *
+     * @return 校验通过返回用户信息；id_token 缺失/格式错/校验不过返回 {@code null}，
+     *         由调用方回退 userinfo（见 {@link #fetchUserInfo(String)}）
+     */
+    public GoogleUserInfo parseIdToken(String idToken) {
+        if (StringUtils.isBlank(idToken)) {
+            return null;
+        }
+        try {
+            // JWT = header.payload.signature，只用到第二段
+            String[] parts = idToken.split("\\.");
+            if (parts.length != 3) {
+                log.warn("Google id_token 格式非法（段数={}），回退 userinfo", parts.length);
+                return null;
+            }
+            String payload = new String(
+                    Base64.getUrlDecoder().decode(padBase64(parts[1])), StandardCharsets.UTF_8);
+            JSONObject json = JSONObject.parseObject(payload);
+
+            String iss = json.getString("iss");
+            if (!GOOGLE_ISSUER.equals(iss) && !GOOGLE_ISSUER_SHORT.equals(iss)) {
+                log.warn("Google id_token issuer 不匹配：{}，回退 userinfo", iss);
+                return null;
+            }
+            // aud 在单客户端场景是字符串；按字符串比较即可，避免把数组当字符串误判
+            String aud = json.getString("aud");
+            if (!StringUtils.equals(aud, properties.getClientId())) {
+                log.warn("Google id_token audience 不匹配，回退 userinfo");
+                return null;
+            }
+            long exp = json.getLongValue("exp");
+            if (exp <= System.currentTimeMillis() / 1000 - 60) {
+                log.warn("Google id_token 已过期（exp={}），回退 userinfo", exp);
+                return null;
+            }
+            String sub = json.getString("sub");
+            if (StringUtils.isBlank(sub)) {
+                log.warn("Google id_token 缺少 sub，回退 userinfo");
+                return null;
+            }
+
+            GoogleUserInfo info = new GoogleUserInfo();
+            info.setSub(sub);
+            info.setEmail(ShopEmailCodeService.normalizeEmail(json.getString("email")));
+            info.setName(json.getString("name"));
+            info.setPicture(json.getString("picture"));
+            info.setEmailVerified(json.getBooleanValue("email_verified"));
+            return info;
+        } catch (Exception e) {
+            // 解析失败不是致命错误：回退 userinfo 即可，不能因此让用户登不进来
+            log.warn("Google id_token 解析失败（{}），回退 userinfo", e.getMessage());
+            return null;
+        }
+    }
+
+    /** Base64URL 解码前补齐 padding（Java 的 decoder 要求 4 的倍数） */
+    private String padBase64(String value) {
+        int remainder = value.length() % 4;
+        if (remainder == 2) {
+            return value + "==";
+        }
+        if (remainder == 3) {
+            return value + "=";
+        }
+        return value;
+    }
+
+    // ==================================================================
+    // 3) access_token → userinfo（id_token 不可用时的兜底）
     // ==================================================================
 
     /**
-     * 取 Google 用户信息。
+     * 取 Google 用户信息（兜底路径）。
+     *
+     * <p>正常流程不会走到这里：token 响应里的 id_token 已经带了同样的声明，
+     * 优先用 {@link #parseIdToken(String)} 解析。保留本方法是为了在
+     * id_token 缺失或校验不过时仍能登录，代价是多一次跨境请求。</p>
      *
      * @throws JeecgBootException 网络异常 / 返回体缺 sub
      */
@@ -184,7 +308,7 @@ public class ShopGoogleOAuthService {
                 .get()
                 .build();
 
-        JSONObject json = execute(request, "获取 Google 用户信息失败");
+        JSONObject json = execute(userInfoHttpClient, request, "获取 Google 用户信息失败");
         String sub = json.getString("sub");
         if (StringUtils.isBlank(sub)) {
             throw new JeecgBootException("Google 登录失败：未能获取账号标识(sub)");
@@ -209,8 +333,8 @@ public class ShopGoogleOAuthService {
      * 这里若抛 IOException，上层会变成 500，而"Google 超时"、
      * "用户点了取消导致 code 无效"都是**可预期的业务失败**，应该是 200 + 业务错误码。
      */
-    private JSONObject execute(Request request, String errorPrefix) {
-        try (Response response = httpClient.newCall(request).execute()) {
+    private JSONObject execute(OkHttpClient client, Request request, String errorPrefix) {
+        try (Response response = client.newCall(request).execute()) {
             ResponseBody responseBody = response.body();
             String text = responseBody == null ? "" : responseBody.string();
             if (!response.isSuccessful()) {
@@ -261,6 +385,28 @@ public class ShopGoogleOAuthService {
 
         public String getState() {
             return state;
+        }
+    }
+
+    /**
+     * token 端点结果：access_token 必填，id_token 可能为空（理论上不会）。
+     * 单独一个类而不是两个返回值，调用方就不容易把参数顺序写反。
+     */
+    public static class TokenResult {
+        private final String accessToken;
+        private final String idToken;
+
+        public TokenResult(String accessToken, String idToken) {
+            this.accessToken = accessToken;
+            this.idToken = idToken;
+        }
+
+        public String getAccessToken() {
+            return accessToken;
+        }
+
+        public String getIdToken() {
+            return idToken;
         }
     }
 

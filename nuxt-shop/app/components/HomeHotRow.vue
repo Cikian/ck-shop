@@ -23,18 +23,14 @@
         class="group flex w-[196px] shrink-0 items-start gap-2.5 rounded-[var(--radius-tile)] p-2 transition-colors hover:bg-[var(--color-brand-50)] lg:w-auto"
       >
         <div class="h-16 w-16 shrink-0 overflow-hidden rounded-[12px] bg-[var(--color-surface-secondary)]">
-          <img
-            v-if="coverOf(product)"
+          <ShopImage
             :src="coverOf(product)"
             :alt="product.title"
             width="64"
             height="64"
             class="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105 motion-reduce:transition-none motion-reduce:group-hover:scale-100"
-            loading="lazy"
-          >
-          <div v-else class="flex h-full w-full items-center justify-center text-[var(--color-muted)]">
-            <UIcon name="lucide:image-off" class="h-5 w-5" aria-hidden="true" />
-          </div>
+            icon-class="h-5 w-5"
+          />
         </div>
 
         <div class="min-w-0 flex-1">

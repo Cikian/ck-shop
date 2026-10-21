@@ -7,7 +7,7 @@
             {{ t('order.detailTitle') }}
           </h1>
           <p v-if="detail" class="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-[13px] text-[var(--color-muted)]">
-            <span>{{ t('order.orderNo') }}：</span>
+            <span>{{ t('order.orderNo') }}:</span>
             <span class="font-bold tabular text-[var(--color-ink)]">{{ detail.orderNo }}</span>
             <OrderStatusTag :label="detail.orderStatusLabel || detail.orderStatus || ''" :status="detail.orderStatus" />
           </p>
@@ -21,8 +21,9 @@
         </NuxtLinkLocale>
       </header>
 
+      <Transition name="fade" mode="out-in">
       <!-- 未登录 -->
-      <section v-if="unauthorized" class="ui-card px-6 py-16 text-center">
+      <section v-if="unauthorized" key="unauthorized" class="ui-card px-6 py-16 text-center">
         <span class="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-[var(--color-brand-50)]">
           <UIcon name="lucide:lock" class="h-8 w-8 text-[var(--color-brand-500)]" aria-hidden="true" />
         </span>
@@ -35,7 +36,7 @@
       </section>
 
       <!-- 加载失败 / 订单不存在 -->
-      <section v-else-if="loadError" class="ui-card px-6 py-16 text-center">
+      <section v-else-if="loadError" key="error" class="ui-card px-6 py-16 text-center">
         <span class="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-[var(--color-error)]/10">
           <UIcon name="lucide:package-x" class="h-8 w-8 text-[var(--color-error)]" aria-hidden="true" />
         </span>
@@ -53,7 +54,7 @@
       </section>
 
       <!-- 骨架屏 -->
-      <section v-else-if="loading || !detail" class="space-y-4" aria-busy="true" :aria-label="t('common.loading')">
+      <section v-else-if="loading || !detail" key="skeleton" class="space-y-4" aria-busy="true" :aria-label="t('common.loading')">
         <div v-for="index in 3" :key="index" class="ui-card space-y-3 p-5">
           <div class="h-4 w-1/4 animate-pulse rounded bg-[var(--color-line-soft)]"></div>
           <div class="h-3 w-2/3 animate-pulse rounded bg-[var(--color-line-soft)]"></div>
@@ -61,7 +62,7 @@
         </div>
       </section>
 
-      <div v-else class="space-y-5">
+      <div v-else key="content" class="space-y-5">
         <!-- 待支付：倒计时 + 去支付 -->
         <section v-if="detail.canPay" class="ui-card flex flex-wrap items-center justify-between gap-x-4 gap-y-3 p-5">
           <div>
@@ -73,7 +74,7 @@
               {{ countdownText }}
             </p>
             <p class="mt-1.5 text-[12px] text-[var(--color-muted)]">
-              {{ t('order.payDeadline') }}：{{ detail.payDeadline || '--' }}
+              {{ t('order.payDeadline') }}: {{ detail.payDeadline || '--' }}
             </p>
           </div>
           <NuxtLinkLocale :to="payLink" class="ui-pill ui-pill-brand h-12 px-7 text-sm">
@@ -130,6 +131,7 @@
           @withdraw="askWithdraw"
         />
       </div>
+      </Transition>
     </div>
 
     <!-- 确认收货 -->
@@ -143,19 +145,20 @@
         <div class="flex w-full justify-end gap-3">
           <button
             type="button"
-            class="cursor-pointer rounded-full border border-[var(--color-line)] px-5 py-2.5 text-sm font-semibold text-[var(--color-ink-soft)] transition-colors duration-200 hover:bg-[var(--color-surface-secondary)] motion-reduce:transition-none"
+            class="cursor-pointer rounded-full border border-[var(--color-line)] px-5 py-2.5 text-sm font-semibold text-[var(--color-ink-soft)] transition-colors duration-200 hover:bg-[var(--color-surface-secondary)] disabled:cursor-not-allowed disabled:opacity-50 motion-reduce:transition-none"
+            :disabled="receiveState.pending"
             @click="receiveState.open = false"
           >
             {{ t('common.cancel') }}
           </button>
-          <button
-            type="button"
+          <AsyncButton
             class="cursor-pointer rounded-full bg-[var(--color-brand-500)] px-5 py-2.5 text-sm font-semibold text-white transition-colors duration-200 hover:bg-[var(--color-brand-600)] disabled:cursor-not-allowed disabled:opacity-50 motion-reduce:transition-none"
-            :disabled="receiveState.pending"
+            :pending="receiveState.pending"
+            :pending-label="t('order.receiveConfirming')"
             @click="confirmReceive"
           >
             {{ t('order.receiveConfirm') }}
-          </button>
+          </AsyncButton>
         </div>
       </template>
     </UModal>
@@ -171,19 +174,20 @@
         <div class="flex w-full justify-end gap-3">
           <button
             type="button"
-            class="cursor-pointer rounded-full border border-[var(--color-line)] px-5 py-2.5 text-sm font-semibold text-[var(--color-ink-soft)] transition-colors duration-200 hover:bg-[var(--color-surface-secondary)] motion-reduce:transition-none"
+            class="cursor-pointer rounded-full border border-[var(--color-line)] px-5 py-2.5 text-sm font-semibold text-[var(--color-ink-soft)] transition-colors duration-200 hover:bg-[var(--color-surface-secondary)] disabled:cursor-not-allowed disabled:opacity-50 motion-reduce:transition-none"
+            :disabled="withdrawState.pending"
             @click="withdrawState.open = false"
           >
             {{ t('common.cancel') }}
           </button>
-          <button
-            type="button"
+          <AsyncButton
             class="cursor-pointer rounded-full bg-[var(--color-error)] px-5 py-2.5 text-sm font-semibold text-white transition-colors duration-200 hover:bg-[var(--color-error-600)] disabled:cursor-not-allowed disabled:opacity-50 motion-reduce:transition-none"
-            :disabled="withdrawState.pending"
+            :pending="withdrawState.pending"
+            :pending-label="t('order.withdrawing')"
             @click="confirmWithdraw"
           >
             {{ t('order.withdrawConfirm') }}
-          </button>
+          </AsyncButton>
         </div>
       </template>
     </UModal>
@@ -200,15 +204,12 @@
       :items="items"
       @applied="onRefundApplied"
     />
-
-    <SiteFooter />
   </div>
 </template>
 <script setup lang="ts">
 /** 订单详情是私有页面，未登录 / 登录过期由 auth 中间件重定向到登录页并回跳 */
 definePageMeta({ middleware: 'auth' })
 
-import { isPositive } from '~~/composables/useApiError'
 import { useStorePrice } from '~~/composables/useProducts'
 import { useOrderDetail } from '~~/composables/useOrderDetail'
 
@@ -244,7 +245,6 @@ const {
   events,
   expired,
   countdownText,
-  receiverAddressText,
   loginLink,
   payLink,
   loadDetail,

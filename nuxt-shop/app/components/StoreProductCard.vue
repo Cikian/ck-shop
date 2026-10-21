@@ -3,18 +3,14 @@
     <!-- 封面 + 信息：整块是一个链接，点击进入商品详情 -->
     <NuxtLinkLocale :to="`/products/${product.id}`" class="flex flex-1 flex-col">
       <div class="relative aspect-square overflow-hidden bg-[var(--color-surface-secondary)]">
-        <img
-          v-if="coverUrl"
+        <ShopImage
           :src="coverUrl"
           :alt="product.title"
           width="600"
           height="600"
           class="h-full w-full object-cover transition-transform duration-500 ease-out group-hover:scale-105 motion-reduce:transition-none motion-reduce:group-hover:scale-100"
-          loading="lazy"
-        >
-        <div v-else class="flex h-full w-full items-center justify-center text-[var(--color-muted)]">
-          <UIcon name="lucide:image-off" class="h-9 w-9" aria-hidden="true" />
-        </div>
+          icon-class="h-9 w-9"
+        />
 
         <!-- 角标：只渲染真实存在的推荐标记与 HOT/SALE/NEW/PICK 标签 -->
         <div v-if="imageBadges.length" class="absolute left-2.5 top-2.5 flex flex-wrap gap-1.5">
@@ -84,22 +80,18 @@
       多花一次请求换来的是"购物车里永远不会有没选规格的东西"，这个交换是划算的。
     -->
     <div class="px-3.5 pb-3.5">
-      <button
+      <AsyncButton
         type="button"
         class="ui-pill ui-pill-brand h-9 w-full text-[13px] disabled:cursor-not-allowed disabled:opacity-45"
-        :disabled="!inStock || adding"
-        :aria-busy="adding"
+        :pending="adding"
+        :pending-label="t('product.adding')"
+        :disabled="!inStock"
         :aria-label="`${t('products.addToCart')} - ${product.title}`"
         @click="handleQuickAdd"
       >
-        <UIcon
-          :name="adding ? 'lucide:loader-circle' : 'lucide:shopping-cart'"
-          class="h-4 w-4"
-          :class="adding ? 'animate-spin' : ''"
-          aria-hidden="true"
-        />
-        {{ adding ? t('product.adding') : t('products.addToCart') }}
-      </button>
+        <UIcon name="lucide:shopping-cart" class="h-4 w-4" aria-hidden="true" />
+        {{ t('products.addToCart') }}
+      </AsyncButton>
     </div>
   </article>
 </template>

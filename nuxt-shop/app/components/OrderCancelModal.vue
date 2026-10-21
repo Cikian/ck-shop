@@ -32,14 +32,15 @@
         >
           {{ t('order.cancelKeep') }}
         </button>
-        <button
+        <AsyncButton
           type="button"
           class="cursor-pointer rounded-full bg-[var(--color-error)] px-5 py-2.5 text-sm font-semibold text-white transition-colors duration-200 hover:bg-[var(--color-error-600)] disabled:cursor-not-allowed disabled:opacity-50 motion-reduce:transition-none"
-          :disabled="submitting"
+          :pending="submitting"
+          :pending-label="t('order.cancelSubmitting')"
           @click="submit"
         >
-          {{ submitting ? t('order.cancelSubmitting') : t('order.cancelConfirm') }}
-        </button>
+          {{ t('order.cancelConfirm') }}
+        </AsyncButton>
       </div>
     </template>
   </UModal>

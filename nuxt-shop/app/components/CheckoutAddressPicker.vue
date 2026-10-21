@@ -23,26 +23,45 @@
       </NuxtLinkLocale>
     </header>
 
-    <!-- 加载中 -->
-    <div v-if="loading" class="space-y-3 p-4" aria-busy="true">
-      <div v-for="index in 2" :key="index" class="h-16 animate-pulse rounded-[var(--radius-card-sm)] bg-[var(--color-line-soft)]"></div>
-    </div>
+    <!--
+      三种状态互斥，用 fade 过渡（骨架↔内容不再硬切）。
+      注意：error 必须排在 empty 前面 —— 加载失败时 addresses 也是空数组，
+      如果先判空，会把"网络挂了"显示成"你还没有地址"，用户会以为地址簿被清空。
+    -->
+    <Transition name="fade" mode="out-in">
+      <!-- 加载中 -->
+      <div v-if="loading" key="loading" class="space-y-3 p-4" aria-busy="true">
+        <div v-for="index in 2" :key="index" class="h-16 animate-pulse rounded-[var(--radius-card-sm)] bg-[var(--color-line-soft)]"></div>
+      </div>
 
-    <!-- 地址簿为空：给出唯一可执行的动作，而不是一句"请先添加地址" -->
-    <div v-else-if="!addresses.length" class="px-4 py-10 text-center">
-      <span class="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-[var(--color-brand-50)]">
-        <UIcon name="lucide:map-pin-off" class="h-6 w-6 text-[var(--color-brand-400)]" aria-hidden="true" />
-      </span>
-      <p class="mt-4 text-sm font-bold text-[var(--color-ink)]">{{ t('order.checkoutAddressEmpty') }}</p>
-      <p class="mx-auto mt-1 max-w-sm text-[13px] text-[var(--color-muted)]">{{ t('order.checkoutAddressEmptyDesc') }}</p>
-      <NuxtLinkLocale to="/address" class="ui-pill ui-pill-brand mt-5 h-10 px-5 text-[13px]">
-        <UIcon name="lucide:plus" class="h-4 w-4" aria-hidden="true" />
-        {{ t('order.checkoutAddressAdd') }}
-      </NuxtLinkLocale>
-    </div>
+      <!-- 加载失败：如实说明 + 重试，不冒充"地址簿为空" -->
+      <div v-else-if="error" key="error" class="px-4 py-10 text-center">
+        <span class="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-[var(--color-error-50)]">
+          <UIcon name="lucide:wifi-off" class="h-6 w-6 text-[var(--color-error)]" aria-hidden="true" />
+        </span>
+        <p class="mt-4 text-sm font-bold text-[var(--color-ink)]">{{ t('address.loadError') }}</p>
+        <p class="mx-auto mt-1 max-w-sm text-[13px] text-[var(--color-muted)]">{{ error }}</p>
+        <button type="button" class="ui-pill ui-pill-ghost mt-5 h-10 px-5 text-[13px]" @click="emit('retry')">
+          <UIcon name="lucide:rotate-ccw" class="h-4 w-4" aria-hidden="true" />
+          {{ t('common.retry') }}
+        </button>
+      </div>
 
-    <!-- 地址列表：单选 -->
-    <ul v-else class="divide-y divide-[var(--color-line-soft)]">
+      <!-- 地址簿为空：给出唯一可执行的动作，而不是一句"请先添加地址" -->
+      <div v-else-if="!addresses.length" key="empty" class="px-4 py-10 text-center">
+        <span class="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-[var(--color-brand-50)]">
+          <UIcon name="lucide:map-pin-off" class="h-6 w-6 text-[var(--color-brand-400)]" aria-hidden="true" />
+        </span>
+        <p class="mt-4 text-sm font-bold text-[var(--color-ink)]">{{ t('order.checkoutAddressEmpty') }}</p>
+        <p class="mx-auto mt-1 max-w-sm text-[13px] text-[var(--color-muted)]">{{ t('order.checkoutAddressEmptyDesc') }}</p>
+        <NuxtLinkLocale to="/address" class="ui-pill ui-pill-brand mt-5 h-10 px-5 text-[13px]">
+          <UIcon name="lucide:plus" class="h-4 w-4" aria-hidden="true" />
+          {{ t('order.checkoutAddressAdd') }}
+        </NuxtLinkLocale>
+      </div>
+
+      <!-- 地址列表：单选 -->
+      <ul v-else key="list" class="divide-y divide-[var(--color-line-soft)]">
       <li v-for="address in addresses" :key="address.id">
         <label
           class="flex cursor-pointer items-start gap-3 px-4 py-3.5 transition-colors duration-200 hover:bg-[var(--color-brand-50)]/40 motion-reduce:transition-none"
@@ -81,10 +100,11 @@
           </span>
         </label>
       </li>
-    </ul>
+      </ul>
+    </Transition>
 
     <!-- 新增入口：地址簿非空时也保留，避免用户为了加一条地址来回跳页 -->
-    <div v-if="!loading && addresses.length" class="border-t border-[var(--color-line-soft)] px-4 py-3">
+    <div v-if="!loading && !error && addresses.length" class="border-t border-[var(--color-line-soft)] px-4 py-3">
       <NuxtLinkLocale
         to="/address"
         class="inline-flex items-center gap-1 text-[13px] font-medium text-[var(--color-muted)] transition-colors duration-200 hover:text-[var(--color-brand-600)] motion-reduce:transition-none"
@@ -125,10 +145,14 @@ defineProps<{
   modelValue: string | null
   /** 是否正在加载 */
   loading?: boolean
+  /** 加载失败文案（空串 = 没有失败）；非空时渲染错误分支 + 重试，而不是冒充"地址簿为空" */
+  error?: string
 }>()
 
 const emit = defineEmits<{
   (e: 'update:modelValue', id: string): void
+  /** 错误分支里的「重试」：取数在父页面，组件只抛事件 */
+  (e: 'retry'): void
 }>()
 
 const { t } = useI18n()

@@ -1,6 +1,6 @@
 <template>
-  <!-- 忘记密码页：邮箱 + 邮箱验证码 + 新密码 + 确认新密码（契约 2.6 / 4.2） -->
   <div class="min-h-screen bg-[var(--color-cream)] pt-navbar">
+    <!-- 忘记密码页：邮箱 + 邮箱验证码 + 新密码 + 确认新密码（契约 2.6 / 4.2） -->
     <section class="relative flex justify-center px-4 pb-20 pt-6 sm:px-6 sm:pt-10">
       <div class="pointer-events-none absolute inset-0 overflow-hidden" aria-hidden="true">
         <div class="brand-gradient-soft absolute inset-0"></div>
@@ -49,18 +49,14 @@
             <form class="mt-7 flex flex-col gap-4" @submit.prevent="handleReset">
               <AuthEmailCodeFields
                 v-model:email="form.email"
-                v-model:captcha="form.captcha"
                 v-model:code="form.emailCode"
-                :captcha-image="imageBase64"
                 :countdown="countdown"
                 :sending="sendingCode"
-                :send-disabled="!canSendCode(form.email, form.captcha)"
+                :send-disabled="!canSendCode(form.email)"
                 :disabled="loading"
                 :email-error="fieldErrors.email"
-                :captcha-error="fieldErrors.captcha"
                 :code-error="fieldErrors.emailCode"
                 @email-blur="validateEmailField"
-                @refresh-captcha="refreshCaptcha"
                 @send-code="handleSendCode"
               />
 
@@ -127,8 +123,12 @@
 </template>
 
 <script setup lang="ts">
+// 认证类页面：只有导航、没有页脚（与 login.vue 一致，走 layouts/auth.vue）
+definePageMeta({ layout: 'auth' })
+
 import { resolveAuthErrorMessage, useAuth } from '~~/composables/useAuth'
 import { useAuthForm } from '~~/composables/useAuthForm'
+import { useCikianCaptcha } from '~~/composables/useCikianCaptcha'
 
 /**
  * 忘记密码 / 重置密码。
@@ -139,8 +139,6 @@ import { useAuthForm } from '~~/composables/useAuthForm'
 const { t } = useI18n()
 const { resetPassword } = useAuth()
 const {
-  imageBase64,
-  refreshCaptcha,
   countdown,
   canSendCode,
   requestEmailCode,
@@ -148,11 +146,12 @@ const {
   validateNewPassword,
   scorePassword,
 } = useAuthForm()
+// CikVerify 弹窗：只能在点击回调（客户端）里 open()
+const { open: openCaptcha } = useCikianCaptcha()
 
 const form = reactive({
   email: '',
   emailCode: '',
-  captcha: '',
   newPassword: '',
   confirmPassword: '',
 })
@@ -168,7 +167,6 @@ const passwordStrength = computed(() => scorePassword(form.newPassword))
 const clearFieldErrors = () => {
   fieldErrors.email = ''
   fieldErrors.emailCode = ''
-  fieldErrors.captcha = ''
   fieldErrors.newPassword = ''
   fieldErrors.confirmPassword = ''
 }
@@ -193,23 +191,38 @@ const validateConfirmField = () => {
     : t('auth.passwordMismatch')
 }
 
+/**
+ * 发送邮箱验证码（scene=reset）。
+ *
+ * 流程：校验邮箱 → 打开 CikVerify 人机验证拿到一次性 ticket → 携带 ticket 发信。
+ * 用户关闭弹窗（reason==='closed'）静默返回；加载/超时等失败写 errorMsg 提示重试。
+ * ticket 禁止打印。
+ */
 const handleSendCode = async () => {
   fieldErrors.email = validateEmail(form.email)
-  fieldErrors.captcha = form.captcha.trim() ? '' : t('auth.captchaRequired')
-  if (fieldErrors.email || fieldErrors.captcha) return
+  if (fieldErrors.email) return
 
+  errorMsg.value = ''
   sendingCode.value = true
   try {
+    let ticket: string
+    try {
+      ticket = await openCaptcha()
+    } catch (error: any) {
+      if (error?.reason === 'closed') return
+      errorMsg.value = t('auth.captchaOpenFailed')
+      return
+    }
+
     // scene=reset：后端在此校验"该邮箱是否已注册"，并把验证码存到 reset 命名空间下。
     // 与 login 场景分开存是关键 —— 否则注册流程发的码能拿来重置密码。
     const ok = await requestEmailCode(
-      { email: form.email, scene: 'reset', captcha: form.captcha },
+      { email: form.email, scene: 'reset', ticket },
       errorMsg,
     )
-    form.captcha = ''
-    refreshCaptcha()
     if (ok) {
       form.emailCode = ''
+      fieldErrors.emailCode = ''
     }
   } finally {
     sendingCode.value = false
@@ -244,8 +257,7 @@ const handleReset = async () => {
     succeeded.value = true
   } catch (e: any) {
     errorMsg.value = resolveAuthErrorMessage(e) || t('auth.resetFailed')
-    form.captcha = ''
-    refreshCaptcha()
+    // 重置提交不做人机验证（ticket 只在发送邮箱验证码时用）。
   } finally {
     loading.value = false
   }

@@ -19,34 +19,45 @@ import org.jeecg.modules.shop.common.ShopSqlUtils;
 import org.jeecg.modules.shop.common.ShopOrgUtils;
 import org.jeecg.modules.shop.common.util.ShopAuditUtils;
 import org.jeecg.modules.shop.product.entity.ShopProduct;
+import org.jeecg.modules.shop.product.entity.ShopProductDetailBlock;
 import org.jeecg.modules.shop.product.entity.ShopProductImage;
+import org.jeecg.modules.shop.product.entity.ShopProductParam;
 import org.jeecg.modules.shop.product.entity.ShopProductSkuCombination;
 import org.jeecg.modules.shop.product.entity.ShopProductSkuCombinationValue;
 import org.jeecg.modules.shop.product.entity.ShopProductSpec;
 import org.jeecg.modules.shop.product.entity.ShopProductSpecValue;
 import org.jeecg.modules.shop.product.entity.ShopProductTranslation;
+import org.jeecg.modules.shop.product.entity.dto.DetailBlockDTO;
+import org.jeecg.modules.shop.product.entity.dto.ParamDTO;
 import org.jeecg.modules.shop.product.entity.dto.ProductDTO;
 import org.jeecg.modules.shop.product.entity.dto.ProductQuery;
 import org.jeecg.modules.shop.product.entity.dto.SkuCombinationDTO;
 import org.jeecg.modules.shop.product.entity.dto.SpecDTO;
 import org.jeecg.modules.shop.product.entity.dto.SpecValueDTO;
+import org.jeecg.modules.shop.product.entity.vo.DetailBlockVO;
+import org.jeecg.modules.shop.product.entity.vo.ParamVO;
 import org.jeecg.modules.shop.product.entity.vo.ProductDetailVO;
 import org.jeecg.modules.shop.product.entity.vo.ProductListVO;
 import org.jeecg.modules.shop.product.entity.vo.ProductSkuVO;
+import org.jeecg.modules.shop.product.entity.vo.StoreDetailBlockVO;
+import org.jeecg.modules.shop.product.entity.vo.StoreParamVO;
 import org.jeecg.modules.shop.product.entity.vo.StoreProductCardVO;
 import org.jeecg.modules.shop.product.entity.vo.StoreProductDetailVO;
 import org.jeecg.modules.shop.product.entity.vo.StoreSkuVO;
 import org.jeecg.modules.shop.product.entity.vo.StoreSpecValueVO;
 import org.jeecg.modules.shop.product.entity.vo.StoreSpecVO;
 import org.jeecg.modules.shop.product.entity.vo.TagRefVO;
+import org.jeecg.modules.shop.product.mapper.ShopProductDetailBlockMapper;
 import org.jeecg.modules.shop.product.mapper.ShopProductImageMapper;
 import org.jeecg.modules.shop.product.mapper.ShopProductMapper;
+import org.jeecg.modules.shop.product.mapper.ShopProductParamMapper;
 import org.jeecg.modules.shop.product.mapper.ShopProductSkuCombinationMapper;
 import org.jeecg.modules.shop.product.mapper.ShopProductSkuCombinationValueMapper;
 import org.jeecg.modules.shop.product.mapper.ShopProductSpecMapper;
 import org.jeecg.modules.shop.product.mapper.ShopProductSpecValueMapper;
 import org.jeecg.modules.shop.product.mapper.ShopProductTranslationMapper;
 import org.jeecg.modules.shop.product.service.IShopProductService;
+import org.jeecg.modules.shop.product.util.ShopDetailBlockSupport;
 import org.jeecg.modules.shop.tag.entity.ShopTag;
 import org.jeecg.modules.shop.tag.entity.ShopTagTranslation;
 import org.jeecg.modules.shop.tag.mapper.ShopTagMapper;
@@ -94,12 +105,35 @@ public class ShopProductServiceImpl extends ServiceImpl<ShopProductMapper, ShopP
     /** 与 ck_shop_product_sku_combination.combination_key 的列宽保持一致 */
     private static final int COMBINATION_KEY_MAX_LENGTH = 500;
 
+    /** 每语言详情模块数量上限（契约 3.3：防止一次提交过大） */
+    private static final int MAX_DETAIL_BLOCKS_PER_LANGUAGE = 50;
+
+    /** 每语言规格参数数量上限（契约 3.3） */
+    private static final int MAX_PARAMS_PER_LANGUAGE = 100;
+
+    /** ck_shop_product_param.param_name / param_value 的列宽（契约 1.2） */
+    private static final int PARAM_NAME_MAX_LENGTH = 100;
+    private static final int PARAM_VALUE_MAX_LENGTH = 500;
+
+    /** ck_shop_product_detail_block.language_code 的列宽 */
+    private static final int LANGUAGE_CODE_MAX_LENGTH = 10;
+
+    /**
+     * 模块四方向间距上限（契约 1.4 / 3.3：margin* 取值 0–500 整数）。
+     * 保存越界拒绝；读取时越界按 0–500 夹取（历史脏数据不能把页面打成 500）。
+     */
+    private static final int MAX_BLOCK_MARGIN = 500;
+
     @Autowired
     private ShopProductTranslationMapper translationMapper;
     @Autowired
     private ShopCategoryMapper shopCategoryMapper;
     @Autowired
     private ShopProductImageMapper imageMapper;
+    @Autowired
+    private ShopProductDetailBlockMapper detailBlockMapper;
+    @Autowired
+    private ShopProductParamMapper paramMapper;
     @Autowired
     private ShopProductSpecMapper specMapper;
     @Autowired
@@ -409,6 +443,10 @@ public class ShopProductServiceImpl extends ServiceImpl<ShopProductMapper, ShopP
 
         vo.setSpecs(buildSpecTree(id));
         vo.setSkus(buildSkuVOList(combinationMapper.selectByProductIdWithValues(id), product.getPrice()));
+        // 商品详情：管理端编辑页需要**全部语言**的模块与参数（含 id/languageCode）用于回填，
+        // 这里刻意不做语言回退——回退只发生在店铺端，否则编辑页只能看到一种语言
+        vo.setDetailBlocks(loadDetailBlockVOList(id));
+        vo.setParams(loadParamVOList(id));
         return vo;
     }
 
@@ -623,6 +661,10 @@ public class ShopProductServiceImpl extends ServiceImpl<ShopProductMapper, ShopP
         vo.setSpecs(toStoreSpecs(specTree));
         vo.setCombinations(buildStoreSkuList(
                 combinationMapper.selectByProductIdWithValues(productId), product.getPrice(), specTree));
+        // 商品详情模块与规格参数：按契约 2.3 **分语言整体回退**，两块独立判断
+        // （允许「模块回退到中文、参数用英文」这种组合，绝不逐条混排）
+        vo.setDetailBlocks(loadStoreDetailBlocks(productId, lang));
+        vo.setParams(loadStoreParams(productId, lang));
         return vo;
     }
 
@@ -1101,6 +1143,12 @@ public class ShopProductServiceImpl extends ServiceImpl<ShopProductMapper, ShopP
             product.setMinPrice(product.getPrice());
             product.setMaxPrice(product.getPrice());
         }
+
+        // ---------- 7. 商品详情模块：整体替换（null=不动 / []=清空全部语言 / 非空=删后重建） ----------
+        saveDetailBlocks(productId, dto.getDetailBlocks(), username, now);
+
+        // ---------- 8. 规格参数 KV：替换语义与 7 完全一致 ----------
+        saveParams(productId, dto.getParams(), username, now);
     }
 
     /**
@@ -1121,6 +1169,9 @@ public class ShopProductServiceImpl extends ServiceImpl<ShopProductMapper, ShopP
             return;
         }
         translationMapper.deleteByProductIds(ids);
+        // 详情模块 / 规格参数都是内容型数据（无 del_flag、不被订单引用），按契约 1.1/1.2 物理删除
+        detailBlockMapper.deleteByProductIds(ids);
+        paramMapper.deleteByProductIds(ids);
         imageMapper.delete(new LambdaQueryWrapper<ShopProductImage>().in(ShopProductImage::getProductId, ids));
         combinationValueMapper.delete(new LambdaQueryWrapper<ShopProductSkuCombinationValue>()
                 .in(ShopProductSkuCombinationValue::getProductId, ids));
@@ -1130,6 +1181,323 @@ public class ShopProductServiceImpl extends ServiceImpl<ShopProductMapper, ShopP
                 .in(ShopProductSpecValue::getProductId, ids));
         specMapper.delete(new LambdaQueryWrapper<ShopProductSpec>().in(ShopProductSpec::getProductId, ids));
         tagMapper.softDeleteProductRelationsByProductIds(ids);
+    }
+
+    // ==================================================================
+    // 商品详情模块 / 规格参数（契约：docs/商品详情-设计契约.md）
+    // ==================================================================
+
+    /**
+     * 保存商品详情模块：**整体替换**语义（契约 2.1）。
+     *
+     * <ul>
+     *   <li>{@code null} / 缺省 → 不动现有数据（兼容旧客户端 / 局部保存）；</li>
+     *   <li>{@code []} → 清空该商品<b>全部语言</b>的模块；</li>
+     *   <li>非空 → 先物理删除该商品全部语言的旧行，再按提交顺序插入。</li>
+     * </ul>
+     *
+     * <p>为什么可以整体替换：模块是纯内容、无外部引用、无唯一索引，整体替换语义最可预测，
+     * 也避免「新增模块撞唯一键」这类历史坑（契约 2.1 已明确）。</p>
+     *
+     * <p>所有校验/清洗都在删除之前完成（本方法由 {@code @Transactional} 的保存入口调用，
+     * 即使中途抛异常也会整体回滚，不会出现"删了旧数据却没写进新数据"）。</p>
+     */
+    private void saveDetailBlocks(String productId, List<DetailBlockDTO> blocks, String username, Date now) {
+        if (blocks == null) {
+            // null = 不动：旧版管理端不带该字段时，绝不能把已有的详情模块抹掉
+            return;
+        }
+        List<ShopProductDetailBlock> rows = new ArrayList<>(blocks.size());
+        // 语言 → 该语言已累计的条数，用于同语言内从 0 重排 sortOrder
+        Map<String, Integer> countsByLanguage = new LinkedHashMap<>();
+        int index = 0;
+        for (DetailBlockDTO dto : blocks) {
+            index++;
+            if (dto == null) {
+                throw new JeecgBootException("第 " + index + " 个详情模块为空，请检查提交数据");
+            }
+            String languageCode = resolveDetailLanguageCode(dto.getLanguageCode(), "第 " + index + " 个详情模块");
+            String blockType = StringUtils.trimToNull(dto.getBlockType());
+            if (blockType == null) {
+                throw new JeecgBootException("第 " + index + " 个详情模块缺少模块类型 blockType");
+            }
+            if (!ShopDetailBlockSupport.isKnownType(blockType)) {
+                // 未知类型保存时拒绝：避免前后端版本不同步时写出前端渲染不了的脏数据
+                throw new JeecgBootException("第 " + index + " 个详情模块的类型不受支持：" + blockType
+                        + "（允许：" + String.join(" / ", ShopDetailBlockSupport.BLOCK_TYPES) + "）");
+            }
+            int languageCount = countsByLanguage.merge(languageCode, 1, Integer::sum);
+            if (languageCount > MAX_DETAIL_BLOCKS_PER_LANGUAGE) {
+                throw new JeecgBootException("语言[" + languageCode + "]的详情模块超过上限（最多 "
+                        + MAX_DETAIL_BLOCKS_PER_LANGUAGE + " 个）");
+            }
+            Map<String, Object> content = ShopDetailBlockSupport.normalizeContent(blockType, dto.getContent(), index);
+            ShopProductDetailBlock row = new ShopProductDetailBlock();
+            row.setId(IdWorker.getIdStr());
+            row.setProductId(productId);
+            row.setLanguageCode(languageCode);
+            row.setBlockType(blockType);
+            row.setContent(ShopDetailBlockSupport.toJson(content));
+            // 前端传的顺序即最终顺序：同语言内按下标从 0 重排，忽略提交的 sortOrder（避免跳号/重复）
+            row.setSortOrder(languageCount - 1);
+            // 四方向间距（契约 1.4）：null 按 0，0–500 整数；越界抛中文错误，不静默截断
+            row.setMarginTop(resolveBlockMargin(dto.getMarginTop(), index, "上"));
+            row.setMarginRight(resolveBlockMargin(dto.getMarginRight(), index, "右"));
+            row.setMarginBottom(resolveBlockMargin(dto.getMarginBottom(), index, "下"));
+            row.setMarginLeft(resolveBlockMargin(dto.getMarginLeft(), index, "左"));
+            row.setCreateBy(username).setCreateTime(now).setUpdateBy(username).setUpdateTime(now);
+            rows.add(row);
+        }
+        // 整体替换：先清空该商品**全部语言**的旧行，再按新顺序插入
+        detailBlockMapper.deleteByProductId(productId);
+        for (ShopProductDetailBlock row : rows) {
+            detailBlockMapper.insert(row);
+        }
+    }
+
+    /**
+     * 保存规格参数 KV：替换语义与 {@link #saveDetailBlocks} 完全一致（null=不动 / []=清空 / 非空=整体替换）。
+     */
+    private void saveParams(String productId, List<ParamDTO> params, String username, Date now) {
+        if (params == null) {
+            return;
+        }
+        List<ShopProductParam> rows = new ArrayList<>(params.size());
+        Map<String, Integer> countsByLanguage = new LinkedHashMap<>();
+        int index = 0;
+        for (ParamDTO dto : params) {
+            index++;
+            if (dto == null) {
+                throw new JeecgBootException("第 " + index + " 条规格参数为空，请检查提交数据");
+            }
+            String languageCode = resolveDetailLanguageCode(dto.getLanguageCode(), "第 " + index + " 条规格参数");
+            String paramName = StringUtils.trimToNull(dto.getParamName());
+            if (paramName == null) {
+                throw new JeecgBootException("第 " + index + " 条规格参数缺少参数名 paramName");
+            }
+            if (paramName.length() > PARAM_NAME_MAX_LENGTH) {
+                throw new JeecgBootException("第 " + index + " 条规格参数的参数名过长（最多 "
+                        + PARAM_NAME_MAX_LENGTH + " 字符，当前 " + paramName.length() + " 字符）");
+            }
+            String paramValue = StringUtils.trimToNull(dto.getParamValue());
+            if (paramValue == null) {
+                throw new JeecgBootException("第 " + index + " 条规格参数缺少参数值 paramValue");
+            }
+            if (paramValue.length() > PARAM_VALUE_MAX_LENGTH) {
+                throw new JeecgBootException("第 " + index + " 条规格参数的参数值过长（最多 "
+                        + PARAM_VALUE_MAX_LENGTH + " 字符，当前 " + paramValue.length() + " 字符）");
+            }
+            int languageCount = countsByLanguage.merge(languageCode, 1, Integer::sum);
+            if (languageCount > MAX_PARAMS_PER_LANGUAGE) {
+                throw new JeecgBootException("语言[" + languageCode + "]的规格参数超过上限（最多 "
+                        + MAX_PARAMS_PER_LANGUAGE + " 条）");
+            }
+            ShopProductParam row = new ShopProductParam();
+            row.setId(IdWorker.getIdStr());
+            row.setProductId(productId);
+            row.setLanguageCode(languageCode);
+            row.setParamName(paramName);
+            row.setParamValue(paramValue);
+            row.setSortOrder(languageCount - 1);
+            row.setCreateBy(username).setCreateTime(now).setUpdateBy(username).setUpdateTime(now);
+            rows.add(row);
+        }
+        paramMapper.deleteByProductId(productId);
+        for (ShopProductParam row : rows) {
+            paramMapper.insert(row);
+        }
+    }
+
+    /**
+     * 语言代码归一化：去空白 + 转小写 + 校验列宽。
+     * 统一小写是为了让「管理端写入的语言」与「店铺端请求的语言」能被同一次精确匹配命中，
+     * 否则 zh / ZH 会被当成两种语言，回退逻辑就会挑错集合。
+     */
+    private String resolveDetailLanguageCode(String languageCode, String where) {
+        String language = StringUtils.trimToNull(languageCode);
+        if (language == null) {
+            throw new JeecgBootException(where + "缺少语言代码 languageCode");
+        }
+        if (language.length() > LANGUAGE_CODE_MAX_LENGTH) {
+            throw new JeecgBootException(where + "的语言代码过长（最多 " + LANGUAGE_CODE_MAX_LENGTH
+                    + " 字符）：" + language);
+        }
+        return language.toLowerCase(Locale.ROOT);
+    }
+
+    /**
+     * 管理端回填：该商品的**全部语言**详情模块（按 languageCode、sortOrder 升序）。
+     */
+    private List<DetailBlockVO> loadDetailBlockVOList(String productId) {
+        List<DetailBlockVO> result = new ArrayList<>();
+        for (ShopProductDetailBlock row : detailBlockMapper.selectByProductId(productId)) {
+            Map<String, Object> content = parseKnownBlockContent(row);
+            if (content == null) {
+                continue;
+            }
+            DetailBlockVO vo = new DetailBlockVO();
+            vo.setId(row.getId());
+            vo.setLanguageCode(row.getLanguageCode());
+            vo.setBlockType(row.getBlockType());
+            vo.setContent(content);
+            vo.setSortOrder(row.getSortOrder());
+            // 四方向间距（契约 1.4 / 2.1）：null 归一 0，越界历史值按 0–500 夹取，绝不 500
+            vo.setMarginTop(clampBlockMargin(row.getMarginTop()));
+            vo.setMarginRight(clampBlockMargin(row.getMarginRight()));
+            vo.setMarginBottom(clampBlockMargin(row.getMarginBottom()));
+            vo.setMarginLeft(clampBlockMargin(row.getMarginLeft()));
+            result.add(vo);
+        }
+        return result;
+    }
+
+    /**
+     * 管理端回填：该商品的**全部语言**规格参数（按 languageCode、sortOrder 升序）。
+     */
+    private List<ParamVO> loadParamVOList(String productId) {
+        List<ParamVO> result = new ArrayList<>();
+        for (ShopProductParam row : paramMapper.selectByProductId(productId)) {
+            ParamVO vo = new ParamVO();
+            vo.setId(row.getId());
+            vo.setLanguageCode(row.getLanguageCode());
+            vo.setParamName(row.getParamName());
+            vo.setParamValue(row.getParamValue());
+            vo.setSortOrder(row.getSortOrder());
+            result.add(vo);
+        }
+        return result;
+    }
+
+    /**
+     * 店铺端：详情模块按契约 2.3 做语言整体回退（只返回当前语言最终生效的一组，不含 id/languageCode）。
+     */
+    private List<StoreDetailBlockVO> loadStoreDetailBlocks(String productId, String language) {
+        Map<String, List<StoreDetailBlockVO>> groupsByLanguage = new LinkedHashMap<>();
+        for (ShopProductDetailBlock row : detailBlockMapper.selectByProductId(productId)) {
+            Map<String, Object> content = parseKnownBlockContent(row);
+            if (content == null) {
+                continue;
+            }
+            String languageCode = StringUtils.trimToNull(row.getLanguageCode());
+            if (languageCode == null) {
+                // language_code 是 NOT NULL 列，这里只防御历史脏数据里的空串
+                log.warn("跳过缺少语言代码的详情模块：productId={}，id={}", productId, row.getId());
+                continue;
+            }
+            StoreDetailBlockVO vo = new StoreDetailBlockVO();
+            vo.setBlockType(row.getBlockType());
+            vo.setContent(content);
+            vo.setSortOrder(row.getSortOrder());
+            // 四方向间距（契约 1.4 / 2.2）：店铺端拿到的永远是 0–500 的合法值
+            vo.setMarginTop(clampBlockMargin(row.getMarginTop()));
+            vo.setMarginRight(clampBlockMargin(row.getMarginRight()));
+            vo.setMarginBottom(clampBlockMargin(row.getMarginBottom()));
+            vo.setMarginLeft(clampBlockMargin(row.getMarginLeft()));
+            groupsByLanguage.computeIfAbsent(languageCode, k -> new ArrayList<>()).add(vo);
+        }
+        return pickLanguageGroup(groupsByLanguage, language);
+    }
+
+    /**
+     * 店铺端：规格参数按契约 2.3 做语言整体回退，与详情模块**独立判断**
+     * （允许「模块回退到中文、参数用英文」）。
+     */
+    private List<StoreParamVO> loadStoreParams(String productId, String language) {
+        Map<String, List<StoreParamVO>> groupsByLanguage = new LinkedHashMap<>();
+        for (ShopProductParam row : paramMapper.selectByProductId(productId)) {
+            String languageCode = StringUtils.trimToNull(row.getLanguageCode());
+            if (languageCode == null) {
+                log.warn("跳过缺少语言代码的规格参数：productId={}，id={}", productId, row.getId());
+                continue;
+            }
+            StoreParamVO vo = new StoreParamVO();
+            vo.setParamName(row.getParamName());
+            vo.setParamValue(row.getParamValue());
+            vo.setSortOrder(row.getSortOrder());
+            groupsByLanguage.computeIfAbsent(languageCode, k -> new ArrayList<>()).add(vo);
+        }
+        return pickLanguageGroup(groupsByLanguage, language);
+    }
+
+    /**
+     * 契约 2.3 的语言整体回退：
+     * <ol>
+     *   <li>请求语言有数据 → 整个集合用该语言；</li>
+     *   <li>否则用 {@code zh} 的整个集合；</li>
+     *   <li>否则用「有数据的语言中排序最靠前的一个」的整个集合（这里定义为语言代码自然序最小，
+     *       保证同一份数据每次返回结果稳定可复现）；</li>
+     *   <li>都没有 → 空数组。</li>
+     * </ol>
+     *
+     * <p><b>绝不逐条混排</b>：语言之间是"整组替换"关系，混排会让详情页出现两种语言的段落。</p>
+     */
+    private <T> List<T> pickLanguageGroup(Map<String, List<T>> groupsByLanguage, String language) {
+        if (CollectionUtils.isEmpty(groupsByLanguage)) {
+            return new ArrayList<>();
+        }
+        List<T> matched = groupsByLanguage.get(language);
+        if (!CollectionUtils.isEmpty(matched)) {
+            return matched;
+        }
+        List<T> fallbackZh = groupsByLanguage.get(DEFAULT_LANGUAGE);
+        if (!CollectionUtils.isEmpty(fallbackZh)) {
+            return fallbackZh;
+        }
+        String firstLanguage = groupsByLanguage.entrySet().stream()
+                .filter(entry -> !CollectionUtils.isEmpty(entry.getValue()))
+                .map(Map.Entry::getKey)
+                .min(String::compareTo)
+                .orElse(null);
+        return firstLanguage == null ? new ArrayList<>() : groupsByLanguage.get(firstLanguage);
+    }
+
+    /**
+     * 详情模块读取容错（契约 1.3 / 1.4）：
+     * 未知 blockType 或 content 不是合法 JSON 时<b>跳过该行并 log.warn</b>；
+     * 合法行再做一次布局字段容错（缺失补 0、越界夹取），历史脏数据不能让整页 500。
+     *
+     * @return 解析并归一化好的 content；该行应被跳过时返回 null
+     */
+    private Map<String, Object> parseKnownBlockContent(ShopProductDetailBlock row) {
+        if (!ShopDetailBlockSupport.isKnownType(row.getBlockType())) {
+            log.warn("跳过未知的详情模块类型：productId={}，id={}，blockType={}",
+                    row.getProductId(), row.getId(), row.getBlockType());
+            return null;
+        }
+        // parseContent 自己会 log.warn 并返回 null（非合法 JSON）
+        Map<String, Object> content = ShopDetailBlockSupport.parseContent(row.getContent());
+        if (content == null) {
+            return null;
+        }
+        // 契约 1.4：radius / columns / itemMargin 缺失按默认值、越界按范围夹取（读取路径绝不抛错）
+        return ShopDetailBlockSupport.normalizeContentForRead(row.getBlockType(), content);
+    }
+
+    /**
+     * 保存路径的模块间距校验（契约 1.4 / 3.3）：允许 null（按 0），只接受 0–500 的整数。
+     *
+     * @param index 模块在本次提交数组中的下标（从 1 开始，仅用于错误提示定位）
+     * @param label 方向中文名（上/右/下/左）
+     */
+    private int resolveBlockMargin(Integer margin, int index, String label) {
+        if (margin == null) {
+            return 0;
+        }
+        if (margin < 0 || margin > MAX_BLOCK_MARGIN) {
+            throw new JeecgBootException("第 " + index + " 个详情模块的" + label + "间距只能是 0–"
+                    + MAX_BLOCK_MARGIN + " 的整数，当前为 " + margin);
+        }
+        return margin;
+    }
+
+    /**
+     * 读取路径的模块间距容错：null 归一 0，越界（含脏数据负数/超大值）按 0–500 夹取，不抛错。
+     */
+    private int clampBlockMargin(Integer margin) {
+        if (margin == null) {
+            return 0;
+        }
+        return Math.max(0, Math.min(MAX_BLOCK_MARGIN, margin));
     }
 
     /** 新增时的默认值：缺失即补，含自动生成 spu_code */

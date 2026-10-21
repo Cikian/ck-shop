@@ -1,10 +1,14 @@
 <template>
-  <!--
-    登录页（珊瑚玫红 × 奶油白）。
-    三个入口：邮箱密码 / 邮箱验证码 / Google。
-    刻意不再渲染用户名输入框 —— 店铺端已废弃用户名登录（契约 4.1）。
-  -->
   <div class="min-h-screen bg-[var(--color-cream)] pt-navbar">
+    <!--
+      登录页（珊瑚玫红 × 奶油白）。
+      三个入口：邮箱密码 / 邮箱验证码 / Google。
+      刻意不再渲染用户名输入框 —— 店铺端已废弃用户名登录（契约 4.1）。
+
+      注意：注释必须放在单一根元素内部。放在 <template> 顶层会让 Vue 把
+      "注释 + div" 当成两个根节点，dev 下报 "does not have a single root node"，
+      路由过渡（pageTransition out-in）也会因此拿不到根节点。
+    -->
     <section class="relative flex justify-center px-4 pb-20 pt-6 sm:px-6 sm:pt-10">
       <!-- 品牌柔光背景：纯 CSS 光晕，不引入任何图片资源，也不影响对比度 -->
       <div class="pointer-events-none absolute inset-0 overflow-hidden" aria-hidden="true">
@@ -70,6 +74,15 @@
             />
           </div>
 
+          <!--
+            ⚠️ 两个 Tab 面板共用一个 <form>，且都用 v-show 常驻 DOM。
+            浏览器原生约束校验（required）会检查**隐藏面板里**的输入框：
+            密码 Tab 下隐藏的 emailCode 是空值 → 点「登录」时 submit 事件
+            根本不会触发（控制台报 "An invalid form control ... is not focusable"），
+            handleSubmit 一次都执行不到，表现为「登录按钮点了没反应」。
+            所以非当前 Tab 的输入框必须 disabled：disabled 的控件不参与约束校验，
+            同时也不会被键盘 Tab 到（隐藏面板本来就不该能聚焦）。
+          -->
           <form class="mt-6 flex flex-col gap-4" @submit.prevent="handleSubmit">
             <!-- ===== 面板一：邮箱 + 密码 ===== -->
             <div
@@ -100,7 +113,7 @@
                     autocomplete="email"
                     :placeholder="t('auth.emailPlaceholder')"
                     required
-                    :disabled="loading"
+                    :disabled="loading || activeTab !== 'password'"
                     :aria-invalid="fieldErrors.email ? true : undefined"
                     :aria-describedby="fieldErrors.email ? 'login-email-error' : undefined"
                     class="h-12 w-full rounded-[var(--radius-input)] border bg-white pl-10 pr-4 text-sm text-[var(--color-ink)] transition-colors duration-200 placeholder:text-[var(--color-muted)] focus:outline-none focus:ring-2 disabled:cursor-not-allowed disabled:bg-[var(--color-line-soft)] motion-reduce:transition-none"
@@ -148,7 +161,7 @@
                     autocomplete="current-password"
                     :placeholder="t('auth.passwordPlaceholder')"
                     required
-                    :disabled="loading"
+                    :disabled="loading || activeTab !== 'password'"
                     :aria-invalid="fieldErrors.password ? true : undefined"
                     :aria-describedby="fieldErrors.password ? 'login-password-error' : undefined"
                     class="h-12 w-full rounded-[var(--radius-input)] border bg-white pl-10 pr-12 text-sm text-[var(--color-ink)] transition-colors duration-200 placeholder:text-[var(--color-muted)] focus:outline-none focus:ring-2 disabled:cursor-not-allowed disabled:bg-[var(--color-line-soft)] motion-reduce:transition-none"
@@ -190,18 +203,14 @@
             >
               <AuthEmailCodeFields
                 v-model:email="form.email"
-                v-model:captcha="form.captcha"
                 v-model:code="form.emailCode"
-                :captcha-image="imageBase64"
                 :countdown="countdown"
                 :sending="sendingCode"
-                :send-disabled="!canSendCode(form.email, form.captcha)"
-                :disabled="loading"
+                :send-disabled="!canSendCode(form.email)"
+                :disabled="loading || activeTab !== 'emailCode'"
                 :email-error="fieldErrors.email"
-                :captcha-error="fieldErrors.captcha"
                 :code-error="fieldErrors.emailCode"
                 @email-blur="validateEmailField"
-                @refresh-captcha="refreshCaptcha"
                 @send-code="handleSendCode"
               />
               <!-- 新用户自动注册：契约 2.4 明确"邮箱未注册则自动创建账号并登录"，
@@ -280,6 +289,10 @@
 <script setup lang="ts">
 import { resolveAuthErrorMessage, useAuth } from '~~/composables/useAuth'
 import { useAuthForm } from '~~/composables/useAuthForm'
+import { useCikianCaptcha } from '~~/composables/useCikianCaptcha'
+
+/** 认证类页面统一使用无页脚的 auth 布局（见 app/layouts/auth.vue） */
+definePageMeta({ layout: 'auth' })
 
 /**
  * 登录页。
@@ -289,7 +302,9 @@ import { useAuthForm } from '~~/composables/useAuthForm'
  */
 const { t, locale } = useI18n()
 const { loginByPassword, loginByEmailCode, fetchGoogleAuthUrl } = useAuth()
-const { imageBase64, refreshCaptcha, countdown, canSendCode, requestEmailCode, validateEmail } = useAuthForm()
+const { countdown, canSendCode, requestEmailCode, validateEmail } = useAuthForm()
+// CikVerify 弹窗：只能在点击回调（客户端）里 open()，这里先取到单例的 open 方法
+const { open: openCaptcha } = useCikianCaptcha()
 const route = useRoute()
 const localePath = useLocalePath()
 
@@ -327,7 +342,6 @@ const form = reactive({
   email: '',
   password: '',
   emailCode: '',
-  captcha: '',
 })
 
 const fieldErrors = reactive<Record<string, string>>({})
@@ -338,7 +352,6 @@ const passwordVisible = ref(false)
 const clearFieldErrors = () => {
   fieldErrors.email = ''
   fieldErrors.password = ''
-  fieldErrors.captcha = ''
   fieldErrors.emailCode = ''
 }
 
@@ -384,25 +397,42 @@ const onTabKeydown = (event: KeyboardEvent, index: number) => {
   })
 }
 
-/** 发送邮箱验证码（scene=login） */
+/**
+ * 发送邮箱验证码（scene=login）。
+ *
+ * 流程：校验邮箱 → 打开 CikVerify 人机验证拿到一次性 ticket → 携带 ticket 发信。
+ *
+ * 错误处理约定：
+ *   · 用户主动关闭弹窗（reason === 'closed'）→ 静默返回，不制造"报错"噪音；
+ *   · CDN/网络/超时/后端未签发 ticket 等 → 写入 errorMsg（"安全验证加载失败，请重试"）；
+ *   · 发信失败沿用后端 msg（如"该邮箱尚未注册" / "发送过于频繁"）。
+ * 注意：ticket 是敏感的一次性凭证，禁止打印到 console。
+ */
 const handleSendCode = async () => {
   fieldErrors.email = validateEmail(form.email)
-  fieldErrors.captcha = form.captcha.trim() ? '' : t('auth.captchaRequired')
-  if (fieldErrors.email || fieldErrors.captcha) return
+  if (fieldErrors.email) return
 
+  errorMsg.value = ''
   sendingCode.value = true
   try {
+    let ticket: string
+    try {
+      ticket = await openCaptcha()
+    } catch (error: any) {
+      if (error?.reason === 'closed') return
+      errorMsg.value = t('auth.captchaOpenFailed')
+      return
+    }
+
     const ok = await requestEmailCode(
-      { email: form.email, scene: 'login', captcha: form.captcha },
+      { email: form.email, scene: 'login', ticket },
       errorMsg,
     )
+    // 发信成功后清空验证码输入框：刚发出的那封才是有效验证码。
+    // 失败时保留用户已输入内容，避免"手滑输错一个字就全没了"。
     if (ok) {
-      // 发送成功后清空图形验证码：它是一次性的，留着只会让用户下次点发送时
-      // 拿到"验证码错误"，而且后端要求每次发送都带一张新的
-      form.captcha = ''
-      refreshCaptcha()
-    } else {
-      form.captcha = ''
+      form.emailCode = ''
+      fieldErrors.emailCode = ''
     }
   } finally {
     sendingCode.value = false
@@ -445,12 +475,8 @@ const handleSubmit = async () => {
     await navigateTo(redirectTarget.value)
   } catch (e: any) {
     errorMsg.value = resolveAuthErrorMessage(e) || t('auth.loginFailed')
-    // 验证码登录失败最常见的原因是验证码错/过期，直接作废当前这张图形验证码，
-    // 免得用户拿着同一张失效的再试一次
-    if (activeTab.value === 'emailCode') {
-      form.captcha = ''
-      refreshCaptcha()
-    }
+    // 注意：登录提交**不做人机验证**（ticket 只在发送邮箱验证码时用），
+    // 这里不要打开验证码弹窗，否则用户会以为"提交还得再验证一次"。
   } finally {
     loading.value = false
   }

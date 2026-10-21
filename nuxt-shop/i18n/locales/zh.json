@@ -1,4 +1,12 @@
 {
+  "error": {
+    "notFoundTitle": "这个页面走丢了",
+    "notFoundDesc": "链接可能已失效或被删除，回到首页继续逛逛吧。",
+    "serverTitle": "服务暂时开小差",
+    "serverDesc": "我们正在恢复，稍后重试或先回首页看看。",
+    "backHome": "回到首页",
+    "retry": "重新加载"
+  },
   "categories": {
     "title": "全部分类",
     "description": "按分类浏览本店商品",
@@ -18,7 +26,9 @@
     "title": "欢迎来到 Nuxt Shop",
     "description": "探索我们精心挑选的优质商品，享受无忧购物体验",
     "newCollection": "新品系列",
-    "limitedOffer": "限时优惠"
+    "limitedOffer": "限时优惠",
+    "pauseCarousel": "暂停自动播放",
+    "playCarousel": "继续自动播放"
   },
   "products": {
     "all": "全部商品",
@@ -48,7 +58,8 @@
       "choose": "请选择完整规格",
       "notSaleable": "该组合暂不发售",
       "outOfStock": "该组合暂无库存"
-    }
+    },
+    "allLoaded": "已经到底了"
   },
   "product": {
     "addToCart": "加入购物车",
@@ -69,25 +80,39 @@
     "notFoundDesc": "你访问的商品不存在或已下架。",
     "loadError": "商品加载失败",
     "loadErrorDesc": "请检查网络连接后重试",
-    "loginToAddCart": "登录后加入购物车",
     "addedToCart": "已加入购物车",
     "selectSpecFirst": "请先选择完整规格",
     "adding": "加入中…",
     "cartHint": "支持加入购物车，规格与库存实时校验",
     "viewCart": "查看购物车",
     "buying": "处理中…",
-    "loginToBuyNow": "登录后立即购买",
     "buyNowFailed": "无法进入结算页，请检查浏览器是否禁用了本地存储后重试",
     "wishlisted": "已收藏",
+    "wishlistedShort": "已收藏",
+    "favShort": "收藏",
     "removeFromWishlist": "取消收藏",
     "addedToWishlist": "已加入收藏",
     "removedFromWishlist": "已取消收藏",
-    "wishlistFailed": "收藏操作失败"
+    "wishlistFailed": "收藏操作失败",
+    "shareCopied": "链接已复制",
+    "shareFailed": "复制失败，请手动复制地址",
+    "quantity": "数量",
+    "detailImageAlt": "{title} 第 {index} 张图片",
+    "imageEnlarge": "放大查看图片",
+    "imageLightboxLabel": "图片预览",
+    "lightboxClose": "关闭图片预览",
+    "lightboxPrev": "上一张图片",
+    "lightboxNext": "下一张图片",
+    "lightboxCounter": "{current} / {total}",
+    "videoBilibiliTitle": "Bilibili 视频",
+    "videoYoutubeTitle": "YouTube 视频",
+    "videoFileTitle": "商品视频",
+    "videoUnavailable": "视频暂不可用",
+    "videoUnsupported": "当前浏览器不支持视频播放",
+    "specEmpty": "暂无规格参数"
   },
   "login": {
     "title": "登录",
-    "captcha": "验证码",
-    "refreshCaptcha": "点击刷新",
     "noAccount": "还没有账号？",
     "register": "立即注册"
   },
@@ -256,7 +281,6 @@
     "likeTitle": "猜你喜欢",
     "likeSubtitle": "换个商品凑单",
     "loginSubtitle": "登录后即可加入购物车、查看订单",
-    "captchaPlaceholder": "请输入验证码",
     "profileOrders": "订单数",
     "profileFavorites": "收藏数",
     "profileCoupons": "优惠券",
@@ -438,7 +462,10 @@
     "withdrawTitle": "确认撤销这笔退款申请？",
     "withdrawDesc": "撤销后可以重新申请退款。",
     "withdrawConfirm": "确认撤销",
-    "withdrawnToast": "退款申请已撤销"
+    "withdrawnToast": "退款申请已撤销",
+    "receiveConfirming": "确认中…",
+    "withdrawing": "撤销中…",
+    "checkoutPriceTokenMissing": "价格已更新，正在重新计算，请稍候再试"
   },
   "address": {
     "title": "收货地址",
@@ -480,7 +507,8 @@
     "actionFailed": "操作失败",
     "receiverRequired": "请填写收货人姓名",
     "phoneRequired": "请填写手机号",
-    "detailRequired": "请填写详细地址"
+    "detailRequired": "请填写详细地址",
+    "deleting": "删除中…"
   },
   "auth": {
     "tabsLabel": "登录方式",
@@ -511,7 +539,6 @@
     "strengthStrong": "强",
     "showPassword": "显示密码",
     "hidePassword": "隐藏密码",
-    "captchaRequired": "请输入图形验证码",
     "login": "登录",
     "loggingIn": "登录中...",
     "loginFailed": "登录失败，请重试",
@@ -544,6 +571,25 @@
     "goLogin": "去登录",
     "setPassword": "设置密码",
     "changePassword": "修改密码",
-    "oldPassword": "当前密码"
+    "oldPassword": "当前密码",
+    "captchaHint": "点击获取验证码后将进行安全验证",
+    "captchaOpenFailed": "安全验证加载失败，请重试"
+  },
+  "captcha": {
+    "tipsSuccess": "验证成功，耗时%s秒",
+    "tipsError": "验证失败，请重新尝试!",
+    "tipsExpired": "验证码已失效，请重新验证",
+    "tipsNetworkError": "网络异常，请稍后重试",
+    "sliderTitle": "拖动滑块完成拼图",
+    "concatTitle": "拖动滑块完成拼图",
+    "rotateTitle": "拖动滑块完成拼图",
+    "imageClickTitle": "请依次点击:",
+    "imageClickConfirm": "确定",
+    "powTitle": "安全验证",
+    "powLoading": "正在验证中...",
+    "disabledTitle": "验证码已关闭",
+    "closeTitle": "关闭验证码",
+    "refreshTitle": "刷新验证码",
+    "overlayLabel": "安全验证"
   }
 }

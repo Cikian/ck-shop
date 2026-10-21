@@ -51,7 +51,8 @@
     </div>
 
     <!-- 强度提示：只在 showStrength 且用户已输入时出现，属于"轻量提示"，不阻断提交 -->
-    <div v-if="showStrength && model" class="mt-1.5 flex items-center gap-2">
+    <!-- id 必须与 aria-describedby 里的 strengthId 一致，否则读屏拿不到这段描述 -->
+    <div v-if="showStrength && model" :id="strengthId" class="mt-1.5 flex items-center gap-2">
       <div class="flex flex-1 gap-1" aria-hidden="true">
         <span
           v-for="seg in 3"

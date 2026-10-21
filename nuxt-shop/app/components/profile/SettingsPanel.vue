@@ -107,33 +107,36 @@
         {{ t('profile.passwordSectionDesc') }}
       </p>
 
-      <!-- 资料加载失败：把后端/网络的原话展示出来，并给一个重试入口 -->
-      <div
-        v-if="profileError"
-        class="mt-4 flex items-start gap-2 rounded-[var(--radius-card-sm)] bg-[var(--color-error-50)] px-4 py-3 text-[13px] font-medium text-[var(--color-error-600)]"
-        role="alert"
-      >
-        <UIcon name="lucide:circle-alert" class="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
-        <span class="min-w-0 flex-1">
-          {{ t('profile.profileLoadFailed') }}：{{ profileError }}
-          <button
-            type="button"
-            class="ml-2 cursor-pointer font-bold underline underline-offset-2 disabled:opacity-45"
-            :disabled="profileLoading"
-            @click="loadProfile()"
-          >
-            {{ t('common.retry') }}
-          </button>
-        </span>
-      </div>
+      <!-- 错误 / 骨架 / 表单：三态 fade 切换，骨架↔表单不再硬切 -->
+      <Transition name="fade" mode="out-in">
+        <!-- 资料加载失败：把后端/网络的原话展示出来，并给一个重试入口 -->
+        <div
+          v-if="profileError"
+          key="error"
+          class="mt-4 flex items-start gap-2 rounded-[var(--radius-card-sm)] bg-[var(--color-error-50)] px-4 py-3 text-[13px] font-medium text-[var(--color-error-600)]"
+          role="alert"
+        >
+          <UIcon name="lucide:circle-alert" class="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
+          <span class="min-w-0 flex-1">
+            {{ t('profile.profileLoadFailed') }}：{{ profileError }}
+            <button
+              type="button"
+              class="ml-2 cursor-pointer font-bold underline underline-offset-2 disabled:opacity-45"
+              :disabled="profileLoading"
+              @click="loadProfile()"
+            >
+              {{ t('common.retry') }}
+            </button>
+          </span>
+        </div>
 
-      <!-- 加载中：骨架屏（不猜字段数，固定两行） -->
-      <div v-else-if="profileLoading && hasPassword === null" class="mt-4 space-y-3" aria-busy="true">
-        <span class="block h-11 w-full animate-pulse rounded-[var(--radius-input)] bg-[var(--color-line-soft)]"></span>
-        <span class="block h-11 w-2/3 animate-pulse rounded-[var(--radius-input)] bg-[var(--color-line-soft)]"></span>
-      </div>
+        <!-- 加载中：骨架屏（不猜字段数，固定两行） -->
+        <div v-else-if="profileLoading && hasPassword === null" key="loading" class="mt-4 space-y-3" aria-busy="true">
+          <span class="block h-11 w-full animate-pulse rounded-[var(--radius-input)] bg-[var(--color-line-soft)]"></span>
+          <span class="block h-11 w-2/3 animate-pulse rounded-[var(--radius-input)] bg-[var(--color-line-soft)]"></span>
+        </div>
 
-      <form v-else-if="hasPassword !== null" class="mt-4 grid gap-4 sm:grid-cols-2" @submit.prevent="handlePasswordSubmit">
+        <form v-else-if="hasPassword !== null" key="form" class="mt-4 grid gap-4 sm:grid-cols-2" @submit.prevent="handlePasswordSubmit">
         <!-- 旧密码：只在用户**确实已有密码**时渲染。
               没设过密码的人填不出旧密码，给一个必填框就是纯阻塞。 -->
         <div v-if="hasPassword" class="sm:col-span-2">
@@ -161,7 +164,7 @@
               :type="showNewPassword ? 'text' : 'password'"
               autocomplete="new-password"
               :aria-invalid="passwordMismatch"
-              aria-describedby="profile-password-strength"
+              :aria-describedby="passwordStrength ? 'profile-password-strength' : undefined"
               class="h-11 w-full rounded-[var(--radius-input)] border border-[var(--color-line)] bg-white pl-4 pr-11 text-sm text-[var(--color-ink)] transition-colors focus:border-[var(--color-brand-400)] focus:outline-none focus:ring-2 focus:ring-[var(--color-brand-100)] motion-reduce:transition-none"
               @input="markPasswordTouched"
             >
@@ -233,21 +236,17 @@
 
         <!-- 标题随 hasPassword 走：这是"设置"还是"修改"由后端状态决定，不由前端猜 -->
         <div class="flex flex-wrap items-center gap-3 sm:col-span-2">
-          <button
+          <!-- 提交态交给 AsyncButton：spinner + 文案切换 + disabled + aria-busy 一处收口 -->
+          <AsyncButton
             type="submit"
             class="ui-pill ui-pill-brand h-11 px-6 text-sm disabled:cursor-not-allowed disabled:opacity-45"
+            :pending="passwordSubmitting"
+            :pending-label="t('common.loading')"
             :disabled="!passwordFormValid"
           >
-            <UIcon
-              :name="passwordSubmitting ? 'lucide:loader-circle' : 'lucide:key-round'"
-              class="h-4 w-4"
-              :class="passwordSubmitting ? 'animate-spin' : ''"
-              aria-hidden="true"
-            />
-            {{ passwordSubmitting
-              ? t('common.loading')
-              : (hasPassword ? t('auth.changePassword') : t('auth.setPassword')) }}
-          </button>
+            <UIcon name="lucide:key-round" class="h-4 w-4" aria-hidden="true" />
+            {{ hasPassword ? t('auth.changePassword') : t('auth.setPassword') }}
+          </AsyncButton>
           <button
             v-if="passwordTouched"
             type="button"
@@ -258,7 +257,8 @@
             {{ t('common.cancel') }}
           </button>
         </div>
-      </form>
+        </form>
+      </Transition>
     </section>
   </div>
 </template>

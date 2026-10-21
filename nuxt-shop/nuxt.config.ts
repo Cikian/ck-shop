@@ -103,7 +103,56 @@ export default defineNuxtConfig({
 
   css: ['~/assets/css/tailwind.css'],
 
-  modules: ['@nuxtjs/i18n', '@nuxtjs/seo', '@nuxt/ui', '@nuxt/image'],
+  // ===== 全局外壳 / 路由 / 过渡 =====
+  // 这些是"页面之间"的行为，写在配置而不是每个页面里：
+  //   1) pageTransition：页面切换的进出场（类名 .page-* 定义在 tailwind.css）；
+  //   2) layoutTransition：布局切换（布局由 app.vue 的 <NuxtLayout> 驱动）；
+  //   3) experimental.viewTransition：商品详情等页面用 definePageMeta({ viewTransition: true }) 做原生过场。
+  app: {
+    pageTransition: { name: 'page', mode: 'out-in' },
+    layoutTransition: { name: 'fade' },
+  },
+
+  experimental: {
+    viewTransition: true,
+  },
+
+  /*
+   * 路由滚动行为**不在这里配**。
+   *
+   * 原因：nuxt.config 的 router.options 只支持「可序列化」的键
+   * （见 @nuxt/schema 的 RouterConfigSerializable：linkActiveClass / hashMode /
+   * scrollBehaviorType 等）。Nuxt 生成 .nuxt/router.options.mjs 时会对每个值做
+   * genString()（JSON.stringify），函数会被序列化成 undefined/垃圾字符串，
+   * 构建产物里 scrollBehavior 直接丢失。
+   * 真正的实现放在 app/router.options.ts（可在运行时使用 window / matchMedia）。
+   */
+
+  nitro: {
+    /**
+     * 默认 false：`.output/public/_nuxt` 的 CSS/JS 会以明文发送
+     * （entry.css ≈ 233KB、主 chunk ≈ 609KB），首屏字节数被放大 3~5 倍。
+     * 构建期预压缩 gzip/brotli；若前面已有 nginx 压缩，重复压缩只是多占磁盘。
+     */
+    compressPublicAssets: { gzip: true, brotli: true },
+  },
+
+  modules: ['@nuxtjs/i18n', '@nuxtjs/seo', '@nuxt/ui'],
+
+  /*
+   * 关闭 @nuxt/fonts（@nuxt/ui 会通过 moduleDependencies 自动装上它）。
+   *
+   * 本项目**不引入外部 Web 字体**：字体栈是系统字体（见 tailwind.css 的 --font-sans），
+   * 但 @storefront-ui/tailwind-config 里定义了 --font-body/--font-headings: "Inter"，
+   * @nuxt/fonts 会尝试去 Google Fonts 解析 Inter —— 国内网络下就是连续 10s 超时 +
+   * 重试的启动噪音（dev 实测），而且最终一个 @font-face 也不会产出。
+   * 关掉它既省启动时间，也避免"看起来在用 Inter、实际没有"的误解。
+   * 将来真要接外部字体：删掉这行、按 @nuxt/fonts 文档配置 families(global:true)
+   * 并在 providers 里显式选源（不要默认 Google）。
+   */
+  ui: {
+    fonts: false,
+  },
   i18n: {
     strategy: 'prefix', // 硬性要求:所有语言(包括默认语言)都带前缀,如 /en/, /zh/
     defaultLocale: STORE_DEFAULT_LANG,
@@ -175,26 +224,23 @@ export default defineNuxtConfig({
     signSecret: requireSecret('SIGN_SECRET'),
 
     public: {
+      /**
+       * CikVerify 验证码类型（浏览器 SDK 的 type 参数）。
+       *
+       * 默认 SLIDER（正式体验）；本地联调需要稳定可自动化的 POW 类型时，用环境变量
+       * `NUXT_PUBLIC_CAPTCHA_TYPE=POW` 覆盖即可（Nuxt 会自动把该 env 映射到本字段，
+       * 无需改代码）。取值必须落在 CikVerify 应用的 allowedTypes 内。
+       */
+      captchaType: process.env.NUXT_PUBLIC_CAPTCHA_TYPE || 'SLIDER',
     },
   },
 
-  fonts: {
-    // 方案 A：把服务商切换为国内可正常访问的 bunny 源（推荐）
-    provider: 'bunny',
-
-    // 方案 B：如果不需要任何第三方字体，可以直接把 google 供应源关掉
-    // providers: {
-    //   google: false
-    // }
-
-    families: [
-      {
-        name: 'DM Sans',
-        weights: [400, 500, 600, 700],
-        styles: ['normal', 'italic'],
-      }
-    ]
-  },
+  // 这里曾有一块 `fonts: { provider: 'bunny', families: [DM Sans] }`。
+  // 它**没有产生任何效果**：@nuxt/fonts 虽然由 @nuxt/ui 通过 moduleDependencies 自动注册，
+  // 但配置项缺 `global: true`、DM Sans 也从未出现在 --font-sans 里，
+  // 构建产物中 @font-face 数量为 0（详见 app/assets/css/tailwind.css 顶部字体说明）。
+  // 留着只会让人以为"站点在用 DM Sans"。需要外部字体时按 tailwind.css 注释里的
+  // 启用步骤重新加（families 加 global + 写进 --font-sans + providers.google=false）。
 
   eslint: {
     // 关键：开发和构建时不进行强制语法检查，只把错误留给编辑器显示

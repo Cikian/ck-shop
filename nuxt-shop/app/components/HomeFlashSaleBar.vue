@@ -5,10 +5,11 @@
     为什么是"轮播多条"而不是"只显示第一条"：
     运营同时开了秒杀 + 满减两个活动时，只显示排序第一的会让另一个活动彻底没有曝光。
 
-    三条硬约束（都是"别让动效变成负担"）：
+    四条硬约束（都是"别让动效变成负担"）：
       1. 活动全部过期 / endTime 解析不出 -> **整条不渲染**，页面上不会挂死倒计时；
-      2. 鼠标悬停或键盘聚焦时暂停轮播 —— 用户正在看的时候内容不该自己跑掉；
-      3. prefers-reduced-motion 下**不自动轮播**，只保留手动点圆点。
+      2. 鼠标悬停 / 键盘聚焦 / 页面不可见 / 用户手动暂停时暂停轮播；
+      3. prefers-reduced-motion 下**不自动轮播**，只保留手动点圆点；
+      4. 手动切活动后重置轮播相位 —— 旧定时器残留会让用户点完 0.1s 又被切走。
   -->
   <section
     v-if="active"
@@ -16,7 +17,14 @@
     :class="{ 'brand-gradient': !hasBgImage }"
     :style="barStyle"
     :aria-label="title"
-    @mouseenter="pause" @mouseleave="resume" @focusin="pause" @focusout="resume"
+    @mouseenter="hoverPaused = true"
+    @mouseleave="hoverPaused = false"
+    @focusin="focusPaused = true"
+    @focusout="onFocusOut"
+    @keydown.left.stop="goPrev"
+    @keydown.right.stop="goNext"
+    @touchstart.passive="onTouchStart"
+    @touchend.passive="onTouchEnd"
   >
     <!-- 背景图：叠一层暗色蒙层，否则浅色图片上的白字完全看不清 -->
     <div v-if="hasBgImage" class="absolute inset-0 bg-black/45" aria-hidden="true" />
@@ -29,26 +37,42 @@
     />
 
     <div class="relative flex flex-wrap items-center justify-between gap-x-4 gap-y-2 px-4 py-3.5 text-white sm:px-6">
-      <!-- 左：活动名 + 多条时的圆点指示器 -->
+      <!-- 左：活动名 + 多条时的圆点指示器 + 暂停 -->
       <div class="flex items-center gap-3">
         <p class="flex items-center gap-2 text-[15px] font-black sm:text-lg">
           <UIcon name="lucide:zap" class="h-5 w-5 shrink-0 text-[var(--color-accent-400)]" aria-hidden="true" />
           {{ title }}
         </p>
 
-        <div v-if="liveList.length > 1" class="flex items-center gap-1.5" role="tablist" :aria-label="t('shop.flashSale')">
+        <div v-if="liveList.length > 1" class="flex items-center gap-1.5">
+          <!--
+            圆点不用 role="tablist"/"tab"：这里没有 tabpanel、也没有方向键切换，
+            误用 ARIA 会让读屏念成"选项卡"却切不出面板。按钮 + aria-current 即可
+            （与首页大轮播保持同一套语义）。
+          -->
           <button
             v-for="(item, index) in liveList"
             :key="item.id"
             type="button"
-            role="tab"
             class="h-1.5 rounded-full transition-all duration-300"
             :class="index === currentIndex ? 'w-4 bg-white' : 'w-1.5 bg-white/50 hover:bg-white/80'"
             :aria-label="item.title || t('home.limitedOffer')"
-            :aria-selected="index === currentIndex"
-            @click="goTo(index)"
+            :aria-current="index === currentIndex"
+            @click="goTo(index); restartPhase()"
           />
         </div>
+
+        <!-- 手动暂停/继续：触摸端没有 hover，需要一个明确的控制入口（WCAG 2.2.2） -->
+        <button
+          v-if="liveList.length > 1 && !reducedMotion"
+          type="button"
+          class="flex h-6 w-6 items-center justify-center rounded-full bg-white/20 text-white transition-colors hover:bg-white/30"
+          :aria-label="userPaused ? t('home.playCarousel') : t('home.pauseCarousel')"
+          :aria-pressed="userPaused"
+          @click="userPaused = !userPaused"
+        >
+          <UIcon :name="userPaused ? 'lucide:play' : 'lucide:pause'" class="h-3 w-3" aria-hidden="true" />
+        </button>
       </div>
 
       <!-- 中：倒计时（读当前轮到的活动） -->
@@ -116,8 +140,16 @@ const currentIndex = ref(0)
 /** 每秒 +1 的"心跳"：既驱动倒计时，也驱动过期活动的过滤（computed 依赖它才会重算） */
 const now = ref(Date.now())
 
+// 轮播暂停原因分开记：任一成立就不自动轮播
+const hoverPaused = ref(false)
+const focusPaused = ref(false)
+const userPaused = ref(false)
+const documentHidden = ref(false)
+const reducedMotion = ref(false)
+
 let tickTimer: ReturnType<typeof setInterval> | null = null
 let rotateTimer: ReturnType<typeof setInterval> | null = null
+let motionQuery: MediaQueryList | null = null
 
 /** 真的在进行中的活动（接口已过滤，这里再兜一层） */
 const liveList = computed(() => {
@@ -182,17 +214,34 @@ function stopAll() {
   stopRotating()
 }
 
-function prefersReducedMotion(): boolean {
-  if (!import.meta.client) return false
-  return window.matchMedia('(prefers-reduced-motion: reduce)').matches
-}
+/** 是否允许自动轮播（倒计时不受这里影响，它是信息） */
+const canRotate = computed(() =>
+  liveList.value.length > 1
+  && !hoverPaused.value
+  && !focusPaused.value
+  && !userPaused.value
+  && !documentHidden.value
+  && !reducedMotion.value,
+)
 
 function startRotating() {
   stopRotating()
-  if (liveList.value.length <= 1 || prefersReducedMotion()) return
+  if (!canRotate.value) return
   rotateTimer = setInterval(() => {
-    goTo(currentIndex.value + 1)
+    const total = liveList.value.length
+    if (!total) return
+    currentIndex.value = (currentIndex.value + 1) % total
   }, ROTATE_MS)
+}
+
+function startTicking() {
+  stopTicking()
+  tickTimer = setInterval(tick, 1000)
+}
+
+/** 手动切活动后从 0 重新计时（旧相位可能只剩 0.1s，表现就是"点了又跳"） */
+function restartPhase() {
+  if (canRotate.value) startRotating()
 }
 
 function goTo(index: number) {
@@ -201,27 +250,99 @@ function goTo(index: number) {
   currentIndex.value = (index + total) % total
 }
 
-function pause() {
-  stopRotating()
+function goPrev() {
+  goTo(currentIndex.value - 1)
+  restartPhase()
 }
 
-function resume() {
+function goNext() {
+  goTo(currentIndex.value + 1)
+  restartPhase()
+}
+
+/** 焦点真正离开整条促销条才恢复（在圆点/按钮之间移动不算） */
+function onFocusOut(event: FocusEvent) {
+  const next = event.relatedTarget
+  if (next instanceof Node && (event.currentTarget as HTMLElement | null)?.contains(next)) return
+  focusPaused.value = false
+}
+
+function onVisibilityChange() {
+  documentHidden.value = document.hidden
+  // 页面隐藏时停掉两个定时器：既省电，也避免后台节流后倒计时乱跳
+  if (documentHidden.value) {
+    stopAll()
+    return
+  }
+  tick()
+  if (!liveList.value.length) return
+  startTicking()
+}
+
+function onMotionChange(event: MediaQueryListEvent) {
+  reducedMotion.value = event.matches
+}
+
+// 暂停条件变化即启停轮播定时器
+watch(canRotate, (value) => {
+  if (value) startRotating()
+  else stopRotating()
+})
+
+// 活动条数变化（后端数据到达 / 语言切换 / 某条活动过期）后重新评估
+watch(() => liveList.value.length, (total) => {
+  if (currentIndex.value >= total) currentIndex.value = 0
+  if (!total) {
+    stopAll()
+    return
+  }
+  startTicking()
   startRotating()
+})
+
+// ---------------------------------------------------------------------------
+// 触摸滑动：左右切换活动（手写 touch，不引新依赖）
+// ---------------------------------------------------------------------------
+let touchStartX = 0
+let touchStartY = 0
+
+function onTouchStart(event: TouchEvent) {
+  const touch = event.touches[0]
+  if (!touch) return
+  touchStartX = touch.clientX
+  touchStartY = touch.clientY
+}
+
+function onTouchEnd(event: TouchEvent) {
+  const touch = event.changedTouches[0]
+  if (!touch || liveList.value.length <= 1) return
+  const dx = touch.clientX - touchStartX
+  const dy = touch.clientY - touchStartY
+  if (Math.abs(dx) < 40 || Math.abs(dx) <= Math.abs(dy)) return
+  if (dx < 0) goNext()
+  else goPrev()
 }
 
 onMounted(() => {
   isMounted.value = true
+  motionQuery = window.matchMedia('(prefers-reduced-motion: reduce)')
+  reducedMotion.value = motionQuery.matches
+  motionQuery.addEventListener('change', onMotionChange)
+  document.addEventListener('visibilitychange', onVisibilityChange)
+  documentHidden.value = document.hidden
   tick()
-  tickTimer = setInterval(tick, 1000)
-  startRotating()
+  // 全部过期时 tick() 内部已经 stopAll()，这里不要再把定时器加回来
+  if (liveList.value.length) {
+    startTicking()
+    startRotating()
+  }
 })
 
-onUnmounted(stopAll)
-
-// 活动条数变化（后端数据到达 / 语言切换 / 某条活动过期）后重新评估要不要轮播
-watch(() => liveList.value.length, (total) => {
-  if (currentIndex.value >= total) currentIndex.value = 0
-  startRotating()
+onUnmounted(() => {
+  stopAll()
+  motionQuery?.removeEventListener('change', onMotionChange)
+  document.removeEventListener('visibilitychange', onVisibilityChange)
+  motionQuery = null
 })
 
 function pad(value: number): string {

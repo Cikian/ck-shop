@@ -43,4 +43,15 @@ public class ProductDTO extends ShopProduct {
      * SKU 规格组合（笛卡尔积的每一行）
      */
     private List<SkuCombinationDTO> combinations;
+    /**
+     * 商品详情模块（多语言）。
+     * <p>替换语义（契约 2.1）：<b>null/缺省 = 不动现有数据；[] = 清空该商品全部语言的模块；
+     * 非空 = 整体替换</b>（先物理删除全部语言，再按数组顺序插入并重排 sortOrder）。
+     * null 的语义是为兼容旧客户端/局部保存而特意保留的——旧版管理端不带这个字段时不能把新数据抹掉。</p>
+     */
+    private List<DetailBlockDTO> detailBlocks;
+    /**
+     * 规格参数 KV（多语言），替换语义同 {@link #detailBlocks}。
+     */
+    private List<ParamDTO> params;
 }

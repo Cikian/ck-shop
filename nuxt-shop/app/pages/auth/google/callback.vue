@@ -1,11 +1,11 @@
 <template>
-  <!--
-    Google OAuth 回调落地页。
-    这个页面**没有表单**：用户是被 Google 整页跳转过来的，正常情况下只会看到 1-2 秒的
-    过渡态。所以它的核心是"状态要诚实"——加载中 / 成功 / 失败三种状态各有明确观感，
-    绝不允许出现"转圈转到天荒地老"或白屏。
-  -->
   <div class="min-h-screen bg-[var(--color-cream)] pt-navbar">
+    <!--
+      Google OAuth 回调落地页。
+      这个页面**没有表单**：用户是被 Google 整页跳转过来的，正常情况下只会看到 1-2 秒的
+      过渡态。所以它的核心是"状态要诚实"——加载中 / 成功 / 失败三种状态各有明确观感，
+      绝不允许出现"转圈转到天荒地老"或白屏。
+    -->
     <section class="relative flex justify-center px-4 pb-20 pt-6 sm:px-6 sm:pt-10">
       <div class="pointer-events-none absolute inset-0 overflow-hidden" aria-hidden="true">
         <div class="brand-gradient-soft absolute inset-0"></div>
@@ -81,6 +81,9 @@
 </template>
 
 <script setup lang="ts">
+// 认证类页面：只有导航、没有页脚（与 login.vue 一致，走 layouts/auth.vue）
+definePageMeta({ layout: 'auth' })
+
 import { resolveAuthErrorMessage, useAuth } from '~~/composables/useAuth'
 
 /**

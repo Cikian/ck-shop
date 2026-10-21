@@ -23,6 +23,15 @@
             <version>3.9.5</version>
             <scope>compile</scope>
         </dependency>
+
+        <!-- CikVerify 验证码服务 Java SDK（线上正式发布版 1.0.0）。
+             必须经 Maven 仓库（CikianMaven）引入；禁止本地 jar / 本地源码 / system scope。
+             版本号由根 pom 的 ck.captcha.version 统一管理。 -->
+        <dependency>
+            <groupId>cn.cikian</groupId>
+            <artifactId>captcha-client-spring-boot-starter</artifactId>
+            <version>${ck.captcha.version}</version>
+        </dependency>
     </dependencies>
 
 </project>

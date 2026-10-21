@@ -1,6 +1,6 @@
 <template>
-  <!-- 注册页：邮箱 + 邮箱验证码 + 密码 + 确认密码（契约 4.2） -->
   <div class="min-h-screen bg-[var(--color-cream)] pt-navbar">
+    <!-- 注册页：邮箱 + 邮箱验证码 + 密码 + 确认密码（契约 4.2） -->
     <section class="relative flex justify-center px-4 pb-20 pt-6 sm:px-6 sm:pt-10">
       <div class="pointer-events-none absolute inset-0 overflow-hidden" aria-hidden="true">
         <div class="brand-gradient-soft absolute inset-0"></div>
@@ -25,18 +25,14 @@
           <form class="mt-7 flex flex-col gap-4" @submit.prevent="handleRegister">
             <AuthEmailCodeFields
               v-model:email="form.email"
-              v-model:captcha="form.captcha"
               v-model:code="form.emailCode"
-              :captcha-image="imageBase64"
               :countdown="countdown"
               :sending="sendingCode"
-              :send-disabled="!canSendCode(form.email, form.captcha)"
+              :send-disabled="!canSendCode(form.email)"
               :disabled="loading"
               :email-error="fieldErrors.email"
-              :captcha-error="fieldErrors.captcha"
               :code-error="fieldErrors.emailCode"
               @email-blur="validateEmailField"
-              @refresh-captcha="refreshCaptcha"
               @send-code="handleSendCode"
             />
 
@@ -110,8 +106,12 @@
 </template>
 
 <script setup lang="ts">
+// 认证类页面：只有导航、没有页脚（与 login.vue 一致，走 layouts/auth.vue）
+definePageMeta({ layout: 'auth' })
+
 import { resolveAuthErrorMessage, useAuth } from '~~/composables/useAuth'
 import { useAuthForm } from '~~/composables/useAuthForm'
+import { useCikianCaptcha } from '~~/composables/useCikianCaptcha'
 
 /**
  * 注册页。
@@ -123,8 +123,6 @@ import { useAuthForm } from '~~/composables/useAuthForm'
 const { t } = useI18n()
 const { register } = useAuth()
 const {
-  imageBase64,
-  refreshCaptcha,
   countdown,
   canSendCode,
   requestEmailCode,
@@ -132,12 +130,13 @@ const {
   validateNewPassword,
   scorePassword,
 } = useAuthForm()
+// CikVerify 弹窗：只能在点击回调（客户端）里 open()
+const { open: openCaptcha } = useCikianCaptcha()
 const localePath = useLocalePath()
 
 const form = reactive({
   email: '',
   emailCode: '',
-  captcha: '',
   password: '',
   confirmPassword: '',
 })
@@ -152,7 +151,6 @@ const passwordStrength = computed(() => scorePassword(form.password))
 const clearFieldErrors = () => {
   fieldErrors.email = ''
   fieldErrors.emailCode = ''
-  fieldErrors.captcha = ''
   fieldErrors.password = ''
   fieldErrors.confirmPassword = ''
 }
@@ -186,23 +184,37 @@ const validateConfirmField = () => {
     : t('auth.passwordMismatch')
 }
 
+/**
+ * 发送邮箱验证码（scene=register）。
+ *
+ * 流程：校验邮箱 → 打开 CikVerify 人机验证拿到一次性 ticket → 携带 ticket 发信。
+ * 用户关闭弹窗（reason==='closed'）静默返回；加载/超时等失败写 errorMsg 提示重试。
+ * ticket 禁止打印。
+ */
 const handleSendCode = async () => {
   fieldErrors.email = validateEmail(form.email)
-  fieldErrors.captcha = form.captcha.trim() ? '' : t('auth.captchaRequired')
-  if (fieldErrors.email || fieldErrors.captcha) return
+  if (fieldErrors.email) return
 
+  errorMsg.value = ''
   sendingCode.value = true
   try {
+    let ticket: string
+    try {
+      ticket = await openCaptcha()
+    } catch (error: any) {
+      if (error?.reason === 'closed') return
+      errorMsg.value = t('auth.captchaOpenFailed')
+      return
+    }
+
     // scene=register：后端会在此校验"该邮箱是否已被注册"，并把验证码存到 register 命名空间下
     const ok = await requestEmailCode(
-      { email: form.email, scene: 'register', captcha: form.captcha },
+      { email: form.email, scene: 'register', ticket },
       errorMsg,
     )
-    form.captcha = ''
-    refreshCaptcha()
     if (ok) {
-      // 发送成功后清掉上一次的邮箱验证码，避免用户把旧码填进新流程里
       form.emailCode = ''
+      fieldErrors.emailCode = ''
     }
   } finally {
     sendingCode.value = false
@@ -238,10 +250,7 @@ const handleRegister = async () => {
     await navigateTo(localePath('/profile'))
   } catch (e: any) {
     errorMsg.value = resolveAuthErrorMessage(e) || t('auth.registerFailed')
-    // 验证码是一次性的：无论失败原因是什么（验证码错、已过期、邮箱已注册），
-    // 这张图形验证码都已经用掉了，必须换新的
-    form.captcha = ''
-    refreshCaptcha()
+    // 注册提交不做人机验证（ticket 只在发送邮箱验证码时用），不要在这里再弹验证码。
   } finally {
     loading.value = false
   }

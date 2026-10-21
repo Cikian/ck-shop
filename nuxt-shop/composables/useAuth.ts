@@ -134,15 +134,16 @@ export const useAuth = () => {
   /**
    * 发送邮箱验证码（注册 / 登录 / 重置密码共用）。
    *
-   * 为什么带图形验证码：契约第 0 节决策 8 —— 图形验证码只在**发送邮箱验证码**时校验，
-   * 登录本身不再需要它。这是防止有人拿脚本刷邮件接口的最低成本手段。
-   * 图形验证码只能由后端校验，所以 captcha + checkKey 必须原样透传。
+   * 人机验证由 CikVerify 承担：前端先用 @cikian/captcha-web 完成验证拿到一次性
+   * `ticket`，再随本请求提交。BFF 会原样转给 Java，Java 侧消费 ticket 成功
+   * 才会真正发信 —— 所以 ticket 必须非空且只能使用一次。
    */
   const sendEmailCode = async (params: {
     email: string
     scene: EmailCodeScene
-    captcha: string
-    checkKey: string
+    ticket: string
+    /** 当前 UI 语言（zh/en/fr），BFF 用它决定后端错误文案语言 */
+    lang?: string
   }) => {
     return await $fetch<{ cooldownSeconds: number }>('/api/auth/send-code', {
       method: 'POST',

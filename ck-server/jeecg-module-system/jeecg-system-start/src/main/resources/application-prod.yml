@@ -287,7 +287,7 @@ jeecg:
     #webapp文件路径
     webapp: /opt/jeecg-boot/webapp
   shiro:
-    excludeUrls: /bigscreen/category/**,/bigscreen/visual/**,/bigscreen/map/**,/jmreport/bigscreen2/**,/api/getUserInfo,/shop/account/email/send-code,/shop/account/register,/shop/account/login/**,/shop/account/google/**,/shop/account/password/reset
+    excludeUrls: /bigscreen/category/**,/bigscreen/visual/**,/bigscreen/map/**,/jmreport/bigscreen2/**,/api/getUserInfo,/shop/account/email/send-code,/shop/account/register,/shop/account/login/**,/shop/account/google/**,/shop/account/password/reset,/captcha/challenge,/captcha/verify
   # 短信发送方式 aliyun阿里云短信 tencent腾讯云短信
   smsSendType: aliyun
   #阿里云oss存储和大鱼短信秘钥配置
@@ -433,6 +433,41 @@ ck:
     expire: 3600
     object-dir-prefix: dir
     api-domain: TELECOM
+  # ===== CikVerify 验证码服务（后端 SDK 代理接口；前端不直连）=====
+  captcha:
+    enabled: true
+    service-url: https://cap.cikian.cn
+    app-id: ck-shop
+    # ⚠️ 只允许来自部署环境变量（CK_SHOP_CAPTCHA_SECRET），禁止硬编码/提交到 Git。
+    app-secret: ${CK_SHOP_CAPTCHA_SECRET}
+    timeout-millis: 3000
+    allow-insecure-http: false
+    endpoints:
+      # 相对于 server.servlet.context-path（/api）：对外路径 /api/captcha/challenge|verify
+      challenge-path: /captcha/challenge
+      verify-path: /captcha/verify
+    ticket-store: redis
+    ticket-ttl-seconds: 120
+    ticket-bind-ua: true
+    trust-forwarded-for: true
+  crydis:
+    # 【必须为 false】见 dev 注释：全局 lazy-initialization 下 crydis 自动装配的
+    # crydisInit 不会被创建，enable=true 会让 SDK 误以为 crydis 已由宿主初始化，
+    # 结果 ticket 存储抛 "Crydis 未初始化"（verify 5000）。
+    # false 时由 SDK 的 CrydisSupport 自行初始化。
+    enable: false
+    host: ${REDIS_HOST:127.0.0.1}
+    port: ${REDIS_PORT:6379}
+    password: ${REDIS_PASSWORD:}
+    database: ${REDIS_DATABASE:0}
+    timeout: 2000
+    max-active: 16
+    max-idle: 8
+    min-idle: 0
+    max-wait: 2000
+    allowed-packages:
+      - cn.cikian.
+      - java.util.ArrayList
 #店铺端 Google 账号登录（C 端买家登录入口，由 ck-shop 的 ShopGoogleOAuthService 实现）
 #  与上面的 justauth/GITHUB 是两套独立实现：justauth 是 JeecgBoot 原生第三方登录，
 #  这里的 google.* 服务于店铺端买家的注册/登录（自动建号或绑定已有账号 + 签发 token）。

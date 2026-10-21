@@ -33,7 +33,25 @@
 
       <!-- ===================== 分类筛选 chips =====================
            分类来自 /api/categories（后端按店铺+语言过滤好的真实分类），
-           与 Header 共用同一个 useFetch key，因此这里不会重复请求。 -->
+           与 Header 共用同一个 useFetch key，因此这里不会重复请求。
+           分类接口失败不再静默：给一行可重试提示，否则筛选区会凭空消失。 -->
+      <div
+        v-if="categoriesError"
+        class="mt-4 flex flex-wrap items-center gap-2 rounded-[var(--radius-card-sm)] bg-[var(--color-error-50)] px-3.5 py-2.5 text-[13px] font-medium text-[var(--color-error-600)]"
+        role="status"
+      >
+        <UIcon name="lucide:wifi-off" class="h-4 w-4 shrink-0" aria-hidden="true" />
+        <span>{{ t('shop.allCategories') }}</span>
+        <button
+          type="button"
+          class="ml-auto inline-flex items-center gap-1 font-bold underline underline-offset-2"
+          @click="refreshCategories()"
+        >
+          <UIcon name="lucide:rotate-ccw" class="h-3.5 w-3.5" aria-hidden="true" />
+          {{ t('common.retry') }}
+        </button>
+      </div>
+
       <div v-if="rootCategories.length" class="mt-6 flex items-center gap-3">
         <div
           class="no-scrollbar flex min-w-0 flex-1 items-center gap-2 overflow-x-auto pb-0.5"
@@ -96,63 +114,69 @@
 
       <!-- ===================== 商品区 ===================== -->
       <section class="mt-6" :aria-busy="pending">
-        <!-- 错误态（例如后端未启动） -->
-        <div v-if="error" class="ui-card flex flex-col items-center justify-center px-6 py-16 text-center">
-          <span class="flex h-16 w-16 items-center justify-center rounded-full bg-[var(--color-error-50)]">
-            <UIcon name="lucide:wifi-off" class="h-8 w-8 text-[var(--color-error)]" aria-hidden="true" />
-          </span>
-          <h2 class="mt-5 text-lg font-bold text-[var(--color-ink)]">{{ t('products.loadError') }}</h2>
-          <p class="mt-1.5 max-w-md text-sm text-[var(--color-muted)]">{{ t('products.loadErrorDesc') }}</p>
-          <button type="button" class="ui-pill ui-pill-brand mt-6 h-11 px-6 text-sm" @click="refresh()">
-            <UIcon name="lucide:rotate-ccw" class="h-4 w-4" aria-hidden="true" />
-            {{ t('common.retry') }}
-          </button>
-        </div>
+        <Transition name="fade" mode="out-in">
+          <!-- 错误态（例如后端未启动） -->
+          <div v-if="error" key="error" class="ui-card flex flex-col items-center justify-center px-6 py-16 text-center">
+            <span class="flex h-16 w-16 items-center justify-center rounded-full bg-[var(--color-error-50)]">
+              <UIcon name="lucide:wifi-off" class="h-8 w-8 text-[var(--color-error)]" aria-hidden="true" />
+            </span>
+            <h2 class="mt-5 text-lg font-bold text-[var(--color-ink)]">{{ t('products.loadError') }}</h2>
+            <p class="mt-1.5 max-w-md text-sm text-[var(--color-muted)]">{{ t('products.loadErrorDesc') }}</p>
+            <button type="button" class="ui-pill ui-pill-brand mt-6 h-11 px-6 text-sm" @click="refresh()">
+              <UIcon name="lucide:rotate-ccw" class="h-4 w-4" aria-hidden="true" />
+              {{ t('common.retry') }}
+            </button>
+          </div>
 
-        <!-- 加载骨架 -->
-        <div v-else-if="pending" class="product-grid">
-          <div v-for="i in skeletonCount" :key="`skeleton-${i}`" class="ui-card overflow-hidden">
-            <div class="aspect-square animate-pulse bg-[var(--color-surface-secondary)]"></div>
-            <div class="space-y-2.5 p-3.5">
-              <div class="h-4 w-full animate-pulse rounded bg-[var(--color-surface-secondary)]"></div>
-              <div class="h-4 w-2/3 animate-pulse rounded bg-[var(--color-surface-secondary)]"></div>
-              <div class="h-7 w-1/2 animate-pulse rounded bg-[var(--color-surface-secondary)]"></div>
+          <!-- 加载骨架：补齐副标题行与加购按钮占位，与真实卡片高度对齐（减少 CLS） -->
+          <div v-else-if="pending" key="skeleton" class="product-grid">
+            <div v-for="i in skeletonCount" :key="`skeleton-${i}`" class="ui-card overflow-hidden">
+              <div class="aspect-square animate-pulse bg-[var(--color-surface-secondary)]"></div>
+              <div class="space-y-2.5 p-3.5">
+                <div class="h-4 w-full animate-pulse rounded bg-[var(--color-surface-secondary)]"></div>
+                <div class="h-4 w-2/3 animate-pulse rounded bg-[var(--color-surface-secondary)]"></div>
+                <div class="h-3 w-1/3 animate-pulse rounded bg-[var(--color-surface-secondary)]"></div>
+                <div class="h-7 w-1/2 animate-pulse rounded bg-[var(--color-surface-secondary)]"></div>
+                <div class="h-9 w-full animate-pulse rounded-full bg-[var(--color-surface-secondary)]"></div>
+              </div>
             </div>
           </div>
-        </div>
 
-        <!-- 商品网格 -->
-        <div
-          v-else-if="records.length"
-          class="product-grid"
-        >
-          <StoreProductCard
-            v-for="(product, idx) in records"
-            :key="product.id"
-            :product="product"
-            :style="{ animationDelay: `${idx * 60}ms` }"
-            class="animate-fade-in-up opacity-0 motion-reduce:animate-none motion-reduce:opacity-100"
-          />
-        </div>
+          <!-- 商品网格 -->
+          <div
+            v-else-if="records.length"
+            key="content"
+            class="product-grid"
+          >
+            <StoreProductCard
+              v-for="(product, idx) in records"
+              :key="product.id"
+              :product="product"
+              :style="{ animationDelay: `${idx * 60}ms` }"
+              class="animate-fade-in-up opacity-0 motion-reduce:animate-none motion-reduce:opacity-100"
+            />
+          </div>
 
-        <!-- 空态 -->
-        <div v-else class="ui-card flex flex-col items-center justify-center px-6 py-16 text-center">
-          <span class="flex h-16 w-16 items-center justify-center rounded-full bg-[var(--color-brand-50)]">
-            <UIcon name="lucide:package-search" class="h-8 w-8 text-[var(--color-brand-500)]" aria-hidden="true" />
-          </span>
-          <h2 class="mt-5 text-lg font-bold text-[var(--color-ink)]">{{ t('shop.searchEmptyTitle') }}</h2>
-          <p class="mt-1.5 max-w-md text-sm text-[var(--color-muted)]">{{ t('shop.searchEmptyDesc') }}</p>
-          <button type="button" class="ui-pill ui-pill-ghost mt-6 h-10 px-5 text-[13px]" @click="clearFilters">
-            <UIcon name="lucide:rotate-ccw" class="h-4 w-4" aria-hidden="true" />
-            {{ t('shop.clearFilters') }}
-          </button>
-        </div>
+          <!-- 空态 -->
+          <div v-else key="empty" class="ui-card flex flex-col items-center justify-center px-6 py-16 text-center">
+            <span class="flex h-16 w-16 items-center justify-center rounded-full bg-[var(--color-brand-50)]">
+              <UIcon name="lucide:package-search" class="h-8 w-8 text-[var(--color-brand-500)]" aria-hidden="true" />
+            </span>
+            <h2 class="mt-5 text-lg font-bold text-[var(--color-ink)]">{{ t('shop.searchEmptyTitle') }}</h2>
+            <p class="mt-1.5 max-w-md text-sm text-[var(--color-muted)]">{{ t('shop.searchEmptyDesc') }}</p>
+            <button type="button" class="ui-pill ui-pill-ghost mt-6 h-10 px-5 text-[13px]" @click="clearFilters">
+              <UIcon name="lucide:rotate-ccw" class="h-4 w-4" aria-hidden="true" />
+              {{ t('shop.clearFilters') }}
+            </button>
+          </div>
+        </Transition>
 
         <!-- 分页：沿用原有的交互与 i18n key，只是换了视觉 -->
         <PaginationBar
           v-if="!pending && !error && records.length"
           :current="currentPage"
           :total="totalPages"
+          :disabled="pending"
           variant="chip"
           margin="mt-10"
           :label="t('products.pagination')"
@@ -162,8 +186,6 @@
         />
       </section>
     </div>
-
-    <SiteFooter />
   </div>
 </template>
 
@@ -182,6 +204,9 @@ import { STORE_PRODUCT_PAGE_SIZE, useStoreProductList, type StoreProductSort } f
  *      链接可分享、浏览器前进后退可用、刷新不丢状态。
  *      页面只把 route.query 当唯一数据源，本地不放第二份 state（避免两处不同步）。
  *   3) 分类 chips 与「相关搜索」都只用后端真实分类名，零硬编码行业词。
+ *
+ * 取数约定：两个请求都不 await。客户端导航立即出骨架；SSR 由 useAsyncData
+ * 内部的 onServerPrefetch 等待，HTML 仍是完整内容。
  */
 
 const { t, locale } = useI18n()
@@ -219,7 +244,7 @@ const pageNo = computed(() => {
   return Number.isFinite(parsed) && parsed >= 1 ? Math.trunc(parsed) : 1
 })
 
-const { data: page, pending, error, refresh } = await useStoreProductList({
+const { data: page, pending, error, refresh } = useStoreProductList({
   pageNo,
   pageSize,
   keyword,
@@ -254,7 +279,11 @@ const sortItems = computed<DropdownMenuItem[]>(() =>
 // ===== 真实分类（与 Header / 分类页共用 key，因此不会重复请求） =====
 // key 里已经带 locale：切语言时 key 变化会触发 useFetch 重新请求，
 // 再写 watch: [locale] 只会让同一次切换多打一遍接口（重复请求）。
-const { data: categoryTree } = await useFetch<StoreCategoryNode[]>('/api/categories', {
+const {
+  data: categoryTree,
+  error: categoriesError,
+  refresh: refreshCategories,
+} = useFetch<StoreCategoryNode[]>('/api/categories', {
   query: computed(() => ({ lang: locale.value })),
   key: computed(() => `store-categories-${locale.value}`),
   default: () => [],
@@ -316,13 +345,16 @@ function goToPage(target: number) {
   if (import.meta.client) {
     window.scrollTo({
       top: 0,
-      behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth',
+      behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth',
     })
   }
 }
 
 useSeoMeta({
   title: () => pageTitle.value,
-  description: () => t('categories.description'),
+  // 搜索页的 description 必须是"这次搜索是什么"，而不是分类总览的通用介绍
+  description: () => keyword.value
+    ? t('shop.searchResultFor', { keyword: keyword.value })
+    : t('categories.description'),
 })
 </script>

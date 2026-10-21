@@ -16,26 +16,18 @@
 //    调用方必须在 setup 顶层**同步**调用它，不要放在 await 之后。
 
 import { toNumberOrNull } from '~~/types/shop-product'
+import type { OrderItemVO } from '~~/types/shop-order'
 import { useStorePrice } from '~~/composables/useProducts'
 import { isUnauthorizedError, readErrorMessage } from '~~/composables/useApiError'
 import { useLoginLink } from '~~/composables/useLoginLink'
 import { hasNumber, isWithdrawable, refundReasonKey } from '~~/utils/orderRefund'
 
-export interface OrderItemVO {
-  id?: string | null
-  productId?: string | null
-  skuName?: string | null
-  productName?: string | null
-  productImage?: string | null
-  price?: number | null
-  quantity?: number | null
-  productAmount?: number | null
-  actualAmount?: number | null
-  promotionTitle?: string | null
-  refundQuantity?: number | null
-  refundAmount?: number | null
-  refundStatus?: string | null
-}
+/**
+ * 类型收敛：OrderItemVO 的唯一来源是 types/shop-order.ts。
+ * 这里再导出一次只是为了保持既有调用点（components/order/DetailCards.vue 从这里 import）
+ * 完全不用改；新代码请直接从 types/shop-order 引入。
+ */
+export type { OrderItemVO }
 
 /** 支付单（后端 OrderPaymentVO） */
 export interface OrderPaymentVO {

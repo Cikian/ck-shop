@@ -2,17 +2,16 @@ package org.jeecg.modules.shop.account.service.impl;
 
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.extern.slf4j.Slf4j;
+import cn.cikian.captcha.client.ticket.CaptchaTicketService;
 import org.apache.commons.lang3.StringUtils;
 import org.jeecg.common.constant.CommonConstant;
 import org.jeecg.common.exception.JeecgBootException;
 import org.jeecg.common.system.util.JwtUtil;
-import org.jeecg.common.util.Md5Util;
 import org.jeecg.common.util.PasswordUtil;
 import org.jeecg.common.util.RedisUtil;
 import org.jeecg.common.util.UUIDGenerator;
 import org.jeecg.common.util.encryption.AesEncryptUtil;
 import org.jeecg.common.util.oConvertUtils;
-import org.jeecg.config.JeecgBaseConfig;
 import org.jeecg.modules.shop.account.constant.ShopAccountConstant;
 import org.jeecg.modules.shop.account.entity.ShopAccountUser;
 import org.jeecg.modules.shop.account.entity.dto.ChangePasswordDTO;
@@ -33,6 +32,7 @@ import org.jeecg.modules.shop.account.service.IShopAccountService;
 import org.jeecg.modules.shop.account.service.ShopEmailCodeService;
 import org.jeecg.modules.shop.account.service.ShopGoogleOAuthService;
 import org.jeecg.modules.shop.account.service.ShopLoginLogRecorder;
+import org.jeecg.modules.shop.common.ShopRateLimiter;
 import org.jeecg.modules.shop.store.StoreResolver;
 import org.jeecg.modules.shop.store.entity.ShopStore;
 import org.springframework.stereotype.Service;
@@ -99,13 +99,17 @@ public class ShopAccountServiceImpl implements IShopAccountService {
     private final RedisUtil redisUtil;
 
     /**
-     * 用于图形验证码校验（{@code enableLoginCaptcha} 开关 + {@code signatureSecret}）。
-     * 直接构造注入而不是 {@code LoginController} 那样用字段 @Autowired：
-     * 依赖一眼可见，也便于单测。
+     * CikVerify 验证码 ticket 服务（SDK 自动装配，依赖 {@code ck.captcha.*} 配置）。
+     *
+     * <p>负责消费前端经 BFF 调用 {@code /api/captcha/verify} 后拿到的 ticket：
+     * 一次性、默认 120 秒有效，并绑定客户端 IP 与 User-Agent。</p>
      */
-    private final JeecgBaseConfig jeecgBaseConfig;
+    private final CaptchaTicketService captchaTicketService;
 
     private final ShopAccountSupport accountSupport;
+
+    /** Redis 固定窗口限流：按 IP 限制发信/登录/注册/验证码尝试，防脚本刷 */
+    private final ShopRateLimiter rateLimiter;
 
     public ShopAccountServiceImpl(ShopAccountMapper shopAccountMapper,
                                   ShopEmailCodeService emailCodeService,
@@ -113,16 +117,18 @@ public class ShopAccountServiceImpl implements IShopAccountService {
                                   ShopLoginLogRecorder loginLogRecorder,
                                   StoreResolver storeResolver,
                                   RedisUtil redisUtil,
-                                  JeecgBaseConfig jeecgBaseConfig,
-                                  ShopAccountSupport accountSupport) {
+                                  CaptchaTicketService captchaTicketService,
+                                  ShopAccountSupport accountSupport,
+                                  ShopRateLimiter rateLimiter) {
         this.shopAccountMapper = shopAccountMapper;
         this.emailCodeService = emailCodeService;
         this.googleOAuthService = googleOAuthService;
         this.loginLogRecorder = loginLogRecorder;
         this.storeResolver = storeResolver;
         this.redisUtil = redisUtil;
-        this.jeecgBaseConfig = jeecgBaseConfig;
+        this.captchaTicketService = captchaTicketService;
         this.accountSupport = accountSupport;
+        this.rateLimiter = rateLimiter;
     }
 
     // ==================================================================
@@ -151,10 +157,31 @@ public class ShopAccountServiceImpl implements IShopAccountService {
             throw new JeecgBootException("场景参数 scene 非法，只支持 register / login / reset");
         }
 
-        // 图形验证码必须**先**校验：它是挡在发信能力前面的那道闸。
-        // 如果先做邮箱存在性检查，攻击者能用响应差异枚举出平台注册过哪些邮箱，
-        // 且完全不需要过验证码 —— 那就等于白送一个用户枚举接口。
-        validateCaptcha(dto.getCaptcha(), dto.getCheckKey());
+        String clientIp = accountSupport.resolveClientIp(request);
+
+        // 第一道闸：IP 维度短窗口限流。
+        // 放在验证码之前：拿着一张真验证码疯狂请求同样会打爆 SMTP / 后端线程，
+        // 这一步只花一次 Redis incr，比解析参数、查库、验图都便宜。
+        rateLimiter.check("send-code:ip:min:" + clientIp,
+                ShopAccountConstant.RL_SEND_CODE_PER_MINUTE, 60L,
+                "验证码发送过于频繁，请稍后再试");
+        rateLimiter.check("send-code:ip:hour:" + clientIp,
+                ShopAccountConstant.RL_SEND_CODE_PER_HOUR, 3600L,
+                "当前网络发送验证码次数过多，请稍后再试");
+
+        // 第二道闸：CikVerify 验证码 ticket 必须**先**校验通过。它是挡在发信能力前面的人工闸门。
+        // ticket 由前端经 BFF 调 /api/captcha/challenge + /api/captcha/verify 获得，
+        // 服务端用 SDK 的 CaptchaTicketService#consume 消费：
+        //   - 一次性（Redis GETSET 原子认领，并发下只有一方成功）；
+        //   - 默认 120 秒有效；
+        //   - 绑定客户端 IP 与 User-Agent（BFF 已把真实 IP 覆盖进 X-Forwarded-For）。
+        // ticket 为空 / 格式不对 / 已消费 / 过期 / IP/UA 不匹配，SDK 一律返回 false（fail-closed），
+        // 这里统一抛"请先完成安全验证"，不区分失败原因（避免给攻击者提供探测信号）。
+        // 注意：这一步**不再受 jeecg.firewall.enableLoginCaptcha 开关影响**，
+        // 店铺端发信接口必须在任何环境下都校验，否则一个配置漏改就会变成公开的"免费发信机"。
+        if (!captchaTicketService.consume(dto.getTicket(), request)) {
+            throw new JeecgBootException("请先完成安全验证");
+        }
 
         // 场景下的邮箱存在性检查（契约明确要求保留清晰文案，枚举风险由限流承担）
         ShopAccountUser existing = findByEmail(email);
@@ -167,7 +194,7 @@ public class ShopAccountServiceImpl implements IShopAccountService {
             throw new JeecgBootException("该邮箱尚未注册");
         }
 
-        return emailCodeService.sendCode(email, scene, accountSupport.resolveClientIp(request));
+        return emailCodeService.sendCode(email, scene, clientIp);
     }
 
     // ==================================================================
@@ -193,6 +220,16 @@ public class ShopAccountServiceImpl implements IShopAccountService {
             throw new JeecgBootException("两次输入的密码不一致");
         }
 
+        String clientIp = accountSupport.resolveClientIp(request);
+
+        // IP 维度限流：注册会写库 + 发 token，属于低成本可被批量利用的接口
+        rateLimiter.check("register:ip:min:" + clientIp,
+                ShopAccountConstant.RL_REGISTER_PER_MINUTE, 60L,
+                "操作过于频繁，请稍后再试");
+        rateLimiter.check("register:ip:hour:" + clientIp,
+                ShopAccountConstant.RL_REGISTER_PER_HOUR, 3600L,
+                "当前网络注册次数过多，请稍后再试");
+
         // 先校验并消费验证码：验证码不过就不该消耗用户名配额，也不该留下任何数据
         emailCodeService.consumeCode(email, ShopAccountConstant.SCENE_REGISTER, dto.getEmailCode());
 
@@ -207,7 +244,7 @@ public class ShopAccountServiceImpl implements IShopAccountService {
 
         loginLogRecorder.record(user.getId(), user.getUsername(), email,
                 ShopAccountConstant.LOGIN_TYPE_PASSWORD, store,
-                accountSupport.resolveClientIp(request), accountSupport.resolveUserAgent(request), true, null);
+                clientIp, accountSupport.resolveUserAgent(request), true, null);
 
         String token = issueToken(user);
         return new LoginResultVO()
@@ -238,6 +275,15 @@ public class ShopAccountServiceImpl implements IShopAccountService {
         ShopStore store = resolveStoreQuietly(request);
         String clientIp = accountSupport.resolveClientIp(request);
         String userAgent = accountSupport.resolveUserAgent(request);
+
+        // IP 维度限流：账号级失败锁定（下面 step.1）挡不住"换邮箱撞库"，
+        // 同一个 IP 对大量邮箱各试 1 次时只有 IP 限流能拦住。
+        rateLimiter.check("login-pwd:ip:min:" + clientIp,
+                ShopAccountConstant.RL_PASSWORD_LOGIN_PER_MINUTE, 60L,
+                "登录尝试过于频繁，请稍后再试");
+        rateLimiter.check("login-pwd:ip:hour:" + clientIp,
+                ShopAccountConstant.RL_PASSWORD_LOGIN_PER_HOUR, 3600L,
+                "当前网络登录尝试次数过多，请稍后再试");
 
         // step.1 失败次数（key 用 email，与 LoginController 同一套机制与阈值）
         if (isLoginFailOvertimes(email)) {
@@ -315,6 +361,11 @@ public class ShopAccountServiceImpl implements IShopAccountService {
         String clientIp = accountSupport.resolveClientIp(request);
         String userAgent = accountSupport.resolveUserAgent(request);
 
+        // IP 维度限流：邮箱验证码登录 + 自动注册，防止脚本批量建号
+        rateLimiter.check("login-code:ip:min:" + clientIp,
+                ShopAccountConstant.RL_LOGIN_CODE_PER_MINUTE, 60L,
+                "操作过于频繁，请稍后再试");
+
         // 先消费验证码：验证码不对就不该建号（否则一个打错的验证码会留下垃圾账号）
         emailCodeService.consumeCode(email, ShopAccountConstant.SCENE_LOGIN, dto.getEmailCode());
 
@@ -369,8 +420,17 @@ public class ShopAccountServiceImpl implements IShopAccountService {
             // 这是 Google 自己的安全设计，不需要我们额外判断
             String redirectUri = StringUtils.defaultIfBlank(dto.getRedirectUri(), registeredRedirectUri);
 
-            String accessToken = googleOAuthService.exchangeAccessToken(dto.getCode(), redirectUri);
-            ShopGoogleOAuthService.GoogleUserInfo googleUser = googleOAuthService.fetchUserInfo(accessToken);
+            // ① 一次请求拿到 token + id_token：id_token 里已经带了 sub/email/name/picture，
+            //    直接解析可以省掉 userinfo 这第二次跨境请求（墙内每多一次请求就多一次超时风险）。
+            //    只有 id_token 不可用时才回退 userinfo，保证兼容性与兜底能力。
+            ShopGoogleOAuthService.TokenResult tokenResult =
+                    googleOAuthService.exchangeCode(dto.getCode(), redirectUri);
+            ShopGoogleOAuthService.GoogleUserInfo googleUser =
+                    googleOAuthService.parseIdToken(tokenResult.getIdToken());
+            if (googleUser == null) {
+                log.info("Google id_token 不可用，回退调用 userinfo 获取用户信息");
+                googleUser = googleOAuthService.fetchUserInfo(tokenResult.getAccessToken());
+            }
 
             String googleSub = googleUser.getSub();
             email = googleUser.getEmail();
@@ -439,8 +499,13 @@ public class ShopAccountServiceImpl implements IShopAccountService {
             throw new JeecgBootException("两次输入的密码不一致");
         }
 
-        emailCodeService.consumeCode(email, ShopAccountConstant.SCENE_RESET, dto.getEmailCode());
+        // IP 维度限流：重置密码成功后会让旧 token 失效，属于高价值攻击目标
+        String clientIp = accountSupport.resolveClientIp(request);
+        rateLimiter.check("reset:ip:min:" + clientIp,
+                ShopAccountConstant.RL_RESET_PER_MINUTE, 60L,
+                "操作过于频繁，请稍后再试");
 
+        emailCodeService.consumeCode(email, ShopAccountConstant.SCENE_RESET, dto.getEmailCode());
         ShopAccountUser sysUser = findByEmail(email);
         if (sysUser == null) {
             // 走到这里说明验证码是对的（否则上面就抛了），但用户被删了 —— 属于并发删除
@@ -635,43 +700,6 @@ public class ShopAccountServiceImpl implements IShopAccountService {
     // ==================================================================
     // 校验
     // ==================================================================
-
-    /**
-     * 图形验证码校验 —— 与 {@code LoginController#validateCaptcha} 的算法**逐字一致**。
-     *
-     * <p>那边的同名方法是 private，且它所在的 jeecg-system-biz 属于共享模块
-     * （本次改造不允许改动），因此只能在这里实现一份等价的。
-     * 算法错一个字符（大小写、拼接顺序、是否带 signatureSecret）就永远校验不过，
-     * 所以下面每一行都保持与原实现同形。
-     *
-     * <p>关闭开关也一致：{@code jeecg.firewall.enableLoginCaptcha=false} 时跳过校验，
-     * 便于本地开发不用真的看图输码。
-     */
-    private void validateCaptcha(String captcha, String checkKey) {
-        if (jeecgFirewallDisablesCaptcha()) {
-            log.debug("jeecg.firewall.enableLoginCaptcha=false，跳过图形验证码校验");
-            return;
-        }
-        if (StringUtils.isBlank(captcha)) {
-            throw new JeecgBootException("请输入图形验证码");
-        }
-        if (StringUtils.isBlank(checkKey)) {
-            throw new JeecgBootException("图形验证码已失效，请点击图片刷新");
-        }
-        String lowerCaseCaptcha = captcha.toLowerCase();
-        // 前端调 /sys/randomImage/{key} 时服务端用 md5(key + signatureSecret) 作为
-        // realKey 前缀，这里必须用同样的前缀去拼，否则永远查不到
-        String keyPrefix = Md5Util.md5Encode(checkKey + jeecgSignatureSecret(), "utf-8");
-        String realKey = keyPrefix + lowerCaseCaptcha;
-        Object checkCode = redisUtil.get(realKey);
-        if (checkCode == null || !checkCode.toString().equals(lowerCaseCaptcha)) {
-            log.warn("图形验证码校验失败，checkKey={}，输入={}，redis值={}", checkKey, lowerCaseCaptcha, checkCode);
-            throw new JeecgBootException("图形验证码错误");
-        }
-        // 验证码一次性：用掉就删。图形码虽有 60 秒 TTL，但可被重复使用意味着
-        // 攻击者只要过一次码就能复用同一 key 批量调接口
-        redisUtil.del(realKey);
-    }
 
     /**
      * 校验密码强度：8-32 位，至少含字母和数字。
@@ -975,30 +1003,5 @@ public class ShopAccountServiceImpl implements IShopAccountService {
      */
     private String resolvePassword(String raw) {
         return AesEncryptUtil.resolvePassword(raw);
-    }
-
-    // ------------------------------------------------------------------
-    // 图形验证码开关与密钥
-    //
-    // signatureSecret 在 dev profile 来自 ${JEECG_SIGNATURE_SECRET} 环境变量；
-    // JeecgBaseConfig 的字段本身有默认值，不会为 null，
-    // 但为了与 LoginController 行为完全对齐，仍做空安全处理。
-    // ------------------------------------------------------------------
-
-    private boolean jeecgFirewallDisablesCaptcha() {
-        try {
-            return jeecgBaseConfig != null
-                    && jeecgBaseConfig.getFirewall() != null
-                    && Boolean.FALSE.equals(jeecgBaseConfig.getFirewall().getEnableLoginCaptcha());
-        } catch (Exception e) {
-            // 取不到配置时**不跳过**校验（fail-closed）：宁可让用户多输一次验证码，
-            // 也不能因为配置读取异常就把防刷闸门打开
-            log.warn("读取 jeecg.firewall 配置失败，按【需要校验验证码】处理：{}", e.getMessage());
-            return false;
-        }
-    }
-
-    private String jeecgSignatureSecret() {
-        return jeecgBaseConfig == null ? null : jeecgBaseConfig.getSignatureSecret();
     }
 }

@@ -123,20 +123,43 @@ public class ShopEmailCodeService {
     /**
      * 校验验证码（**不删除**）。用于需要"先校验后做业务、业务失败可重试"的场景。
      *
-     * @throws JeecgBootException 验证码不存在 / 已过期 / 不匹配
+     * <p>防爆破：6 位数字只有 100 万种组合，如果不限次数，攻击者可以在 5 分钟
+     * 有效期内用高并发把验证码撞出来（尤其邮箱是公开信息时）。这里做两层限制：
+     * 同一邮箱同一场景最多输错 {@link ShopAccountConstant#EMAIL_CODE_MAX_ATTEMPTS} 次，
+     * 超过后直接作废该验证码并锁定该场景 15 分钟，必须重新获取。</p>
+     *
+     * @throws JeecgBootException 验证码不存在 / 已过期 / 不匹配 / 错误次数过多
      */
     public void verifyCode(String email, String scene, String code) {
         String normalizedEmail = normalizeEmail(email);
         if (StringUtils.isBlank(code)) {
             throw new JeecgBootException("请填写邮箱验证码");
         }
-        Object cached = redisUtil.get(buildCodeKey(scene, normalizedEmail));
+        String codeKey = buildCodeKey(scene, normalizedEmail);
+        String failKey = buildFailKey(scene, normalizedEmail);
+
+        // 已经输错太多次：即使这次输对了也不放行（否则锁定形同虚设）
+        if (failureCount(failKey) >= ShopAccountConstant.EMAIL_CODE_MAX_ATTEMPTS) {
+            redisUtil.del(codeKey);
+            throw new JeecgBootException("验证码错误次数过多，请重新获取验证码");
+        }
+
+        Object cached = redisUtil.get(codeKey);
         if (cached == null) {
             throw new JeecgBootException("验证码无效或已过期，请重新获取");
         }
         if (!code.trim().equals(cached.toString())) {
-            throw new JeecgBootException("邮箱验证码错误");
+            long fails = recordFailure(failKey, ShopAccountConstant.EMAIL_CODE_ATTEMPT_LOCK_SECONDS);
+            if (fails >= ShopAccountConstant.EMAIL_CODE_MAX_ATTEMPTS) {
+                // 达到阈值立刻作废验证码，避免继续被枚举
+                redisUtil.del(codeKey);
+                throw new JeecgBootException("验证码错误次数过多，请重新获取验证码");
+            }
+            long remaining = ShopAccountConstant.EMAIL_CODE_MAX_ATTEMPTS - fails;
+            throw new JeecgBootException("邮箱验证码错误，还可尝试 " + remaining + " 次");
         }
+        // 校验通过：清掉失败计数，验证码本身在 consumeCode 里删除
+        redisUtil.del(failKey);
     }
 
     /**
@@ -172,6 +195,42 @@ public class ShopEmailCodeService {
 
     private String buildCooldownKey(String email) {
         return ShopAccountConstant.EMAIL_CODE_COOLDOWN_PREFIX + email;
+    }
+
+    /** 验证码输错次数的 key：与验证码本身分开存，方便锁定后仍能给出准确文案 */
+    private String buildFailKey(String scene, String email) {
+        return ShopAccountConstant.EMAIL_CODE_FAIL_PREFIX + scene + ":" + email;
+    }
+
+    /** 读取输错次数；Redis 异常时 fail-closed（抛业务异常而不是放行） */
+    private long failureCount(String key) {
+        try {
+            Object value = redisUtil.get(key);
+            if (value == null) {
+                return 0L;
+            }
+            return Long.parseLong(value.toString());
+        } catch (NumberFormatException e) {
+            log.warn("验证码失败计数非法，key={}，按 0 处理", key);
+            return 0L;
+        } catch (Exception e) {
+            log.error("读取验证码失败计数异常，按 fail-closed 拒绝。key={}", key, e);
+            throw new JeecgBootException("系统繁忙，请稍后再试");
+        }
+    }
+
+    /** 累计一次输错；首次创建时设置 TTL（锁定窗口） */
+    private long recordFailure(String key, long ttlSeconds) {
+        try {
+            long count = redisUtil.incr(key, 1L);
+            if (count == 1L) {
+                redisUtil.expire(key, Math.max(1L, ttlSeconds));
+            }
+            return count;
+        } catch (Exception e) {
+            log.error("记录验证码失败次数异常，按 fail-closed 拒绝。key={}", key, e);
+            throw new JeecgBootException("系统繁忙，请稍后再试");
+        }
     }
 
     private String dayKey() {

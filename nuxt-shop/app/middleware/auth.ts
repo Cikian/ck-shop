@@ -24,58 +24,55 @@
 import { useAuth } from '~~/composables/useAuth'
 
 export default defineNuxtRouteMiddleware(async (to) => {
-  // 透传浏览器 cookie 是 SSR 能判出登录态的前提。
-  //
-  // ⚠️ 这里为什么不用 refreshSession()：
-  // 契约冻结的签名是 `refreshSession(): Promise<boolean>`，内部固定 `$fetch('/api/auth/session')`
-  // 且不接受 headers 参数。而 SSR 期间 $fetch 是"服务端 → 自己的 Nitro"，
-  // 不会自动携带浏览器 cookie —— 不透传就会被判成未登录，首屏白白闪一下。
-  // 所以这里按契约第 3 节「服务端用 useRequestHeaders(['cookie']) 转发」的要求，
-  // 自己发这一次探测请求；refreshSession() 仍由页面/Header 在客户端调用。
-  //
-  // 用 import.meta.server 守卫：useRequestHeaders 在客户端调用会直接抛错；
-  // 客户端这里给 undefined，浏览器会自动带上同源 cookie。
-  const headers = import.meta.server ? useRequestHeaders(['cookie']) : undefined
+  const { userInfo, authChecked } = useAuth()
 
   let authenticated: boolean
   let sessionUser: Record<string, any> | null = null
-  try {
-    const session = await $fetch<{ authenticated: boolean, userInfo: Record<string, any> | null }>(
-      '/api/auth/session',
-      { headers },
-    )
-    authenticated = !!session?.authenticated
-    sessionUser = session?.userInfo ?? null
-  } catch {
-    // /api/auth/session 契约上永远返回 200，走到这里说明是网络层异常。
-    // fail-closed：无法确认登录态时按未登录处理，宁可让用户重新登录，
-    // 也不能把私有页面放出去。公开页不经过本中间件，所以影响范围受控。
-    authenticated = false
+
+  if (authChecked.value) {
+    // ★ 已经权威校验过：直接复用结果，**不再重复请求** /api/auth/session。
+    //
+    // 谁会把它置为 true：
+    //   · SSR 阶段 app/middleware/auth-seed.global.ts 已经播种（公开页也经过它）；
+    //   · 客户端 app/plugins/init-auth.client.ts 的 refreshSession() 在应用启动时跑过；
+    //   · 登录/注册成功时 useAuth().acceptAuthResult()。
+    // 以前这里无论是否校验过都要再问一次服务端，导致受保护页每次加载打两个 session 请求
+    // （SSR 播种一个 + 本中间件一个），客户端切页再多一个。
+    authenticated = !!userInfo.value
+    sessionUser = userInfo.value as Record<string, any> | null
+  } else {
+    // 兜底路径：没有被播种时自己查一次。
+    //
+    // 用 useRequestFetch() 而不是 $fetch：SSR 期间 $fetch 是"服务端 → 自己的 Nitro"，
+    // 不会自动携带浏览器 cookie；useRequestFetch() 会转发当前请求的 cookie，
+    // 客户端则等价于普通 $fetch（浏览器自动带同源 cookie）。
+    // 这一步拿到的 userInfo 必须一起种进 useState，否则会出现
+    // "中间件判定已登录、页面按未登录渲染"的首屏闪烁。
+    const requestFetch = useRequestFetch()
+    try {
+      const session = await requestFetch<{ authenticated: boolean, userInfo: Record<string, any> | null }>(
+        '/api/auth/session',
+      )
+      authenticated = !!session?.authenticated
+      sessionUser = session?.userInfo ?? null
+    } catch {
+      // /api/auth/session 契约上永远返回 200，走到这里说明是网络层异常。
+      // fail-closed：无法确认登录态时按未登录处理，宁可让用户重新登录，
+      // 也不能把私有页面放出去。
+      authenticated = false
+    }
   }
 
   if (authenticated) {
-    // ★ SSR 首屏必须把 userInfo 一起种进去，否则页面照样闪。
-    //
-    // 上面那次请求**已经**从后端拿到了完整的 userInfo（/api/auth/session 的返回值里就有），
-    // 以前只取了 authenticated、把 userInfo 丢掉，于是出现这个自相矛盾的现象：
-    //   中间件在服务端判定「已登录」并放行，但页面 `v-if="!isLoggedIn"` 读到的 userInfo 仍是 null
-    //   （useState 在服务端没有 localStorage 可读，.client.ts 插件在 SSR 阶段也不执行）
-    //   → **SSR 输出的 HTML 里是「您还没有登录」引导**；
-    //   浏览器先把这段 HTML 画出来，等客户端插件 restoreUser() 从 localStorage 回填后才翻回已登录态
-    //   —— 这就是用户反馈的「每次刷新都闪一下未登录页」。
-    //
-    // 把服务端拿到的真实用户种进 useState 后，SSR 输出与客户端 hydration 用的是同一份数据，
-    // 首屏直接就是已登录内容，不需要等 localStorage 回填，闪烁消失。
-    // 注意：这里只同步**纯展示**用的 userInfo；真正的凭证 token 仍只在 httpOnly cookie 里，不落到前端。
-    if (sessionUser) {
-      const { userInfo, authChecked } = useAuth()
-      if (!userInfo.value) {
-        userInfo.value = sessionUser
-      }
-      // 服务端刚刚已经权威校验过登录态，标记为已校验，
-      // 免得客户端的 refreshSession() 在首屏再白问一次（它仍会跑，结果以它为准）。
-      authChecked.value = true
+    // 只同步**纯展示**用的 userInfo；真正的凭证 token 仍只在 httpOnly cookie 里，不落到前端。
+    // 类型桥接：session 返回的是扁平 Record<string, any>，展示层 UserInfo 的
+    // realname/username 由后端保证存在（见 auth-seed.global.ts 的同类说明）。
+    if (sessionUser && !userInfo.value) {
+      userInfo.value = sessionUser as unknown as NonNullable<typeof userInfo.value>
     }
+    // 服务端/客户端刚刚已经权威校验过登录态，标记为已校验，
+    // 免得后续导航或 refreshSession 再白问一次。
+    authChecked.value = true
     return
   }
 

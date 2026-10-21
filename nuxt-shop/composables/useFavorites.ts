@@ -23,6 +23,7 @@ import type { StoreProductPage } from '~~/types/shop-product'
 import { normalizeFavoriteStatus } from '~~/types/shop-favorite'
 import { useAuth } from '~~/composables/useAuth'
 import { readErrorMessage } from '~~/composables/useApiError'
+import { useLatestRequest } from '~~/composables/useLatestRequest'
 
 /**
  * 从 $fetch 抛出的错误里取出可读文案（后端业务异常 message 是中文，直接展示）。
@@ -46,6 +47,16 @@ export function useProductFavorite(productId: MaybeRefOrGetter<string | undefine
   const { locale } = useI18n()
   const { isLoggedIn } = useAuth()
 
+  /**
+   * SSR 也要能带上 httpOnly cookie 查收藏态。
+   * useRequestFetch() 在服务端转发当前请求的 cookie，客户端等价于 $fetch。
+   * 必须在 setup 阶段取一次并捕获下来（refresh/toggle 是 later 被触发的）。
+   */
+  const requestFetch = useRequestFetch()
+
+  /** latest-wins：切换商品（slug 变化）时只接受最后一次 refresh 的结果 */
+  const guard = useLatestRequest()
+
   /** 当前用户是否已收藏；未登录 / 未加载完成时为 false */
   const favorited = ref(false)
   /** 商品收藏总数（后端直出）；null 表示还没拿到数据，此时沿用商品详情里的收藏数 */
@@ -65,12 +76,15 @@ export function useProductFavorite(productId: MaybeRefOrGetter<string | undefine
       favorited.value = false
       return
     }
+    const isLatest = guard.begin()
     try {
-      const status = await $fetch<unknown>('/api/favorite/status', {
+      const status = await requestFetch<unknown>('/api/favorite/status', {
         query: { productId: id, lang: locale.value },
       })
+      if (!isLatest()) return
       applyStatus(normalizeFavoriteStatus(status))
     } catch {
+      if (!isLatest()) return
       // 收藏态拿不到不该影响商品详情页：保持"未收藏"，用户点击时再暴露真实错误
       favorited.value = false
     }
@@ -88,7 +102,7 @@ export function useProductFavorite(productId: MaybeRefOrGetter<string | undefine
     }
     pending.value = true
     try {
-      const status = normalizeFavoriteStatus(await $fetch<unknown>('/api/favorite/toggle', {
+      const status = normalizeFavoriteStatus(await requestFetch<unknown>('/api/favorite/toggle', {
         method: 'POST',
         body: { productId: id, lang: locale.value },
       }))
@@ -112,6 +126,12 @@ export function useFavoriteList(pageSize: number = STORE_FAVORITE_PAGE_SIZE) {
   const { locale } = useI18n()
   const { isLoggedIn } = useAuth()
 
+  /** SSR 也要能带上 httpOnly cookie 取收藏列表（见 useProductFavorite 的说明） */
+  const requestFetch = useRequestFetch()
+
+  /** latest-wins：快速翻页时只接受最后一次请求的结果 */
+  const guard = useLatestRequest()
+
   const items = ref<StoreProductPage['records']>([])
   const total = ref(0)
   const pageNo = ref(1)
@@ -126,22 +146,27 @@ export function useFavoriteList(pageSize: number = STORE_FAVORITE_PAGE_SIZE) {
       loaded.value = true
       return
     }
+    const isLatest = guard.begin()
     loading.value = true
     error.value = ''
     try {
-      const page = await $fetch<StoreProductPage>('/api/favorite', {
+      const page = await requestFetch<StoreProductPage>('/api/favorite', {
         query: { pageNo: targetPage, pageSize, lang: locale.value },
       })
+      if (!isLatest()) return
       items.value = page.records
       total.value = page.total
       pageNo.value = page.current
     } catch (err) {
+      if (!isLatest()) return
       error.value = extractFavoriteErrorMessage(err, '')
       items.value = []
       total.value = 0
     } finally {
-      loading.value = false
-      loaded.value = true
+      if (isLatest()) {
+        loading.value = false
+        loaded.value = true
+      }
     }
   }
 
@@ -151,7 +176,7 @@ export function useFavoriteList(pageSize: number = STORE_FAVORITE_PAGE_SIZE) {
    * 分页也不会因为少了一条而整体跳位。
    */
   async function remove(productId: string) {
-    const status = normalizeFavoriteStatus(await $fetch<unknown>('/api/favorite/toggle', {
+    const status = normalizeFavoriteStatus(await requestFetch<unknown>('/api/favorite/toggle', {
       method: 'POST',
       body: { productId, lang: locale.value },
     }))

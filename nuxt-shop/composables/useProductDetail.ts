@@ -7,7 +7,9 @@
 // 否则每个新组件都要从页面 props 里掏一堆彼此纠缠的 computed。
 //
 // 边界：这里只做"取数与派生"，不含交互副作用（加购/立即购买/收藏/复制链接仍由页面处理）。
-// 必须是 async 并在页面里 await：内部要 await useStoreProductDetail。
+// 必须是**同步**函数：页面在 setup 顶层直接调用、不 await（详见 useStoreProductDetail 处说明）。
+// 数据是 useAsyncData 的 ref，SSR 同样会等它 resolve 后再输出 HTML；
+// pending / error / default 与改造前一致。
 // 目前唯一消费者是该页面，因此用普通 ref（非 useState）即可；若将来拆出的子组件也需要
 // 这些状态，再按需把共享的那几个提升为 useState 或改为 props 传递。
 
@@ -27,20 +29,31 @@ import { useStorePrice, useStoreProductDetail } from '~~/composables/useProducts
 import { useProductFavorite } from '~~/composables/useFavorites'
 import { useAuth } from '~~/composables/useAuth'
 
-export const useProductDetail = async () => {
+export const useProductDetail = () => {
   const route = useRoute()
   const { t } = useI18n()
   const { format, formatCompact } = useStorePrice()
-  // 加购/立即购买要先判断登录态（未登录时这两个按钮的文案与行为都不同）
+  // 加购/立即购买要先判断登录态（未登录时这两个按钮的文案与行为不同）
   const { isLoggedIn } = useAuth()
 
   const slug = computed(() => String(route.params.slug ?? ''))
 
-  // ⚠️ 所有 composable 调用必须在**第一个 await 之前**做完。
-  //    async 函数一旦 await，就脱离了 setup 的同步上下文，之后再调用 useI18n/useAsyncData
-  //    这类依赖当前实例的 API 会抛 "Must be called at the top of a setup function"。
-  //    所以这里是「先发起请求（拿到 Promise），再统一 await」，而不是边 await 边调用。
-  const detailPromise = useStoreProductDetail(slug)
+  /**
+   * 商品详情数据（useAsyncData）。
+   *
+   * 为什么**不在内部 await**：
+   *   1) 页面现在直接 `const {...} = useProductDetail()`（不 await），
+   *      让 setup 保持同步 —— 之前那个顶层 await 会把整页导航阻塞一个 RTT；
+   *   2) Nuxt 的 useAsyncData 即使不被 await，SSR 也会等数据 resolve 后再渲染
+   *      （见 Nuxt 文档「Even if you do not await the return value, during SSR Nuxt
+   *      will wait for the request to finish」），所以首屏 HTML 仍然有商品数据；
+   *      pending / error / default 的语义完全不变，模板照旧按 pending / error 分支。
+   *   3) 不再有"await 之后脱离 setup 上下文"的约束，下面所有 composable 都是同步调用。
+   * ⚠️ 唯一区别：**setup 体内**不能同步读到 product.value（此时还是 default 的 null）；
+   *    需要派生值请一律用 computed（本文件里的派生值都是 computed），不要在 setup
+   *    顶部用 `const title = product.value?.title` 这种一次性读取。
+   */
+  const { data: product, pending, error, refresh } = useStoreProductDetail(slug)
 
   /**
    * 收藏态（favorited）/ 商品收藏总数 / 请求中。
@@ -54,9 +67,6 @@ export const useProductDetail = async () => {
   const buying = ref(false)
   const activeImageIndex = ref(0)
   const selected = ref<SpecSelection>({})
-
-  // ---- 从这里开始才 await ----
-  const { data: product, pending, error, refresh } = await detailPromise
 
   const specs = computed(() => product.value?.specs ?? [])
   const combinations = computed(() => product.value?.combinations ?? [])
@@ -196,11 +206,15 @@ export const useProductDetail = async () => {
     return buyable.value
   })
 
-  const addToCartLabel = computed(() => {
-    if (!isLoggedIn.value) return t('product.loginToAddCart')
-    if (hasSpecs.value && !selectionComplete.value) return t('product.selectSpecFirst')
-    return t('product.addToCart')
-  })
+  /*
+   * 动作条按钮文案：**永远只显示动作名**（加入购物车 / 立即购买），不再因为"未登录/未选规格"
+   * 替换成长句（第 5 轮，需求方反馈）。
+   * 原因：动作条按钮宽度固定，收藏按钮还要竖着放图标 + 小字；"登录后加入购物车"这类长文案
+   * 在中文/英文/法文下都会溢出或截断。引导本来就有别的出口：
+   *   · 未登录 → 点按钮直接跳登录页（见页面 handleAddToCart / handleBuyNow）；
+   *   · 未选规格 → 按钮置灰 + 面板里已有「请选择完整规格」提示（unavailableNotice）。
+   */
+  const addToCartLabel = computed(() => t('product.addToCart'))
 
   /**
    * 立即购买可用性：与加购**同一口径**（同一个 canAddToCart），
@@ -208,11 +222,8 @@ export const useProductDetail = async () => {
    */
   const canBuyNow = computed(() => canAddToCart.value)
 
-  const buyNowLabel = computed(() => {
-    if (!isLoggedIn.value) return t('product.loginToBuyNow')
-    if (hasSpecs.value && !selectionComplete.value) return t('product.selectSpecFirst')
-    return t('product.buyNow')
-  })
+  // 与加购同一口径：只显示动作名（未登录/未选规格的引导见 addToCartLabel 上方注释）
+  const buyNowLabel = computed(() => t('product.buyNow'))
 
   /** 图片角标：只渲染真实存在的 HOT / SALE / NEW / PICK（与 StoreProductCard 同一套判断） */
   const IMAGE_BADGE_CODES = new Set(['HOT', 'SALE', 'NEW', 'PICK'])
@@ -231,9 +242,9 @@ export const useProductDetail = async () => {
   const hasFastTag = computed(() => tagCodes.value.has('FAST'))
   const hasTopTag = computed(() => tagCodes.value.has('TOP'))
 
-  // 「为你推荐」列表**不在这里**：它必须在详情拿到之后再发起（要按 categoryId 过滤），
-  // 而本函数在第一个 await 之后已脱离 setup 上下文，不能再调 useAsyncProductList。
-  // 因此由页面在 await useProductDetail() 之后自己发起 —— 见 pages/products/[slug].vue。
+  // 「为你推荐」列表**不在这里**：它要按详情里的 categoryId 过滤，
+  // 放在页面里 watch product 的 id/categoryId 再请求更直接
+  // （见 pages/products/[slug].vue；推荐位在页面底部，不需要进 SSR）。
   return {
     slug,
     product,

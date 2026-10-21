@@ -56,4 +56,10 @@ public class StoreProductDetailVO extends ShopProduct {
 
     @Schema(description = "存在的 SKU 组合")
     private List<StoreSkuVO> combinations;
+
+    @Schema(description = "商品详情模块（只含当前语言最终生效的数据，已按契约 2.3 整体回退；不含 id/languageCode）")
+    private List<StoreDetailBlockVO> detailBlocks;
+
+    @Schema(description = "规格参数（只含当前语言最终生效的数据，已按契约 2.3 整体回退；不含 id/languageCode）")
+    private List<StoreParamVO> params;
 }

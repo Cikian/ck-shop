@@ -14,6 +14,7 @@
 
 import type { OrderListVO, OrderPageResult } from '~~/types/shop-order'
 import { readErrorMessage, isUnauthorizedError } from '~~/composables/useApiError'
+import { useLatestRequest } from '~~/composables/useLatestRequest'
 import { toNumberOrNull } from '~~/types/shop-product'
 
 /** 个人中心只展示最近一页，不做状态筛选（要筛选用 /orders 整页） */
@@ -28,6 +29,16 @@ export const useOrderList = () => {
   const loading = useState<boolean>('profile-orders-loading', () => false)
   const error = useState<string>('profile-orders-error', () => '')
 
+  /**
+   * SSR 也要能带上 httpOnly cookie 取订单。
+   * 普通 $fetch 在服务端不转发浏览器 cookie；useRequestFetch() 在服务端转发、
+   * 客户端等价于 $fetch。必须在 setup 阶段取一次并捕获下来。
+   */
+  const requestFetch = useRequestFetch()
+
+  /** latest-wins：快速翻页时只接受最后一次请求的结果，避免旧响应覆盖新页码的数据 */
+  const guard = useLatestRequest()
+
   const totalPages = computed(() => {
     const pages = Math.ceil(total.value / PROFILE_ORDER_PAGE_SIZE)
     return pages > 0 ? pages : 1
@@ -35,27 +46,31 @@ export const useOrderList = () => {
   const currentPage = computed(() => pageNo.value)
 
   async function load() {
+    const isLatest = guard.begin()
     loading.value = true
     error.value = ''
     try {
-      const page = await $fetch<OrderPageResult<OrderListVO>>('/api/order', {
+      const page = await requestFetch<OrderPageResult<OrderListVO>>('/api/order', {
         query: {
           pageNo: pageNo.value,
           pageSize: PROFILE_ORDER_PAGE_SIZE,
           lang: locale.value,
         },
       })
+      if (!isLatest()) return
       orders.value = Array.isArray(page?.records) ? page.records : []
       total.value = toNumberOrNull(page?.total) ?? 0
       // 后端会回传 pageNo 的权威值（比如超出范围时被纠正），以它为准
       const serverPage = toNumberOrNull(page?.current)
       if (serverPage !== null && serverPage >= 1) pageNo.value = Math.trunc(serverPage)
     } catch (err) {
+      if (!isLatest()) return
       // 401/403 不在这里弹错：个人中心未登录时整页已经是登录引导（auth 中间件 + isLoggedIn 分支）
       if (isUnauthorizedError(err)) return
       error.value = readErrorMessage(err, t('order.loadErrorDesc'))
     } finally {
-      loading.value = false
+      // 旧请求不能把 loading 关掉：更新的请求可能还在路上
+      if (isLatest()) loading.value = false
     }
   }
 

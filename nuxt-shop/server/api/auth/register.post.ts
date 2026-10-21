@@ -28,11 +28,18 @@ export default defineEventHandler(async (event) => {
   }
 
   // 限流：注册会消耗验证码并写库，限制到 10 分钟 5 次（按 IP + 邮箱）。
+  // 仅按 IP 再限一层：防"同一 IP 不断换邮箱批量注册"，那是最常见的养号方式。
   enforceRateLimit(event, {
     key: 'auth:register',
     limit: 5,
     windowMs: 10 * 60_000,
     extra: email,
+  })
+  enforceRateLimit(event, {
+    key: 'auth:register:ip',
+    limit: 10,
+    windowMs: 60 * 60_000,
+    message: '当前网络注册次数过多，请稍后再试',
   })
 
   const emailCode = String(body?.emailCode ?? '').trim()

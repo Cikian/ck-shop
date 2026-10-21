@@ -1,4 +1,12 @@
 {
+  "error": {
+    "notFoundTitle": "This page went missing",
+    "notFoundDesc": "The link may be broken or removed. Head back home and keep browsing.",
+    "serverTitle": "The service hit a snag",
+    "serverDesc": "We are recovering right now. Try again in a moment or go back home.",
+    "backHome": "Back to home",
+    "retry": "Reload"
+  },
   "categories": {
     "title": "All categories",
     "description": "Browse this store by category",
@@ -18,7 +26,9 @@
     "title": "Welcome to Nuxt Shop",
     "description": "Explore our handpicked premium products and enjoy a worry-free shopping experience",
     "newCollection": "New Collection",
-    "limitedOffer": "Limited Time Offer"
+    "limitedOffer": "Limited Time Offer",
+    "pauseCarousel": "Pause autoplay",
+    "playCarousel": "Resume autoplay"
   },
   "products": {
     "all": "All Products",
@@ -48,7 +58,8 @@
       "choose": "Please select all options",
       "notSaleable": "This combination is not for sale",
       "outOfStock": "This combination is out of stock"
-    }
+    },
+    "allLoaded": "You've reached the end"
   },
   "product": {
     "addToCart": "Add to Cart",
@@ -69,25 +80,39 @@
     "notFoundDesc": "The product you are looking for doesn't exist or has been removed.",
     "loadError": "Failed to load product",
     "loadErrorDesc": "Please check your connection and try again",
-    "loginToAddCart": "Sign in to add to cart",
     "addedToCart": "Added to cart",
     "selectSpecFirst": "Please choose all options first",
     "adding": "Adding…",
     "cartHint": "Real-time stock and option checks on add to cart",
     "viewCart": "View cart",
     "buying": "Processing…",
-    "loginToBuyNow": "Sign in to buy now",
     "buyNowFailed": "Could not start checkout. Please check whether your browser blocks local storage and try again.",
     "wishlisted": "Saved",
+    "wishlistedShort": "Saved",
+    "favShort": "Wishlist",
     "removeFromWishlist": "Remove from wishlist",
     "addedToWishlist": "Added to wishlist",
     "removedFromWishlist": "Removed from wishlist",
-    "wishlistFailed": "Wishlist action failed"
+    "wishlistFailed": "Wishlist action failed",
+    "shareCopied": "Link copied",
+    "shareFailed": "Couldn't copy the link",
+    "quantity": "Quantity",
+    "detailImageAlt": "{title} image {index}",
+    "imageEnlarge": "View larger image",
+    "imageLightboxLabel": "Image preview",
+    "lightboxClose": "Close image preview",
+    "lightboxPrev": "Previous image",
+    "lightboxNext": "Next image",
+    "lightboxCounter": "{current} / {total}",
+    "videoBilibiliTitle": "Bilibili video",
+    "videoYoutubeTitle": "YouTube video",
+    "videoFileTitle": "Product video",
+    "videoUnavailable": "Video unavailable",
+    "videoUnsupported": "Your browser does not support video playback",
+    "specEmpty": "No specifications"
   },
   "login": {
     "title": "Sign In",
-    "captcha": "Captcha",
-    "refreshCaptcha": "Click to refresh",
     "noAccount": "Don't have an account?",
     "register": "Sign up"
   },
@@ -256,7 +281,6 @@
     "likeTitle": "You may also like",
     "likeSubtitle": "Add an item to qualify",
     "loginSubtitle": "Sign in to add items to your cart and view orders",
-    "captchaPlaceholder": "Enter the code",
     "profileOrders": "Orders",
     "profileFavorites": "Favorites",
     "profileCoupons": "Coupons",
@@ -438,7 +462,10 @@
     "withdrawTitle": "Withdraw this refund request?",
     "withdrawDesc": "You can request a refund again afterwards.",
     "withdrawConfirm": "Confirm withdrawal",
-    "withdrawnToast": "Refund request withdrawn"
+    "withdrawnToast": "Refund request withdrawn",
+    "receiveConfirming": "Confirming…",
+    "withdrawing": "Withdrawing…",
+    "checkoutPriceTokenMissing": "Price updated — recalculating, please try again in a moment"
   },
   "address": {
     "title": "Shipping addresses",
@@ -480,7 +507,8 @@
     "actionFailed": "Action failed",
     "receiverRequired": "Please enter the recipient name",
     "phoneRequired": "Please enter the phone number",
-    "detailRequired": "Please enter the street address"
+    "detailRequired": "Please enter the street address",
+    "deleting": "Deleting…"
   },
   "auth": {
     "tabsLabel": "Sign-in method",
@@ -511,7 +539,6 @@
     "strengthStrong": "Strong",
     "showPassword": "Show password",
     "hidePassword": "Hide password",
-    "captchaRequired": "Please enter the captcha",
     "login": "Sign in",
     "loggingIn": "Signing in...",
     "loginFailed": "Login failed, please try again",
@@ -544,6 +571,25 @@
     "goLogin": "Sign in",
     "setPassword": "Set password",
     "changePassword": "Change password",
-    "oldPassword": "Current password"
+    "oldPassword": "Current password",
+    "captchaHint": "Clicking \"Get code\" will open a security verification.",
+    "captchaOpenFailed": "Failed to load the security verification, please try again"
+  },
+  "captcha": {
+    "tipsSuccess": "Verification passed in %s s",
+    "tipsError": "Verification failed, please try again!",
+    "tipsExpired": "The verification has expired, please verify again",
+    "tipsNetworkError": "Network error, please try again later",
+    "sliderTitle": "Drag the slider to complete the puzzle",
+    "concatTitle": "Drag the slider to complete the puzzle",
+    "rotateTitle": "Drag the slider to complete the puzzle",
+    "imageClickTitle": "Please click in order:",
+    "imageClickConfirm": "Confirm",
+    "powTitle": "Security verification",
+    "powLoading": "Verifying...",
+    "disabledTitle": "Captcha is disabled",
+    "closeTitle": "Close captcha",
+    "refreshTitle": "Refresh captcha",
+    "overlayLabel": "Security verification"
   }
 }

@@ -47,8 +47,19 @@
           </button>
         </div>
 
+        <!-- 已有列表时切换筛选/翻页：给一条轻量"更新中"反馈，避免点了没反应 -->
+        <div
+          v-if="loading && records.length"
+          class="mb-3 flex items-center gap-2 text-[12px] text-[var(--color-muted)]"
+          role="status"
+        >
+          <UIcon name="lucide:loader-circle" class="h-3.5 w-3.5 animate-spin motion-reduce:animate-none" aria-hidden="true" />
+          {{ t('common.loading') }}
+        </div>
+
+        <Transition name="fade" mode="out-in">
         <!-- 加载失败 -->
-        <section v-if="loadError" class="ui-card px-6 py-16 text-center">
+        <div v-if="loadError" key="error" class="ui-card px-6 py-16 text-center">
           <span class="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-[var(--color-error)]/10">
             <UIcon name="lucide:wifi-off" class="h-8 w-8 text-[var(--color-error)]" aria-hidden="true" />
           </span>
@@ -58,18 +69,18 @@
             <UIcon name="lucide:rotate-ccw" class="h-4 w-4" aria-hidden="true" />
             {{ t('common.retry') }}
           </button>
-        </section>
+        </div>
 
         <!-- 骨架屏 -->
-        <section v-else-if="loading && !records.length" class="space-y-4" aria-busy="true" :aria-label="t('common.loading')">
+        <div v-else-if="ordersPending && !records.length" key="skeleton" class="space-y-4" aria-busy="true" :aria-label="t('common.loading')">
           <div v-for="index in 3" :key="index" class="ui-card space-y-3 p-5">
             <div class="h-4 w-1/3 animate-pulse rounded bg-[var(--color-line-soft)]"></div>
             <div class="h-16 animate-pulse rounded-[var(--radius-card-sm)] bg-[var(--color-line-soft)]"></div>
           </div>
-        </section>
+        </div>
 
         <!-- 空态 -->
-        <section v-else-if="!records.length" class="ui-card px-6 py-20 text-center">
+        <div v-else-if="!records.length" key="empty" class="ui-card px-6 py-20 text-center">
           <span class="mx-auto flex h-20 w-20 items-center justify-center rounded-full bg-[var(--color-brand-50)]">
             <UIcon name="lucide:package-open" class="h-9 w-9 text-[var(--color-brand-400)]" aria-hidden="true" />
           </span>
@@ -79,11 +90,11 @@
             <UIcon name="lucide:arrow-right" class="h-4 w-4" aria-hidden="true" />
             {{ t('order.emptyAction') }}
           </NuxtLinkLocale>
-        </section>
+        </div>
 
         <!-- 订单列表 -->
-        <template v-else>
-          <ul class="space-y-4">
+        <div v-else key="content">
+          <TransitionGroup name="list" tag="ul" class="relative space-y-4">
             <li v-for="order in records" :key="order.orderNo" class="ui-card overflow-hidden">
               <!-- 头：订单号 + 状态 + 时间 -->
               <header class="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 border-b border-[var(--color-line-soft)] px-4 py-3">
@@ -100,18 +111,15 @@
               <ul class="divide-y divide-[var(--color-line-soft)]">
                 <li v-for="(item, index) in order.items" :key="`${order.orderNo}-${item.id || index}`" class="flex gap-3 px-4 py-3">
                   <span class="h-14 w-14 shrink-0 overflow-hidden rounded-[var(--radius-tile)] bg-[var(--color-line-soft)]">
-                    <img
-                      v-if="item.productImage"
+                    <ShopImage
                       :src="item.productImage"
                       :alt="item.productName || ''"
-                      width="56"
-                      height="56"
+                      :width="56"
+                      :height="56"
                       class="h-full w-full object-cover"
-                      loading="lazy"
-                    >
-                    <span v-else class="flex h-full w-full items-center justify-center">
-                      <UIcon name="lucide:image" class="h-5 w-5 text-[var(--color-muted)]" aria-hidden="true" />
-                    </span>
+                      icon="lucide:image"
+                      icon-class="h-5 w-5 text-[var(--color-muted)]"
+                    />
                   </span>
                   <span class="min-w-0 flex-1">
                     <span class="line-clamp-2 text-[13px] font-medium text-[var(--color-ink)]">{{ item.productName || '—' }}</span>
@@ -176,21 +184,23 @@
                 </div>
               </footer>
             </li>
-          </ul>
+          </TransitionGroup>
+        </div>
+        </Transition>
 
-          <!-- 分页 -->
-          <PaginationBar
-            :current="currentPage"
-            :total="totalPages"
-            :disabled="loading"
-            margin="mt-8"
-            :label="t('order.pagination')"
-            :prev-label="t('order.prev')"
-            :next-label="t('order.next')"
-            :info-label="t('order.pageInfo', { current: currentPage, total: totalPages })"
-            @change="goToPage"
-          />
-        </template>
+        <!-- 分页 -->
+        <PaginationBar
+          v-if="!loadError && records.length"
+          :current="currentPage"
+          :total="totalPages"
+          :disabled="loading"
+          margin="mt-8"
+          :label="t('order.pagination')"
+          :prev-label="t('order.prev')"
+          :next-label="t('order.next')"
+          :info-label="t('order.pageInfo', { current: currentPage, total: totalPages })"
+          @change="goToPage"
+        />
       </template>
     </div>
 
@@ -205,19 +215,20 @@
         <div class="flex w-full justify-end gap-3">
           <button
             type="button"
-            class="cursor-pointer rounded-full border border-[var(--color-line)] px-5 py-2.5 text-sm font-semibold text-[var(--color-ink-soft)] transition-colors duration-200 hover:bg-[var(--color-surface-secondary)] motion-reduce:transition-none"
+            class="cursor-pointer rounded-full border border-[var(--color-line)] px-5 py-2.5 text-sm font-semibold text-[var(--color-ink-soft)] transition-colors duration-200 hover:bg-[var(--color-surface-secondary)] disabled:cursor-not-allowed disabled:opacity-50 motion-reduce:transition-none"
+            :disabled="receiveState.pending"
             @click="receiveState.open = false"
           >
             {{ t('common.cancel') }}
           </button>
-          <button
-            type="button"
+          <AsyncButton
             class="cursor-pointer rounded-full bg-[var(--color-brand-500)] px-5 py-2.5 text-sm font-semibold text-white transition-colors duration-200 hover:bg-[var(--color-brand-600)] disabled:cursor-not-allowed disabled:opacity-50 motion-reduce:transition-none"
-            :disabled="receiveState.pending"
+            :pending="receiveState.pending"
+            :pending-label="t('order.receiveConfirming')"
             @click="confirmReceive"
           >
             {{ t('order.receiveConfirm') }}
-          </button>
+          </AsyncButton>
         </div>
       </template>
     </UModal>
@@ -234,8 +245,6 @@
       :items="refundState.items"
       @applied="loadOrders()"
     />
-
-    <SiteFooter />
   </div>
 </template>
 
@@ -280,6 +289,8 @@ const { t, locale } = useI18n()
 const localePath = useLocalePath()
 const toast = useToast()
 const { format } = useStorePrice()
+/** SSR 期也要带上 httpOnly cookie 的 fetch（loader 在 setup 阶段执行） */
+const requestFetch = useRequestFetch()
 
 const loading = ref(false)
 const loadError = ref('')
@@ -311,11 +322,18 @@ const detailLink = (orderNo: string) => localePath({ path: `/orders/${orderNo}` 
 const payLink = (orderNo: string) => localePath({ path: '/checkout/pay', query: { orderNo } })
 
 
+/**
+ * 快速切换筛选/翻页时，只应用"最后一次"请求的响应。
+ * 没有它时，慢请求后返回会把列表覆盖成上一个 tab 的数据（tab 高亮与内容不一致）。
+ */
+let loadSeq = 0
+
 async function loadOrders() {
+  const seq = ++loadSeq
   loading.value = true
   loadError.value = ''
   try {
-    const page = await $fetch<OrderPageResult<OrderListVO>>('/api/order', {
+    const page = await requestFetch<OrderPageResult<OrderListVO>>('/api/order', {
       query: {
         pageNo: pageNo.value,
         pageSize: PAGE_SIZE,
@@ -324,6 +342,7 @@ async function loadOrders() {
         lang: locale.value,
       },
     })
+    if (seq !== loadSeq) return
     records.value = Array.isArray(page?.records) ? page.records : []
     total.value = toNumberOrNull(page?.total) ?? 0
     // 后端会回传 pageNo 的权威值（比如超出范围时被纠正），以它为准
@@ -331,13 +350,14 @@ async function loadOrders() {
     if (serverPage !== null && serverPage >= 1) pageNo.value = Math.trunc(serverPage)
     unauthorized.value = false
   } catch (error) {
+    if (seq !== loadSeq) return
     if (isUnauthorizedError(error)) {
       unauthorized.value = true
       return
     }
     loadError.value = readErrorMessage(error, t('order.loadErrorDesc'))
   } finally {
-    loading.value = false
+    if (seq === loadSeq) loading.value = false
   }
 }
 
@@ -394,7 +414,30 @@ async function confirmReceive() {
   }
 }
 
-onMounted(loadOrders)
+/**
+ * SSR 直出订单列表：loader 在 setup 期执行（不再等 onMounted），
+ * 配合 requestFetch 让 SSR 请求带上 httpOnly cookie。
+ * lazy 只影响客户端导航：导航立即出骨架，不阻塞。
+ *
+ * 返回值是**可序列化快照**：列表/总数/失败与登录结论必须随 payload 回到客户端，
+ * 否则水合首帧本地 refs 全是初始值，会与服务端已渲染的列表/空态不一致。
+ */
+const { data: ordersBoot, pending: ordersPending } = useLazyAsyncData('orders-index', async () => {
+  await loadOrders()
+  return {
+    records: records.value,
+    total: total.value,
+    unauthorized: unauthorized.value,
+    failed: !!loadError.value,
+  }
+}, { lazy: true })
+
+if (ordersBoot.value) {
+  records.value = ordersBoot.value.records
+  total.value = ordersBoot.value.total
+  if (ordersBoot.value.unauthorized) unauthorized.value = true
+  if (ordersBoot.value.failed && !loadError.value) loadError.value = t('order.loadErrorDesc')
+}
 
 useSeoMeta({
   title: () => t('order.title'),

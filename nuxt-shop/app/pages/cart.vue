@@ -1,6 +1,6 @@
 <template>
   <div class="min-h-screen bg-[var(--color-cream)] pt-navbar">
-    <div class="mx-auto max-w-7xl px-2 pb-16 sm:px-3 lg:px-4">
+    <div class="mx-auto max-w-7xl px-2 pb-32 sm:px-3 lg:pb-16 lg:px-4">
       <!-- ① 标题行：左「购物车 + 共 N 件商品」，右「继续逛逛」 -->
       <header class="mb-5 flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
         <div class="flex flex-wrap items-end gap-x-3 gap-y-1">
@@ -28,8 +28,9 @@
         </NuxtLinkLocale>
       </header>
 
+      <Transition name="fade" mode="out-in">
       <!-- ② 未登录 -->
-      <section v-if="unauthorized" class="ui-card px-6 py-16 text-center">
+      <section v-if="unauthorized" key="unauthorized" class="ui-card px-6 py-16 text-center">
         <div class="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-[var(--color-brand-50)]">
           <UIcon name="lucide:lock" class="h-8 w-8 text-[var(--color-brand-500)]" aria-hidden="true" />
         </div>
@@ -42,7 +43,7 @@
       </section>
 
       <!-- ③ 加载失败 -->
-      <section v-else-if="loadError" class="ui-card px-6 py-16 text-center">
+      <section v-else-if="loadError" key="error" class="ui-card px-6 py-16 text-center">
         <div class="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-[var(--color-error)]/10">
           <UIcon name="lucide:wifi-off" class="h-8 w-8 text-[var(--color-error)]" aria-hidden="true" />
         </div>
@@ -55,7 +56,7 @@
       </section>
 
       <!-- ④ 骨架屏：按新布局（左清单 + 右明细卡）占位，避免首屏跳动 -->
-      <section v-else-if="!ready || (loading && !items.length)" aria-busy="true" :aria-label="t('common.loading')">
+      <section v-else-if="cartPending && !items.length" key="skeleton" aria-busy="true" :aria-label="t('common.loading')">
         <div class="lg:grid lg:grid-cols-3 lg:items-start lg:gap-6">
           <div class="ui-card overflow-hidden lg:col-span-2">
             <div class="hidden border-b border-[var(--color-line-soft)] px-4 py-3 lg:block">
@@ -86,7 +87,7 @@
       </section>
 
       <!-- ⑤ 空购物车 -->
-      <section v-else-if="!items.length" class="ui-card px-6 py-20 text-center">
+      <section v-else-if="!items.length" key="empty" class="ui-card px-6 py-20 text-center">
         <div class="relative mx-auto h-20 w-20">
           <div class="absolute inset-0 animate-pulse rounded-full bg-[var(--color-accent)]/15 blur-2xl"></div>
           <div class="relative flex h-20 w-20 items-center justify-center rounded-full bg-[var(--color-brand-50)]">
@@ -102,7 +103,7 @@
       </section>
 
       <!-- ⑥ 购物车内容 -->
-      <template v-else>
+      <div v-else key="content">
         <!--
           凑单进度卡：**只有后端真的返回了进行中的满减规则才渲染**。
           促销接口当前固定返回 []（Java 接口尚未提供），所以默认整块不出现——这是预期行为。
@@ -188,8 +189,13 @@
                 </span>
               </div>
 
-              <!-- 可结算商品行 -->
-              <ul v-if="validItems.length" class="divide-y divide-[var(--color-line-soft)]">
+              <!-- 可结算商品行（TransitionGroup：删除/批量删除时行有退场动画） -->
+              <TransitionGroup
+                v-if="validItems.length"
+                name="list"
+                tag="ul"
+                class="relative divide-y divide-[var(--color-line-soft)]"
+              >
                 <CartLineItem
                   v-for="item in validItems"
                   :key="item.id"
@@ -201,7 +207,7 @@
                   @update-quantity="handleQuantity"
                   @fix-quantity="handleQuantity"
                 />
-              </ul>
+              </TransitionGroup>
               <!-- 全部失效时不留一张空表：给一行如实的说明 -->
               <p v-else class="px-4 py-10 text-center text-[13px] text-[var(--color-muted)]">
                 {{ t('cart.groupValid') }} · 0
@@ -267,10 +273,12 @@
                 </button>
               </div>
 
-              <ul
+              <TransitionGroup
                 v-show="invalidOpen"
                 id="cart-invalid-panel"
-                class="divide-y divide-[var(--color-line-soft)] border-t border-[var(--color-line-soft)]"
+                name="list"
+                tag="ul"
+                class="relative divide-y divide-[var(--color-line-soft)] border-t border-[var(--color-line-soft)]"
               >
                 <CartLineItem
                   v-for="item in invalidItems"
@@ -283,7 +291,7 @@
                   @update-quantity="handleQuantity"
                   @fix-quantity="handleQuantity"
                 />
-              </ul>
+              </TransitionGroup>
             </section>
           </div>
 
@@ -293,24 +301,19 @@
               :selected-quantity="selectedQuantity"
               :goods-amount="selectedAmount"
               :payable="payable"
-              :coupon-amount="couponDiscount"
               :shipping-free="allSelectedFreeShipping"
-              :saved-amount="savedAmount"
             />
 
             <!--
-              去结算（本次新增）。
+              去结算（桌面端）。
 
               只把「已勾选且可结算」的条目交给结算页：传的是 购物车明细ID + 商品 + 规格 + 数量，
               **不传任何金额** —— 结算页会调 /api/order/preview，由服务端重新算钱。
-
-              为什么按钮加在页面里而不是改 CartSummaryCard：本次约束是"只新增组件、不改已有组件"，
-              因此 CartSummaryCard 内部那个 disabled 的去结算按钮保持原样（它的文案已过时，
-              需要在后续放开组件改动时一并删除）。
+              移动端另有一条常驻底栏（本文件底部，lg:hidden）。
             -->
             <button
               type="button"
-              class="mt-4 flex h-12 w-full items-center justify-center gap-2 rounded-full bg-[var(--color-brand-500)] text-[15px] font-bold text-white transition-colors duration-200 hover:bg-[var(--color-brand-600)] disabled:cursor-not-allowed disabled:bg-[var(--color-ink)]/20 motion-reduce:transition-none"
+              class="mt-4 hidden h-12 w-full items-center justify-center gap-2 rounded-full bg-[var(--color-brand-500)] text-[15px] font-bold text-white transition-colors duration-200 hover:bg-[var(--color-brand-600)] disabled:cursor-not-allowed disabled:bg-[var(--color-ink)]/20 motion-reduce:transition-none lg:flex"
               :disabled="mutating || !selectedItems.length"
               @click="goCheckout"
             >
@@ -344,7 +347,36 @@
             </li>
           </ul>
         </section>
-      </template>
+
+        <!--
+          移动端常驻结算条：桌面端用右栏 sticky 明细卡，移动端不必滚到页尾才能结算。
+          fixed 元素不占文档流，页面容器已留 pb-32 防止遮住最后一块内容；
+          padding-bottom 里叠加 env(safe-area-inset-bottom) 处理 iPhone Home 指示条
+          （注意：不要在注释里写完整的 Tailwind 任意值类名，Tailwind 会扫描源码文本
+           把注释里的候选类也生成 CSS，非法 calc 会让 postcss 报 lexical error）。
+        -->
+        <div
+          class="fixed inset-x-0 bottom-0 z-40 border-t border-[var(--color-line-soft)] bg-white/95 px-3 pb-[calc(env(safe-area-inset-bottom)+0.5rem)] pt-2.5 shadow-[0_-4px_16px_rgba(0,0,0,0.06)] backdrop-blur lg:hidden"
+        >
+          <div class="flex items-center gap-3">
+            <div class="min-w-0 flex-1">
+              <p class="text-[11px] leading-none text-[var(--color-muted)]">{{ t('shop.cartPayable') }}</p>
+              <p class="price mt-1 text-[22px] leading-none">{{ formatCompact(payable) }}</p>
+            </div>
+            <button
+              type="button"
+              class="flex h-12 min-w-[132px] items-center justify-center gap-2 rounded-full bg-[var(--color-brand-500)] px-6 text-[15px] font-bold text-white transition-colors disabled:cursor-not-allowed disabled:bg-[var(--color-ink)]/20"
+              :disabled="mutating || !selectedItems.length"
+              @click="goCheckout"
+            >
+              <UIcon name="lucide:credit-card" class="h-4 w-4" aria-hidden="true" />
+              {{ t('cart.checkout') }}
+              <span v-if="selectedQuantity" class="tabular">({{ selectedQuantity }})</span>
+            </button>
+          </div>
+        </div>
+      </div>
+      </Transition>
     </div>
 
     <!-- 二次确认：删除选中 / 清理失效 / 清空购物车都是破坏性操作 -->
@@ -373,8 +405,6 @@
         </div>
       </template>
     </UModal>
-
-    <SiteFooter />
   </div>
 </template>
 <script setup lang="ts">
@@ -382,6 +412,7 @@
 definePageMeta({ middleware: 'auth' })
 
 import { useCartPage } from '~~/composables/useCartPage'
+import { useStorePrice } from '~~/composables/useProducts'
 
 /**
  * 购物车（渲染层）。
@@ -389,12 +420,13 @@ import { useCartPage } from '~~/composables/useCartPage'
  * 展示：四种状态（未登录 / 加载失败 / 加载中 / 空车）+ 凑单提示 + 正常条目 + 失效商品 + 猜你喜欢 + 确认弹层。
  * 数据、金额派生与全部操作都在 composables/useCartPage.ts。
  *
- * 本文件只保留模板直接依赖的 i18n 文案（t），以及必须在本组件注册的生命周期（onMounted 拉购物车）。
+ * 本文件只保留模板直接依赖的 i18n 文案（t）与页面级装配：
+ * 购物车取数走 setup 内的 useLazyAsyncData（SSR 直出、客户端导航不阻塞），
+ * 数据/金额派生与全部操作都在 composables/useCartPage.ts。
  */
 const { t } = useI18n()
 
 const {
-  ready,
   loadError,
   pendingIds,
   invalidOpen,
@@ -406,9 +438,7 @@ const {
   bundleText,
   selectedItems,
   allSelectedFreeShipping,
-  couponDiscount,
   payable,
-  savedAmount,
   likeProducts,
   confirmCopy,
   askConfirm,
@@ -417,9 +447,9 @@ const {
   handleQuantity,
   goCheckout,
   reload,
+  loadLikes,
   items,
   summary,
-  loading,
   mutating,
   unauthorized,
   validItems,
@@ -432,16 +462,39 @@ const {
   isSelected,
   toggleSelect,
   toggleSelectAll,
-  fetchCart,
-  updateQuantity,
-  removeItem,
-  batchRemove,
-  clearCart,
-  clearInvalid,
-} = await useCartPage()
+} = useCartPage()
 
-/** SSR 首屏不拉购物车（相对路径 $fetch 不带 httpOnly cookie，必然 401）——挂载后再拉 */
-onMounted(reload)
+/**
+ * 购物车 SSR 直出：loader 在 setup 期就执行（不再 onMounted 才拉），
+ * 配合 useCart 内部的 useRequestFetch，SSR 请求同样带 httpOnly cookie，
+ * 首屏 HTML 里就是真实购物车。
+ *
+ * 返回一个可序列化的小对象：SSR 判定的"失败/未登录"必须随 payload 回到客户端，
+ * 否则水合首帧会与服务端 HTML 分支不一致（服务端渲染错误卡、客户端渲染空车）。
+ */
+const { data: cartBoot, pending: cartPending } = useLazyAsyncData('cart-page', async () => {
+  await reload()
+  return {
+    failed: !!loadError.value,
+    unauthorized: unauthorized.value,
+  }
+}, { lazy: true })
+
+// 水合首帧回填：payload 里的结论直接落到本地状态，保证首帧与服务端渲染一致
+if (cartBoot.value) {
+  if (cartBoot.value.unauthorized) unauthorized.value = true
+  if (cartBoot.value.failed && !loadError.value) loadError.value = t('cart.loadErrorDesc')
+}
+
+/**
+ * 猜你喜欢单独一个懒请求：它以前是 useCartPage 里的顶层 await，
+ * 会阻塞整页导航去等页面最底部的一块推荐位。现在客户端补拉即可（不进 SSR 关键路径）。
+ * loadLikes 返回数组（truthy），符合 useAsyncData 的 handler 约定。
+ */
+useLazyAsyncData('cart-likes', () => loadLikes(), { lazy: true, server: false })
+
+/** 移动端底栏的应付金额格式化（与明细卡同一套口径） */
+const { formatCompact } = useStorePrice()
 
 useSeoMeta({
   title: () => t('cart.title'),

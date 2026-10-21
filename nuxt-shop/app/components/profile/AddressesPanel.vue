@@ -14,37 +14,39 @@
       </button>
     </div>
 
-    <!-- 加载失败 -->
-    <div v-if="error" class="mt-4 flex items-start gap-2 rounded-[var(--radius-card-sm)] bg-[var(--color-error-50)] px-4 py-3 text-[13px] font-medium text-[var(--color-error-600)]">
-      <UIcon name="lucide:circle-alert" class="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
-      <span class="min-w-0 flex-1">
-        {{ t('address.loadError') }}：{{ error }}
-        <button
-          type="button"
-          class="ml-2 cursor-pointer font-bold underline underline-offset-2 disabled:opacity-45"
-          :disabled="loading"
-          @click="load()"
+    <!-- 加载失败 / 加载中 / 有地址 / 空态：四态用 fade 过渡，骨架↔内容不再硬切 -->
+    <Transition name="fade" mode="out-in">
+      <!-- 加载失败 -->
+      <div v-if="error" key="error" class="mt-4 flex items-start gap-2 rounded-[var(--radius-card-sm)] bg-[var(--color-error-50)] px-4 py-3 text-[13px] font-medium text-[var(--color-error-600)]">
+        <UIcon name="lucide:circle-alert" class="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
+        <span class="min-w-0 flex-1">
+          {{ t('address.loadError') }}：{{ error }}
+          <button
+            type="button"
+            class="ml-2 cursor-pointer font-bold underline underline-offset-2 disabled:opacity-45"
+            :disabled="loading"
+            @click="load()"
+          >
+            {{ t('common.retry') }}
+          </button>
+        </span>
+      </div>
+
+      <!-- 加载中：骨架屏 -->
+      <ul v-else-if="loading && !addresses.length" key="loading" class="mt-4 space-y-3" aria-busy="true" :aria-label="t('common.loading')">
+        <li v-for="index in 3" :key="`addr-skeleton-${index}`" class="space-y-2.5 rounded-[var(--radius-card-sm)] bg-[var(--color-line-soft)]/50 p-4">
+          <span class="block h-4 w-1/4 animate-pulse rounded bg-[var(--color-line-soft)]"></span>
+          <span class="block h-3 w-2/3 animate-pulse rounded bg-[var(--color-line-soft)]"></span>
+        </li>
+      </ul>
+
+      <!-- 有地址：TransitionGroup 让"删除/新增"有进出场动画，而不是整块跳一下 -->
+      <TransitionGroup v-else-if="addresses.length" key="list" name="list" tag="ul" class="relative mt-4 space-y-3">
+        <li
+          v-for="address in addresses"
+          :key="address.id"
+          class="rounded-[var(--radius-card-sm)] border border-[var(--color-line-soft)] p-4"
         >
-          {{ t('common.retry') }}
-        </button>
-      </span>
-    </div>
-
-    <!-- 加载中：骨架屏 -->
-    <ul v-else-if="loading && !addresses.length" class="mt-4 space-y-3" aria-busy="true" :aria-label="t('common.loading')">
-      <li v-for="index in 3" :key="`addr-skeleton-${index}`" class="space-y-2.5 rounded-[var(--radius-card-sm)] bg-[var(--color-line-soft)]/50 p-4">
-        <span class="block h-4 w-1/4 animate-pulse rounded bg-[var(--color-line-soft)]"></span>
-        <span class="block h-3 w-2/3 animate-pulse rounded bg-[var(--color-line-soft)]"></span>
-      </li>
-    </ul>
-
-    <!-- 有地址 -->
-    <ul v-else-if="addresses.length" class="mt-4 space-y-3">
-      <li
-        v-for="address in addresses"
-        :key="address.id"
-        class="rounded-[var(--radius-card-sm)] border border-[var(--color-line-soft)] p-4"
-      >
         <div class="flex flex-wrap items-start justify-between gap-x-4 gap-y-2">
           <div class="min-w-0 flex-1">
             <p class="flex flex-wrap items-center gap-x-2 gap-y-1">
@@ -74,15 +76,17 @@
           </div>
 
           <div class="flex shrink-0 flex-wrap items-center gap-2">
-            <button
+            <AsyncButton
               v-if="!address.isDefault"
               type="button"
               class="inline-flex h-9 cursor-pointer items-center rounded-full border border-[var(--color-line)] px-4 text-[12px] font-medium text-[var(--color-ink-soft)] transition-colors duration-200 hover:border-[var(--color-brand-500)] hover:text-[var(--color-brand-600)] disabled:opacity-40 motion-reduce:transition-none"
+              :pending="pendingDefaultId === address.id"
+              :pending-label="t('common.loading')"
               :disabled="mutating"
-              @click="setDefault(address.id)"
+              @click="handleSetDefault(address.id)"
             >
               {{ t('address.setDefault') }}
-            </button>
+            </AsyncButton>
             <button
               type="button"
               class="inline-flex h-9 cursor-pointer items-center rounded-full border border-[var(--color-line)] px-4 text-[12px] font-medium text-[var(--color-ink-soft)] transition-colors duration-200 hover:border-[var(--color-brand-500)] hover:text-[var(--color-brand-600)] disabled:opacity-40 motion-reduce:transition-none"
@@ -101,11 +105,11 @@
             </button>
           </div>
         </div>
-      </li>
-    </ul>
+        </li>
+      </TransitionGroup>
 
-    <!-- 真的没有地址 -->
-    <div v-else class="flex flex-col items-center justify-center py-14 text-center">
+      <!-- 真的没有地址 -->
+      <div v-else key="empty" class="flex flex-col items-center justify-center py-14 text-center">
       <span class="flex h-20 w-20 items-center justify-center rounded-full bg-[var(--color-brand-50)] text-[var(--color-brand-400)]">
         <UIcon name="lucide:map-pin-off" class="h-9 w-9" aria-hidden="true" />
       </span>
@@ -119,7 +123,8 @@
         <UIcon name="lucide:plus" class="h-4 w-4" aria-hidden="true" />
         {{ t('address.add') }}
       </button>
-    </div>
+      </div>
+    </Transition>
 
     <!-- 地址新增 / 编辑弹层（字段口径与 /address 页一致） -->
     <UModal
@@ -240,14 +245,15 @@
           >
             {{ t('common.cancel') }}
           </button>
-          <button
+          <AsyncButton
             type="button"
             class="cursor-pointer rounded-full bg-[var(--color-brand-500)] px-5 py-2.5 text-sm font-semibold text-white transition-colors duration-200 hover:bg-[var(--color-brand-600)] disabled:cursor-not-allowed disabled:opacity-50 motion-reduce:transition-none"
-            :disabled="formState.pending"
+            :pending="formState.pending"
+            :pending-label="t('address.saving')"
             @click="submitForm"
           >
-            {{ formState.pending ? t('address.saving') : t('common.save') }}
-          </button>
+            {{ t('common.save') }}
+          </AsyncButton>
         </div>
       </template>
     </UModal>
@@ -268,14 +274,15 @@
           >
             {{ t('common.cancel') }}
           </button>
-          <button
+          <AsyncButton
             type="button"
             class="cursor-pointer rounded-full bg-[var(--color-error)] px-5 py-2.5 text-sm font-semibold text-white transition-colors duration-200 hover:bg-[var(--color-error-600)] disabled:cursor-not-allowed disabled:opacity-50 motion-reduce:transition-none"
-            :disabled="deleteState.pending"
+            :pending="deleteState.pending"
+            :pending-label="t('common.loading')"
             @click="confirmDelete"
           >
             {{ t('address.deleteConfirm') }}
-          </button>
+          </AsyncButton>
         </div>
       </template>
     </UModal>
@@ -294,6 +301,24 @@ const { addresses, loading, error, mutating, load, fetchOne, save, setDefault, r
 
 const formState = reactive({ open: false, id: '', pending: false })
 const deleteState = reactive({ open: false, pending: false, id: '' })
+
+/**
+ * 「设为默认」正在处理的那一行 id。
+ *
+ * composable 里只有全局 mutating（一次写操作），不能拿它当每行按钮的 pending ——
+ * 那会让所有行的「设为默认」同时转圈。这里按行记录，只让被点的那一行有进度反馈。
+ */
+const pendingDefaultId = ref('')
+
+async function handleSetDefault(id: string) {
+  if (pendingDefaultId.value) return
+  pendingDefaultId.value = id
+  try {
+    await setDefault(id)
+  } finally {
+    pendingDefaultId.value = ''
+  }
+}
 
 const form = reactive({
   receiverName: '',

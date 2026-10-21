@@ -58,4 +58,13 @@ public class ProductDetailVO extends ShopProduct {
      * SKU 组合（按 combinationKey 升序）
      */
     private List<ProductSkuVO> skus;
+    /**
+     * 商品详情模块（**全部语言**，按 languageCode、sortOrder 升序；含 id 与 languageCode，
+     * 供管理端编辑页按语言回填）
+     */
+    private List<DetailBlockVO> detailBlocks;
+    /**
+     * 规格参数（**全部语言**，按 languageCode、sortOrder 升序；含 id 与 languageCode）
+     */
+    private List<ParamVO> params;
 }

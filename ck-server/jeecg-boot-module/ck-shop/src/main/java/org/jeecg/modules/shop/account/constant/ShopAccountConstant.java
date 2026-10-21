@@ -57,6 +57,58 @@ public final class ShopAccountConstant {
     /** 同一 IP 每日上限 */
     public static final long EMAIL_DAILY_LIMIT_PER_IP = 30L;
 
+    /** 邮箱验证码校验失败计数 key：shop:email:code:fail:{scene}:{email} */
+    public static final String EMAIL_CODE_FAIL_PREFIX = "shop:email:code:fail:";
+
+    /** 同一邮箱验证码最多允许输错次数，超过后该验证码作废并临时锁定该场景 */
+    public static final int EMAIL_CODE_MAX_ATTEMPTS = 5;
+
+    /** 邮箱验证码输错锁定时长（秒）：15 分钟 */
+    public static final long EMAIL_CODE_ATTEMPT_LOCK_SECONDS = 15 * 60L;
+
+    // ==================================================================
+    // 限流 / 图形验证码防爆破（Redis 固定窗口）
+    // ==================================================================
+
+    /** 店铺端限流 key 前缀：shop:rl:{scope} */
+    public static final String RATE_LIMIT_PREFIX = "shop:rl:";
+
+    /** 发邮箱验证码：同一 IP 每分钟上限 */
+    public static final int RL_SEND_CODE_PER_MINUTE = 5;
+
+    /** 发邮箱验证码：同一 IP 每小时上限 */
+    public static final int RL_SEND_CODE_PER_HOUR = 20;
+
+    /** 注册：同一 IP 每分钟上限 */
+    public static final int RL_REGISTER_PER_MINUTE = 3;
+
+    /** 注册：同一 IP 每小时上限 */
+    public static final int RL_REGISTER_PER_HOUR = 10;
+
+    /** 邮箱验证码登录：同一 IP 每分钟上限 */
+    public static final int RL_LOGIN_CODE_PER_MINUTE = 10;
+
+    /** 重置密码：同一 IP 每分钟上限 */
+    public static final int RL_RESET_PER_MINUTE = 5;
+
+    /** 密码登录：同一 IP 每分钟上限 */
+    public static final int RL_PASSWORD_LOGIN_PER_MINUTE = 10;
+
+    /** 密码登录：同一 IP 每小时上限 */
+    public static final int RL_PASSWORD_LOGIN_PER_HOUR = 60;
+
+    /** 图形验证码：同一张（checkKey 前缀）最多允许输错次数 */
+    public static final int CAPTCHA_MAX_FAIL_PER_KEY = 5;
+
+    /** 图形验证码：失败计数保留时长（秒） */
+    public static final long CAPTCHA_FAIL_TTL_SECONDS = 300L;
+
+    /** 图形验证码：同一 IP 在窗口内最多允许输错次数 */
+    public static final int CAPTCHA_MAX_FAIL_PER_IP = 20;
+
+    /** 图形验证码：IP 失败计数窗口（秒） */
+    public static final long CAPTCHA_FAIL_IP_TTL_SECONDS = 600L;
+
     /** 场景：注册 */
     public static final String SCENE_REGISTER = "register";
 

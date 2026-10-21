@@ -25,9 +25,11 @@
         </p>
       </header>
 
+      <Transition name="fade" mode="out-in">
       <!-- 加载骨架：分类是整页主内容，用骨架代替一行"加载中"更稳 -->
       <div
         v-if="pending"
+        key="skeleton"
         class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3"
         aria-busy="true"
       >
@@ -37,12 +39,14 @@
           <div class="space-y-2 p-4">
             <div class="h-4 w-1/2 rounded bg-[var(--color-line-soft)]"></div>
             <div class="h-3 w-1/3 rounded bg-[var(--color-line-soft)]"></div>
+            <!-- 二级分类药丸占位：真实卡片带子分类，骨架不能只有两行（否则切换时 CLS 明显） -->
+            <div class="h-6 w-2/3 rounded-full bg-[var(--color-line-soft)]"></div>
           </div>
         </div>
       </div>
 
       <!-- 错误态：/api/categories 失败时给出可重试的真实出口 -->
-      <div v-else-if="error" class="ui-card flex flex-col items-center px-6 py-16 text-center">
+      <div v-else-if="error" key="error" class="ui-card flex flex-col items-center px-6 py-16 text-center">
         <span class="flex h-16 w-16 items-center justify-center rounded-full bg-[var(--color-error-50)] text-[var(--color-error-600)]">
           <UIcon name="lucide:wifi-off" class="h-7 w-7" aria-hidden="true" />
         </span>
@@ -59,7 +63,7 @@
       </div>
 
       <!-- 空态 -->
-      <div v-else-if="!categories.length" class="ui-card flex flex-col items-center px-6 py-16 text-center">
+      <div v-else-if="!categories.length" key="empty" class="ui-card flex flex-col items-center px-6 py-16 text-center">
         <span class="flex h-16 w-16 items-center justify-center rounded-full bg-[var(--color-brand-50)] text-[var(--color-brand-500)]">
           <UIcon name="lucide:folder-open" class="h-7 w-7" aria-hidden="true" />
         </span>
@@ -67,22 +71,20 @@
       </div>
 
       <!-- 分类树：一级分类卡片，卡片内的药丸是它的二级分类（各自可点进商品列表） -->
-      <div v-else class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+      <div v-else key="content" class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         <article v-for="top in categories" :key="top.id" class="ui-card ui-card-hover overflow-hidden">
           <NuxtLinkLocale :to="`/categories/${top.id}`" class="group block">
             <div class="relative aspect-[16/9] overflow-hidden bg-[var(--color-surface-secondary)]">
-              <img
-                v-if="categoryCover(top)"
+              <ShopImage
                 :src="categoryCover(top)"
                 :alt="top.name"
-                width="1600"
-                height="900"
-                class="h-full w-full object-cover transition-transform duration-500 ease-out group-hover:scale-105 motion-reduce:transition-none motion-reduce:group-hover:scale-100"
+                :width="1600"
+                :height="900"
                 loading="lazy"
-              >
-              <span v-else class="brand-gradient-soft flex h-full w-full items-center justify-center text-[var(--color-brand-400)]">
-                <UIcon name="lucide:folder-open" class="h-10 w-10" aria-hidden="true" />
-              </span>
+                class="h-full w-full object-cover transition-transform duration-500 ease-out group-hover:scale-105 motion-reduce:transition-none motion-reduce:group-hover:scale-100"
+                icon="lucide:folder-open"
+                icon-class="h-10 w-10 text-[var(--color-brand-400)]"
+              />
               <!-- 商品数来自后端 productCount（含子分类）；后端没给就不渲染，不拿 0 冒充 -->
               <span v-if="top.productCount != null" class="badge badge-soft absolute left-3 top-3">
                 {{ t('shop.categoryItems', { count: top.productCount }) }}
@@ -126,10 +128,8 @@
           </div>
         </article>
       </div>
+      </Transition>
     </div>
-
-    <!-- Footer：与首页 / 商品列表 / 个人中心保持一致（登录页是唯一不加页脚的页面） -->
-    <SiteFooter />
   </div>
 </template>
 
@@ -147,7 +147,7 @@ import type { StoreCategoryNode } from '~~/types/store-category'
 
 const { t, locale } = useI18n()
 
-const { data: categories, pending, error, refresh } = await useFetch<StoreCategoryNode[]>('/api/categories', {
+const { data: categories, pending, error, refresh } = useFetch<StoreCategoryNode[]>('/api/categories', {
   query: computed(() => ({ lang: locale.value })),
   key: computed(() => `store-categories-${locale.value}`),
   default: () => [],

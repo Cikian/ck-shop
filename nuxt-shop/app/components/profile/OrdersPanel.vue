@@ -10,37 +10,39 @@
 -->
 <template>
   <div>
-    <!-- 加载失败：把后端/网络的原话展示出来，用户才知道该重试还是先别管 -->
-    <div v-if="ordersError" class="mt-5 flex items-start gap-2 rounded-[var(--radius-card-sm)] bg-[var(--color-error-50)] px-4 py-3 text-[13px] font-medium text-[var(--color-error-600)]">
-      <UIcon name="lucide:circle-alert" class="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
-      <span class="min-w-0 flex-1">
-        {{ t('order.loadError') }}：{{ ordersError }}
-        <button
-          type="button"
-          class="ml-2 cursor-pointer font-bold underline underline-offset-2 disabled:opacity-45"
-          :disabled="ordersLoading"
-          @click="loadOrders()"
-        >
-          {{ t('common.retry') }}
-        </button>
-      </span>
-    </div>
+    <!-- 错误 / 骨架 / 列表 / 空态：四态 fade 切换，骨架↔内容不再硬切 -->
+    <Transition name="fade" mode="out-in">
+      <!-- 加载失败：把后端/网络的原话展示出来，用户才知道该重试还是先别管 -->
+      <div v-if="ordersError" key="error" class="mt-5 flex items-start gap-2 rounded-[var(--radius-card-sm)] bg-[var(--color-error-50)] px-4 py-3 text-[13px] font-medium text-[var(--color-error-600)]">
+        <UIcon name="lucide:circle-alert" class="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
+        <span class="min-w-0 flex-1">
+          {{ t('order.loadError') }}：{{ ordersError }}
+          <button
+            type="button"
+            class="ml-2 cursor-pointer font-bold underline underline-offset-2 disabled:opacity-45"
+            :disabled="ordersLoading"
+            @click="loadOrders()"
+          >
+            {{ t('common.retry') }}
+          </button>
+        </span>
+      </div>
 
-    <!-- 加载中：骨架屏，固定 3 行（不猜每页条数） -->
-    <ul v-else-if="ordersLoading && !orders.length" class="mt-4 space-y-3" aria-busy="true" :aria-label="t('common.loading')">
-      <li v-for="index in 3" :key="`order-skeleton-${index}`" class="space-y-2.5 rounded-[var(--radius-card-sm)] bg-[var(--color-line-soft)]/50 p-4">
-        <span class="block h-4 w-1/3 animate-pulse rounded bg-[var(--color-line-soft)]"></span>
-        <span class="block h-3 w-2/3 animate-pulse rounded bg-[var(--color-line-soft)]"></span>
-      </li>
-    </ul>
+      <!-- 加载中：骨架屏，固定 3 行（不猜每页条数） -->
+      <ul v-else-if="ordersLoading && !orders.length" key="loading" class="mt-4 space-y-3" aria-busy="true" :aria-label="t('common.loading')">
+        <li v-for="index in 3" :key="`order-skeleton-${index}`" class="space-y-2.5 rounded-[var(--radius-card-sm)] bg-[var(--color-line-soft)]/50 p-4">
+          <span class="block h-4 w-1/3 animate-pulse rounded bg-[var(--color-line-soft)]"></span>
+          <span class="block h-3 w-2/3 animate-pulse rounded bg-[var(--color-line-soft)]"></span>
+        </li>
+      </ul>
 
-    <!-- 有订单 -->
-    <template v-else-if="orders.length">
-      <p class="mt-1.5 text-[13px] text-[var(--color-muted)]">
-        {{ t('order.pagination') }} · {{ t('order.pageInfo', { current: currentOrderPage, total: orderTotalPages }) }}
-      </p>
+      <!-- 有订单 -->
+      <div v-else-if="orders.length" key="list">
+        <p class="mt-1.5 text-[13px] text-[var(--color-muted)]">
+          {{ t('order.pagination') }} · {{ t('order.pageInfo', { current: currentOrderPage, total: orderTotalPages }) }}
+        </p>
 
-      <ul class="mt-4 space-y-3">
+        <TransitionGroup name="list" tag="ul" class="relative mt-4 space-y-3">
         <li
           v-for="order in orders"
           :key="order.orderNo"
@@ -62,18 +64,14 @@
               :key="`${order.orderNo}-thumb-${item.id || index}`"
               class="h-12 w-12 shrink-0 overflow-hidden rounded-[var(--radius-tile)] bg-[var(--color-line-soft)]"
             >
-              <img
-                v-if="item.productImage"
+              <ShopImage
                 :src="item.productImage"
                 :alt="item.productName || ''"
                 width="48"
                 height="48"
                 class="h-full w-full object-cover"
-                loading="lazy"
-              >
-              <span v-else class="flex h-full w-full items-center justify-center">
-                <UIcon name="lucide:image" class="h-5 w-5 text-[var(--color-muted)]" aria-hidden="true" />
-              </span>
+                icon-class="h-5 w-5"
+              />
             </span>
             <!--
               这里只显示第一个商品的名称。**刻意不在这里再写一个数量/单位**：
@@ -140,53 +138,54 @@
             </div>
           </div>
         </li>
-      </ul>
+        </TransitionGroup>
 
-      <!-- 分页：只有一页时不渲染，避免噪音 -->
-      <PaginationBar
-        :current="currentOrderPage"
-        :total="orderTotalPages"
-        :disabled="ordersLoading"
-        size="sm"
-        margin="mt-6"
-        :label="t('order.pagination')"
-        :prev-label="t('order.prev')"
-        :next-label="t('order.next')"
-        :info-label="t('order.pageInfo', { current: currentOrderPage, total: orderTotalPages })"
-        @change="goToOrderPage"
-      />
+        <!-- 分页：只有一页时不渲染，避免噪音 -->
+        <PaginationBar
+          :current="currentOrderPage"
+          :total="orderTotalPages"
+          :disabled="ordersLoading"
+          size="sm"
+          margin="mt-6"
+          :label="t('order.pagination')"
+          :prev-label="t('order.prev')"
+          :next-label="t('order.next')"
+          :info-label="t('order.pageInfo', { current: currentOrderPage, total: orderTotalPages })"
+          @change="goToOrderPage"
+        />
 
-      <div class="mt-5 flex justify-center">
-        <!-- NuxtLinkLocale 自己会补 locale 前缀，这里不能再套 localePath（否则会变成 /zh/zh/orders） -->
-        <NuxtLinkLocale to="/orders" class="ui-pill ui-pill-ghost h-10 px-6 text-[13px]">
+        <div class="mt-5 flex justify-center">
+          <!-- NuxtLinkLocale 自己会补 locale 前缀，这里不能再套 localePath（否则会变成 /zh/zh/orders） -->
+          <NuxtLinkLocale to="/orders" class="ui-pill ui-pill-ghost h-10 px-6 text-[13px]">
+            <UIcon name="lucide:arrow-right" class="h-4 w-4" aria-hidden="true" />
+            <!--
+              这里**不能用** shop.profileOrders：它的中文值是「订单数」，那是统计卡的**名词**口径，
+              当成"跳转全部订单"的链接文案会读成一句没头没尾的统计项。
+              用 shop.profileMyOrders（我的订单 / My orders / Mes commandes）——与目标页标题同义，
+              用户一眼能看懂点了会去哪；且不新增 i18n key。
+            -->
+            {{ t('shop.profileMyOrders') }}
+          </NuxtLinkLocale>
+        </div>
+      </div>
+
+      <!-- 真的没有订单 -->
+      <div v-else key="empty" class="flex flex-col items-center justify-center py-14 text-center">
+        <span class="flex h-20 w-20 items-center justify-center rounded-full bg-[var(--color-brand-50)] text-[var(--color-brand-400)]">
+          <UIcon name="lucide:package-open" class="h-9 w-9" aria-hidden="true" />
+        </span>
+        <p class="mt-5 text-sm font-bold text-[var(--color-ink)]">
+          {{ t('order.empty') }}
+        </p>
+        <p class="mt-2 max-w-md text-[13px] text-[var(--color-muted)]">
+          {{ t('order.emptyDesc') }}
+        </p>
+        <NuxtLinkLocale to="/products" class="ui-pill ui-pill-brand mt-5 h-10 px-6 text-[13px]">
           <UIcon name="lucide:arrow-right" class="h-4 w-4" aria-hidden="true" />
-          <!--
-            这里**不能用** shop.profileOrders：它的中文值是「订单数」，那是统计卡的**名词**口径，
-            当成"跳转全部订单"的链接文案会读成一句没头没尾的统计项。
-            用 shop.profileMyOrders（我的订单 / My orders / Mes commandes）——与目标页标题同义，
-            用户一眼能看懂点了会去哪；且不新增 i18n key。
-          -->
-          {{ t('shop.profileMyOrders') }}
+          {{ t('order.emptyAction') }}
         </NuxtLinkLocale>
       </div>
-    </template>
-
-    <!-- 真的没有订单 -->
-    <div v-else class="flex flex-col items-center justify-center py-14 text-center">
-      <span class="flex h-20 w-20 items-center justify-center rounded-full bg-[var(--color-brand-50)] text-[var(--color-brand-400)]">
-        <UIcon name="lucide:package-open" class="h-9 w-9" aria-hidden="true" />
-      </span>
-      <p class="mt-5 text-sm font-bold text-[var(--color-ink)]">
-        {{ t('order.empty') }}
-      </p>
-      <p class="mt-2 max-w-md text-[13px] text-[var(--color-muted)]">
-        {{ t('order.emptyDesc') }}
-      </p>
-      <NuxtLinkLocale to="/products" class="ui-pill ui-pill-brand mt-5 h-10 px-6 text-[13px]">
-        <UIcon name="lucide:arrow-right" class="h-4 w-4" aria-hidden="true" />
-        {{ t('order.emptyAction') }}
-      </NuxtLinkLocale>
-    </div>
+    </Transition>
 
     <!-- 订单操作：确认收货 / 取消订单 / 申请退款。全部复用 /orders 页同一批组件与接口，不再实现一遍 -->
     <UModal
@@ -204,14 +203,15 @@
           >
             {{ t('common.cancel') }}
           </button>
-          <button
+          <AsyncButton
             type="button"
             class="cursor-pointer rounded-full bg-[var(--color-brand-500)] px-5 py-2.5 text-sm font-semibold text-white transition-colors duration-200 hover:bg-[var(--color-brand-600)] disabled:cursor-not-allowed disabled:opacity-50 motion-reduce:transition-none"
-            :disabled="receiveState.pending"
+            :pending="receiveState.pending"
+            :pending-label="t('common.loading')"
             @click="confirmReceive"
           >
             {{ t('order.receiveConfirm') }}
-          </button>
+          </AsyncButton>
         </div>
       </template>
     </UModal>

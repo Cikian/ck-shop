@@ -6,7 +6,7 @@
       Row 2  全部分类 + 一级分类横向导航（桌面端，移动端隐藏）
     移动端收敛为：Logo | 购物车 | 汉堡，搜索框单独一行。
   -->
-  <header class="fixed inset-x-0 top-0 z-50 bg-white shadow-[0_1px_0_rgba(31,26,28,0.06)]">
+  <header ref="headerRef" class="fixed inset-x-0 top-0 z-50 bg-white shadow-[0_1px_0_rgba(31,26,28,0.06)]">
     <!-- Row 1 -->
     <div class="mx-auto flex h-16 max-w-7xl items-center gap-3 px-2 sm:px-3 lg:px-4">
       <!-- Logo -->
@@ -104,11 +104,17 @@
             class="hidden h-10 items-center gap-1 rounded-full px-3 text-[13px] font-medium text-[var(--color-ink-soft)] transition-colors hover:bg-[var(--color-brand-50)] hover:text-[var(--color-brand-600)] sm:flex"
             aria-label="Switch language"
           >
-            <UIcon name="lucide:globe" class="h-[18px] w-[18px]" aria-hidden="true" />
+            <!--
+              当前语言用**旗帜**表示，而不是 lucide:globe 通用地球图标：
+              地球图标只能表达「这是语言切换」，看不出现在是哪门语言；旗帜一眼可辨。
+              旗帜仍是内联 SVG（见 LocaleFlag.vue）：Windows 没有国旗字体，
+              用 emoji 国旗会退化成两个方框字母 —— 这正是之前下拉菜单里的问题。
+            -->
+            <LocaleFlag :code="locale" />
             <span class="uppercase">{{ locale }}</span>
           </button>
           <template #item-leading="{ item }">
-            <span class="text-base leading-none">{{ item._flag }}</span>
+            <LocaleFlag :code="item.code" />
           </template>
         </UDropdownMenu>
 
@@ -116,18 +122,15 @@
         <UDropdownMenu v-if="isLoggedIn" :items="userMenuItems" :popper="{ placement: 'bottom-end' }" :modal="false">
           <button type="button" class="hidden h-10 items-center gap-1.5 sm:flex" :aria-label="t('nav.profile')">
             <span class="h-8 w-8 overflow-hidden rounded-full bg-[var(--color-brand-50)]">
-              <img
-                v-if="userInfo?.avatar"
-                :src="userInfo.avatar"
+              <ShopImage
+                :src="userInfo?.avatar"
                 :alt="userInfo?.realname || t('nav.profile')"
                 width="32"
                 height="32"
                 class="h-full w-full object-cover"
-                loading="lazy"
-              >
-              <span v-else class="flex h-full w-full items-center justify-center text-[var(--color-brand-600)]">
-                <UIcon name="lucide:user" class="h-4 w-4" aria-hidden="true" />
-              </span>
+                icon="lucide:user"
+                icon-class="h-4 w-4 text-[var(--color-brand-600)]"
+              />
             </span>
             <UIcon name="lucide:chevron-down" class="h-3.5 w-3.5 text-[var(--color-muted)]" aria-hidden="true" />
           </button>
@@ -135,11 +138,13 @@
 
         <!-- Mobile menu toggle -->
         <button
+          ref="menuButtonRef"
           type="button"
           class="flex h-10 w-10 items-center justify-center rounded-full text-[var(--color-ink)] transition-colors hover:bg-[var(--color-brand-50)] md:hidden"
           :aria-label="t('nav.menu')"
           :aria-expanded="mobileMenuOpen"
-          @click="mobileMenuOpen = !mobileMenuOpen"
+          :aria-controls="mobileDrawerId"
+          @click="toggleMobileMenu"
         >
           <UIcon :name="mobileMenuOpen ? 'lucide:x' : 'lucide:menu'" class="h-5 w-5" aria-hidden="true" />
         </button>
@@ -203,10 +208,25 @@
       </div>
     </form>
 
-    <!-- Mobile drawer -->
+    <!--
+      移动端抽屉。
+
+      ⚠️ 三个约束：
+      1) 高度不能写死：分类 chip + 语言列表 + 登录/注册会超过 512px，
+         以前用 max-h-[32rem] 会把底部的「登录/注册」直接裁掉且无法滚动。
+         现在用"视口剩余高度"作上限，并允许内部滚动；
+      2) 关闭时必须把内容移出 Tab 序：max-h-0 + opacity-0 的 DOM 仍可聚焦，
+         键盘用户会 Tab 进看不见的链接。用 `inert` + `aria-hidden` 解决；
+      3) 关闭方式不能只有"再点一次汉堡"：补 ESC、点击外部、路由变化。
+    -->
     <div
-      class="overflow-hidden border-t border-[var(--color-line-soft)] bg-white transition-[max-height,opacity] duration-300 ease-out md:hidden"
-      :class="mobileMenuOpen ? 'max-h-[32rem] opacity-100' : 'max-h-0 opacity-0'"
+      :id="mobileDrawerId"
+      class="border-t border-[var(--color-line-soft)] bg-white transition-[max-height,opacity] duration-300 ease-out md:hidden"
+      :class="mobileMenuOpen
+        ? 'max-h-[calc(100dvh_-_var(--nav-total-height))] overflow-y-auto overscroll-contain opacity-100'
+        : 'max-h-0 overflow-hidden opacity-0'"
+      :inert="mobileMenuOpen ? undefined : true"
+      :aria-hidden="mobileMenuOpen ? undefined : 'true'"
     >
       <div class="space-y-3 px-4 py-4">
         <div>
@@ -264,7 +284,7 @@
                 : 'text-[var(--color-ink-soft)] hover:bg-[var(--color-surface-secondary)]'"
               @click="changeLocale(loc.code); mobileMenuOpen = false"
             >
-              <span class="text-base leading-none">{{ loc.icon }}</span>
+              <LocaleFlag :code="loc.code" size="sm" />
               <span class="flex-1 text-left">{{ loc.name }}</span>
               <UIcon v-if="loc.code === locale" name="lucide:check" class="h-4 w-4" aria-hidden="true" />
             </button>
@@ -329,6 +349,52 @@ const { count, refreshCount } = useCart()
 
 const mobileMenuOpen = ref(false)
 const keyword = ref('')
+
+// ---------------------------------------------------------------------------
+// 移动端抽屉：id / 焦点回退 / ESC / 点击外部 / 背景滚动锁
+// ---------------------------------------------------------------------------
+const mobileDrawerId = 'mobile-nav-drawer'
+const headerRef = ref<HTMLElement | null>(null)
+const menuButtonRef = ref<HTMLButtonElement | null>(null)
+
+function closeMobileMenu(restoreFocus = false) {
+  if (!mobileMenuOpen.value) return
+  mobileMenuOpen.value = false
+  if (restoreFocus) menuButtonRef.value?.focus()
+}
+
+function toggleMobileMenu() {
+  if (mobileMenuOpen.value) closeMobileMenu()
+  else mobileMenuOpen.value = true
+}
+
+/** ESC 关闭并把焦点还给汉堡按钮（否则焦点会留在被隐藏的抽屉里） */
+function onDocumentKeydown(event: KeyboardEvent) {
+  if (event.key !== 'Escape') return
+  closeMobileMenu(true)
+}
+
+/** 点击抽屉/导航之外的地方关闭（不额外画遮罩，保持当前设计） */
+function onDocumentPointerDown(event: PointerEvent) {
+  if (!mobileMenuOpen.value) return
+  const target = event.target
+  if (target instanceof Node && headerRef.value?.contains(target)) return
+  closeMobileMenu()
+}
+
+/** 视口变宽到桌面断点：抽屉被 md:hidden 隐藏，但 body 锁与展开态要一起收掉 */
+function onWindowResize() {
+  if (mobileMenuOpen.value && window.innerWidth >= 768) closeMobileMenu()
+}
+
+/**
+ * 抽屉展开时锁背景滚动。
+ * 只在客户端执行；关闭/卸载时恢复（不能在 SSR 阶段碰 document）。
+ */
+watch(mobileMenuOpen, (open) => {
+  if (!import.meta.client) return
+  document.body.style.overflow = open ? 'hidden' : ''
+})
 
 /**
  * 登录入口链接：必须带上**当前页面**作为 redirect，登录后才能回到用户原本在看的地方。
@@ -458,14 +524,21 @@ const userMenuItems = computed<DropdownMenuItem[]>(() => [
   { label: t('nav.logout'), icon: 'lucide:log-out', onSelect: () => handleLogout() },
 ])
 
+/**
+ * 语言菜单。
+ *
+ * 旗帜现在由 <LocaleFlag> 从 code 自己解析（app/utils/locale-flag.ts），
+ * 不再把 emoji / 旗帜塞进菜单项 —— 菜单项类型本来就有 #item-leading 插槽，
+ * 私有字段 + `as any` 是多余的，而且 emoji 一旦序列化进 __NUXT__ payload 就会
+ * 变成用户截图里那种方块字母（Windows 无国旗字体）。
+ */
 const localeMenuItems = computed<DropdownMenuItem[]>(() =>
-  locales.value.map((loc: any) => ({
+  locales.value.map(loc => ({
     label: loc.name,
     code: loc.code,
-    _flag: loc.icon,
     checked: loc.code === locale.value,
     onSelect: () => changeLocale(loc.code),
-  } as any)),
+  })),
 )
 
 function changeLocale(code: string) {
@@ -489,5 +562,16 @@ watch(() => route.fullPath, () => {
 onMounted(() => {
   // /api/cart/count 需要 httpOnly cookie，只在客户端请求
   refreshCount()
+  document.addEventListener('keydown', onDocumentKeydown)
+  document.addEventListener('pointerdown', onDocumentPointerDown)
+  window.addEventListener('resize', onWindowResize)
+})
+
+onUnmounted(() => {
+  document.removeEventListener('keydown', onDocumentKeydown)
+  document.removeEventListener('pointerdown', onDocumentPointerDown)
+  window.removeEventListener('resize', onWindowResize)
+  // 组件卸载时若抽屉还开着，必须把 body 锁解开，否则整页再也滚不动
+  document.body.style.overflow = ''
 })
 </script>

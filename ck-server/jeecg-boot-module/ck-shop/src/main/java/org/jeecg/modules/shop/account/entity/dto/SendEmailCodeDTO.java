@@ -10,10 +10,17 @@ import java.io.Serializable;
  * 发送邮箱验证码请求
  * </p>
  *
- * 字段名与契约 2.1 **逐字一致**（email / scene / captcha / checkKey）。
- * captcha + checkKey 是**图形**验证码，用来挡住"脚本批量刷邮件"——
- * 邮箱验证码本身是免费资源，没有图形验证码在前面挡一层，
- * 攻击者可以用它把我们的发信额度打满（顺带把发信域名打进黑名单）。
+ * 字段名与契约 2.1 **逐字一致**（email / scene / ticket）。
+ *
+ * <p>{@code ticket} 由 CikVerify 验证码服务签发（前端通过 BFF 调
+ * {@code /api/captcha/challenge} + {@code /api/captcha/verify} 拿到），
+ * 服务端用 Java SDK 的 {@code CaptchaTicketService#consume} 消费：**一次性**、
+ * 默认 120 秒有效，并绑定客户端 IP 与 User-Agent。
+ * 邮箱验证码本身是免费资源，没有这道闸门，攻击者可以把它当成"免费发信机"
+ * 把发信额度打满（顺带把发信域名打进黑名单）。</p>
+ *
+ * <p>旧的图形验证码字段（{@code captcha} / {@code checkKey}）已移除，
+ * 由 CikVerify ticket 取代。</p>
  *
  * @author Cikian
  * @version 1.0
@@ -32,9 +39,10 @@ public class SendEmailCodeDTO implements Serializable {
     @Schema(description = "场景: register | login | reset")
     private String scene;
 
-    @Schema(description = "图形验证码")
-    private String captcha;
-
-    @Schema(description = "图形验证码的 key")
-    private String checkKey;
+    /**
+     * CikVerify 验证通过后签发的 ticket。
+     * 一次性消费、默认 120 秒有效，绑定客户端 IP + User-Agent。
+     */
+    @Schema(description = "CikVerify 验证通过后签发的 ticket（一次性，默认 120 秒有效）")
+    private String ticket;
 }
