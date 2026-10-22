@@ -47,7 +47,7 @@ const DROP_TAG_VOID = new Set(['input', 'link', 'meta', 'base', 'embed', 'source
 /** 每个标签允许的属性白名单；不在表里的标签一律不允许任何属性 */
 const TAG_ATTRS: Record<string, string[]> = {
   a: ['href', 'title', 'target', 'rel'],
-  img: ['src', 'alt', 'width', 'height'],
+  img: ['src', 'alt', 'width', 'height', 'loading', 'decoding'],
   td: ['colspan', 'rowspan'],
   th: ['colspan', 'rowspan'],
 }
@@ -207,6 +207,18 @@ function renderOpenTag(tag: ParsedTag): string | null {
     if (typeof alt === 'string' && alt.length) parts.push(`alt="${escapeAttr(alt)}"`)
     if (isNumericAttr(attrs.width ?? '')) parts.push(`width="${escapeAttr(attrs.width as string)}"`)
     if (isNumericAttr(attrs.height ?? '')) parts.push(`height="${escapeAttr(attrs.height as string)}"`)
+    /*
+     * 详情图几乎都是"页面下半部分的长图"，以前白名单把源 HTML 的 loading/decoding 剥掉，
+     * 浏览器会按默认 eager 加载全部图片，首屏带宽被详情图抢走。
+     * 这里统一注入（源里带了合法值则尊重源设置）：
+     *   loading=lazy   —— 视口外的详情图不参与首屏加载
+     *   decoding=async —— 解码不阻塞主线程
+     * 配合 width/height（有则保留），浏览器能在图片下载前就按宽高比占位，减少 CLS。
+     */
+    const loading = (attrs.loading ?? '').trim().toLowerCase()
+    parts.push(`loading="${loading === 'eager' ? 'eager' : 'lazy'}"`)
+    const decoding = (attrs.decoding ?? '').trim().toLowerCase()
+    parts.push(`decoding="${['async', 'sync', 'auto'].includes(decoding) ? decoding : 'async'}"`)
     return `<img ${parts.join(' ')}>`
   }
 
