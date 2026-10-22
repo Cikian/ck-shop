@@ -439,7 +439,7 @@
                   <div class="detail-workspace__editor">
                     <ProductDetailEditor
                       :ref="(el) => setDetailEditorRef(lang.code, el)"
-                      :blocks="detailBlocksOf(lang.code)"
+                      :blocks="detailBlocksByLang[lang.code] || []"
                       :language-code="lang.code"
                       :languages="languages"
                       :disabled="disabled"
@@ -449,10 +449,10 @@
                   </div>
                   <div class="detail-workspace__preview" :style="{ width: previewColumnWidth }">
                     <ProductDetailPreview
-                      :blocks="detailBlocksOf(lang.code)"
-                      :params="paramsOf(lang.code)"
-                      :description="translationDescriptionOf(lang.code)"
-                      :product-title="translationTitleOf(lang.code)"
+                      :blocks="detailBlocksByLang[lang.code] || []"
+                      :params="paramsByLang[lang.code] || []"
+                      :description="translationsByLang[lang.code]?.description || ''"
+                      :product-title="translationsByLang[lang.code]?.title || ''"
                       :lang-name="lang.name || lang.code"
                       :device="detailDevice"
                       @update:device="detailDevice = $event"
@@ -481,7 +481,7 @@
                   <div class="detail-workspace__editor">
                     <ProductParamEditor
                       :ref="(el) => setParamEditorRef(lang.code, el)"
-                      :params="paramsOf(lang.code)"
+                      :params="paramsByLang[lang.code] || []"
                       :language-code="lang.code"
                       :languages="languages"
                       :specs="formData.specs"
@@ -492,10 +492,10 @@
                   </div>
                   <div class="detail-workspace__preview" :style="{ width: previewColumnWidth }">
                     <ProductDetailPreview
-                      :blocks="detailBlocksOf(lang.code)"
-                      :params="paramsOf(lang.code)"
-                      :description="translationDescriptionOf(lang.code)"
-                      :product-title="translationTitleOf(lang.code)"
+                      :blocks="detailBlocksByLang[lang.code] || []"
+                      :params="paramsByLang[lang.code] || []"
+                      :description="translationsByLang[lang.code]?.description || ''"
+                      :product-title="translationsByLang[lang.code]?.title || ''"
                       :lang-name="lang.name || lang.code"
                       :device="detailDevice"
                       @update:device="detailDevice = $event"
@@ -559,7 +559,7 @@
 </template>
 
 <script lang="ts" setup>
-  import { computed, nextTick, reactive, ref, watch } from 'vue';
+  import { computed, nextTick, reactive, ref, shallowRef, watch } from 'vue';
   import { onBeforeRouteLeave } from 'vue-router';
   import { Empty } from 'ant-design-vue';
   import VueDraggable from 'vuedraggable';
@@ -622,7 +622,8 @@
   const canManageStoreOrg = computed(() => hasPermission('shop-store:manage-all'));
 
   /** 启用的语言列表（来自 /sys/lang，只返回 enabled='Y' 的） */
-  const languages = ref<any[]>([]);
+  // shallowRef：语言清单是只读元数据，整体替换即可，不需要深度响应（清单 A20）
+  const languages = shallowRef<any[]>([]);
   const activeLang = ref('');
   /**
    * 「商品详情」「规格参数」各自持有独立的语言状态：
@@ -806,17 +807,46 @@
     return hit?.name || code;
   }
 
-  function translationDescriptionOf(code: string): string {
-    const hit = formData.translations.find((item: any) => item && item.languageCode === code);
-    return hit?.description || '';
-  }
-
-  function translationTitleOf(code: string): string {
-    const hit = formData.translations.find((item: any) => item && item.languageCode === code);
-    return hit?.title || '';
-  }
-
   // ---------- 商品详情 / 规格参数：按语言读写扁平数组 ----------
+  /**
+   * 按语言分组的只读视图（computed 缓存）。
+   *
+   * 以前模板里直接调 detailBlocksOf()/paramsOf()：每次父组件重渲染都会 filter 出**新数组**，
+   * 编辑器与预览的 props 引用随之变化 —— 哪怕只改了标题，整块详情预览也会重渲染。
+   * 改成 computed 后，只有 detailBlocks/params/translations 真正变化时才产生新引用。
+   */
+  const detailBlocksByLang = computed<Record<string, any[]>>(() => {
+    const map: Record<string, any[]> = {};
+    for (const block of formData.detailBlocks || []) {
+      if (!block) continue;
+      const code = block.languageCode || '';
+      (map[code] ||= []).push(block);
+    }
+    Object.values(map).forEach((list) => list.sort((a: any, b: any) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0)));
+    return map;
+  });
+
+  const paramsByLang = computed<Record<string, any[]>>(() => {
+    const map: Record<string, any[]> = {};
+    for (const param of formData.params || []) {
+      if (!param) continue;
+      const code = param.languageCode || '';
+      (map[code] ||= []).push(param);
+    }
+    Object.values(map).forEach((list) => list.sort((a: any, b: any) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0)));
+    return map;
+  });
+
+  const translationsByLang = computed<Record<string, any>>(() => {
+    const map: Record<string, any> = {};
+    for (const item of formData.translations || []) {
+      if (item && item.languageCode) {
+        map[item.languageCode] = item;
+      }
+    }
+    return map;
+  });
+
   /**
    * 当前语言的模块（已按 sortOrder 排序）。
    * 注意：返回的是同一个对象引用数组，编辑器里的 v-model 会直接改到 formData，预览因此实时生效。
@@ -1674,11 +1704,11 @@
     :deep(.ant-tabs-nav) {
       margin: 0;
       padding: 0 20px;
-      background: #fff;
+      background: var(--shop-surface);
       position: sticky;
       top: 0;
       z-index: 5;
-      border-bottom: 1px solid #f0f0f0;
+      border-bottom: 1px solid var(--shop-border);
     }
   }
 
@@ -1738,8 +1768,8 @@
   }
 
   .panel-form {
-    background: #fff;
-    border: 1px solid #f0f0f0;
+    background: var(--shop-surface);
+    border: 1px solid var(--shop-border);
     border-radius: 10px;
     padding: 24px 24px 4px;
   }
@@ -1753,7 +1783,7 @@
     }
 
     :deep(.ant-form-item-label > label) {
-      color: rgba(0, 0, 0, 0.65);
+      color: var(--shop-text-secondary);
       font-size: 13px;
     }
 
@@ -1782,15 +1812,15 @@
     &__side {
       flex: 0 0 190px;
       padding: 14px 16px;
-      background: #fafafa;
-      border: 1px solid #f0f0f0;
+      background: var(--shop-surface-muted);
+      border: 1px solid var(--shop-border);
       border-radius: 10px;
     }
 
     &__side-title {
       font-size: 13px;
       font-weight: 500;
-      color: rgba(0, 0, 0, 0.65);
+      color: var(--shop-text-secondary);
       margin-bottom: 10px;
     }
 
@@ -1798,7 +1828,7 @@
       margin: 10px 0 0;
       font-size: 12px;
       line-height: 1.6;
-      color: rgba(0, 0, 0, 0.45);
+      color: var(--shop-text-secondary);
     }
   }
 
@@ -1807,8 +1837,8 @@
     margin-top: 8px;
     padding: 16px 18px 0;
     max-width: 1010px;
-    background: #fafafa;
-    border: 1px solid #f0f0f0;
+    background: var(--shop-surface-muted);
+    border: 1px solid var(--shop-border);
     border-radius: 10px;
 
     &__head {
@@ -1818,10 +1848,10 @@
       margin-bottom: 14px;
       font-size: 13px;
       font-weight: 500;
-      color: rgba(0, 0, 0, 0.65);
+      color: var(--shop-text-secondary);
 
       .anticon {
-        color: rgba(0, 0, 0, 0.45);
+        color: var(--shop-text-secondary);
       }
     }
 
@@ -1862,8 +1892,8 @@
   }
 
   .panel-section {
-    background: #fff;
-    border: 1px solid #f0f0f0;
+    background: var(--shop-surface);
+    border: 1px solid var(--shop-border);
     border-radius: 10px;
     padding: 20px 24px;
     margin-bottom: 16px;
@@ -1875,7 +1905,7 @@
       margin-bottom: 18px;
       flex-wrap: wrap;
       padding-bottom: 12px;
-      border-bottom: 1px solid #f5f5f5;
+      border-bottom: 1px solid var(--shop-border);
     }
 
     &__title {
@@ -1883,7 +1913,7 @@
       padding-left: 10px;
       font-size: 14px;
       font-weight: 600;
-      color: rgba(0, 0, 0, 0.88);
+      color: var(--shop-text);
 
       /* 左侧细蓝条：沿用 AntD 主色，和 LangTabs 的视觉语言一致 */
       &::before {
@@ -1895,12 +1925,12 @@
         width: 3px;
         height: 13px;
         border-radius: 2px;
-        background: #1677ff;
+        background: var(--shop-primary);
       }
     }
 
     &__desc {
-      color: rgba(0, 0, 0, 0.45);
+      color: var(--shop-text-secondary);
       font-size: 12px;
       margin-right: auto;
       line-height: 1.6;
@@ -1913,7 +1943,7 @@
 
   .field-hint {
     margin-left: 8px;
-    color: rgba(0, 0, 0, 0.45);
+    color: var(--shop-text-secondary);
     font-size: 12px;
   }
 
@@ -1941,8 +1971,8 @@
   .readonly-summary {
     max-width: 1000px;
     margin: 16px auto 0;
-    background: #fff;
-    border: 1px solid #f0f0f0;
+    background: var(--shop-surface);
+    border: 1px solid var(--shop-border);
     border-radius: 10px;
     padding: 16px;
   }
@@ -1965,7 +1995,7 @@
       margin: 0 0 6px;
       font-size: 12px;
       line-height: 1.7;
-      color: rgba(0, 0, 0, 0.45);
+      color: var(--shop-text-secondary);
     }
   }
 
@@ -1984,20 +2014,20 @@
     position: relative;
     display: flex;
     flex-direction: column;
-    background: #fff;
-    border: 1px solid #f0f0f0;
+    background: var(--shop-surface);
+    border: 1px solid var(--shop-border);
     border-radius: 10px;
     overflow: hidden;
     transition: border-color 180ms ease, box-shadow 180ms ease;
 
     &:hover {
-      border-color: #d9d9d9;
+      border-color: var(--shop-border-strong);
       box-shadow: 0 2px 10px rgba(0, 0, 0, 0.07);
     }
 
     /* 当前主图：整卡描边强调，一眼可辨 */
     &.is-main {
-      border-color: #1677ff;
+      border-color: var(--shop-primary);
       box-shadow: 0 0 0 1px rgba(22, 119, 255, 0.25);
     }
 
@@ -2009,12 +2039,12 @@
       aspect-ratio: 1 / 1;
       padding: 0;
       border: 0;
-      background: #fafafa;
+      background: var(--shop-surface-muted);
       cursor: pointer;
       overflow: hidden;
 
       &:focus-visible {
-        outline: 2px solid #1677ff;
+        outline: 2px solid var(--shop-primary);
         outline-offset: -2px;
       }
 
@@ -2038,7 +2068,7 @@
       justify-content: center;
       gap: 6px;
       height: 100%;
-      color: rgba(0, 0, 0, 0.35);
+      color: var(--shop-text-tertiary);
       font-size: 20px;
 
       em {
@@ -2111,7 +2141,7 @@
       padding: 4px;
       border-radius: 6px;
       background: rgba(255, 255, 255, 0.9);
-      color: rgba(0, 0, 0, 0.45);
+      color: var(--shop-text-secondary);
       cursor: grab;
 
       &.is-disabled {
@@ -2126,11 +2156,11 @@
       justify-content: space-between;
       gap: 4px;
       padding: 4px 6px 4px 10px;
-      border-top: 1px solid #f5f5f5;
+      border-top: 1px solid var(--shop-border);
 
       :deep(.ant-radio-wrapper) {
         font-size: 12px;
-        color: rgba(0, 0, 0, 0.65);
+        color: var(--shop-text-secondary);
       }
     }
 
@@ -2153,7 +2183,7 @@
   .gallery-pop__sep {
     margin: 10px 0 6px;
     font-size: 12px;
-    color: rgba(0, 0, 0, 0.45);
+    color: var(--shop-text-secondary);
   }
 
   /* 语言页签：卡片式，与抽屉内其它区块视觉一致 */
@@ -2199,7 +2229,7 @@
       display: inline-flex;
       align-items: center;
       gap: 6px;
-      color: rgba(0, 0, 0, 0.45);
+      color: var(--shop-text-secondary);
       font-size: 12px;
       line-height: 1.5;
     }
@@ -2208,12 +2238,12 @@
   /* 抽屉标题区：与内容区留白节奏对齐 */
   :deep(.ant-drawer-header) {
     padding: 14px 24px;
-    border-bottom: 1px solid #f0f0f0;
+    border-bottom: 1px solid var(--shop-border);
   }
 
   :deep(.ant-drawer-footer) {
     padding: 12px 24px;
-    border-top: 1px solid #f0f0f0;
-    background: #fff;
+    border-top: 1px solid var(--shop-border);
+    background: var(--shop-surface);
   }
 </style>
