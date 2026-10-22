@@ -403,14 +403,10 @@ const {
 } = useProductDetail()
 
 // ===== 用户评价（真实数据，见 composables/useReviews.ts）=====
-// 刻意**不在 setup 顶层 await**：本页要保持 setup 同步、首屏不被多一次 RTT 阻塞。
-// 所以评价在商品数据到手后补拉一次（页面其余部分照常先渲染），商品切换时由 watch 重拉。
-// 汇总（分数/条数/分布）与首页列表来自同一个接口（/api/review），不会各算一套。
-//
-// ⚠️ 这里传的是**商品主键**，不是路由参数 slug：slug 是 spu_code（DEMO-OUT-001 那种），
-// 评价接口按 productId 取商品；传 slug 会得到"商品不存在"→ 空评价 → 评价区永远不出现。
-// 后端虽然也兼容 spu_code，但前端按主键传是最不容易出错的口径。
-const reviewProductId = computed(() => product.value?.id)
+// 评价首屏走 useAsyncData（SSR 取数），key 用路由 slug（spu_code）——
+// 后端评价接口同时支持主键与 spu_code，用 slug 才能在 setup 阶段确定 key，
+// 让服务端渲染直接带出评价区，避免客户端补拉时把下面的详情整块推下去（CLS）。
+const reviewProductKey = computed(() => String(route.params.slug || ''))
 
 const {
   summary: reviewSummary,
@@ -419,17 +415,8 @@ const {
   hasMore: reviewHasMore,
   loadingMore: reviewLoadingMore,
   error: reviewError,
-  refresh: refreshReviews,
   loadMore: loadMoreReviews,
-} = useProductReviews(reviewProductId)
-
-/**
- * 商品主键到手（首屏 SSR 数据 hydrate 同步可见）或商品切换时重拉评价。
- * immediate: true 让首次加载不需要额外依赖 onMounted 的时序；id 为空时 composable 直接跳过请求。
- */
-watch(reviewProductId, (id) => {
-  if (id) void refreshReviews()
-}, { immediate: true })
+} = useProductReviews(reviewProductKey)
 
 // ===== 桌面两栏吸顶 + 底部动作条对齐 + 图集高度 + 动作条释放 =====
 // asideRef 是右列 grid 子项（整行高度），panelRef 是内部 sticky 面板；
@@ -441,9 +428,13 @@ const galleryRef = ref<HTMLElement | null>(null)
 const zoneRef = ref<HTMLElement | null>(null)
 const { panelStyle, asideStyle, pageStyle, barStyle } = useStickyAside({ asideRef, panelRef, galleryRef, zoneRef })
 
-// ===== 为你推荐：同分类真实商品，排除当前商品后展示 6 条（pageSize 至少 7）=====
+// ===== 为你推荐：同分类真实商品，排除当前商品后展示 6 条 =====
 // 详情页不再 await 取推荐：详情就绪后再补一次请求即可（推荐位在页面底部，不需要进 SSR）。
-// 以前它是一个顶层 await，把整页导航多阻塞一个 RTT；现在只影响页面底部那一块。
+//
+// 旧实现是「同分类请求 → 不足 6 条再发一次全站兜底」，两次请求串行：分类里商品少时
+// 用户要多等一个 RTT，而且第二次请求可能把推荐位整体换掉（视觉跳动）。
+// 现在只发**一次**请求：有分类就取该分类（pageSize=13，足够挑出 6 条），不补位；
+// 分类下确实不足 6 条时就展示实际数量 —— 推荐位不是导航，少几条不影响可用性。
 const related = ref<StoreProductCard[]>([])
 
 watch(
@@ -451,36 +442,23 @@ watch(
   async ([id, categoryId]) => {
     if (!id) return
     try {
-      // 先取同分类「类似推荐」；pageSize=7 是为了排除当前商品后仍有 6 条
-      const result = categoryId
-        ? await requestFetch<StoreProductPage>('/api/products', {
-            query: { lang: locale.value, pageNo: 1, pageSize: 7, categoryId },
-          })
-        : null
+      const result = await requestFetch<StoreProductPage>('/api/products', {
+        query: {
+          lang: locale.value,
+          pageNo: 1,
+          pageSize: 13,
+          ...(categoryId ? { categoryId } : {}),
+        },
+      })
       const seen = new Set<string>([id])
       const items: StoreProductCard[] = []
       for (const item of result?.records ?? []) {
         if (seen.has(item.id)) continue
         seen.add(item.id)
         items.push(item)
+        if (items.length >= 6) break
       }
-      // 分类里不够 6 条时，用全站商品补足（仍排除当前商品、去重）
-      if (items.length < 6) {
-        try {
-          const fallback = await requestFetch<StoreProductPage>('/api/products', {
-            query: { lang: locale.value, pageNo: 1, pageSize: 12 },
-          })
-          for (const item of fallback?.records ?? []) {
-            if (seen.has(item.id)) continue
-            seen.add(item.id)
-            items.push(item)
-            if (items.length >= 6) break
-          }
-        } catch {
-          // 补位失败不影响已有推荐
-        }
-      }
-      related.value = items.slice(0, 6)
+      related.value = items
     } catch {
       // 推荐位失败不影响主信息：保持为空即可，不弹错误
       related.value = []
@@ -495,8 +473,8 @@ watch(
 onMounted(() => {
   // 收藏态只能客户端查（需要 access-token cookie；SSR 期间还没恢复登录态）
   void refreshFavorite()
-  // 评价**不在这里**拉：它跟着 reviewProductId 走（见上面 watch(..., { immediate: true })），
-  // 两处都调会在首屏打出两次同样的请求。
+  // 评价**不在这里**拉：首屏由 useAsyncData 在 SSR 阶段取好，商品切换由 key 变化自动重取，
+  // 这里再调会打出重复请求。
 })
 
 const isNotFound = computed(() => {

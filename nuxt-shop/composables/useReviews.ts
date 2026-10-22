@@ -68,6 +68,61 @@ export function useProductReviews(productId: MaybeRefOrGetter<string | undefined
     pages.value = overview.page.pages
   }
 
+  /*
+   * 首屏评价走 useAsyncData：**SSR 阶段就取好**，HTML 里直接带评价区。
+   *
+   * 旧实现是 watch(immediate) + 手动 requestFetch：
+   *   - 服务端渲染时商品 id 还没拿到（product 是空的），watch 什么都不做；
+   *   - 客户端 hydration 后才拉一次，于是评价区从"不存在"变成"有内容"，
+   *     把下面的商品详情整块往下推 —— 长详情页的 CLS 主要来自这里。
+   * key 里带商品标识与语言：切换商品/语言自动重新取数，且同一次渲染只取一次。
+   *
+   * 注意：调用方传的是**路由 slug（spu_code）**，后端评价接口同时支持主键与 spu_code
+   * （见 ShopProductReviewServiceImpl#requireVisibleProduct）。用 slug 才能在 setup
+   * 阶段就确定 key，从而让 SSR 真正等到评价数据。
+   */
+  const initialKey = computed(() => `store-reviews:${toValue(productId) ?? ''}:${locale.value}`)
+
+  const { data: initialOverview, error: initialError, refresh: refreshInitial } =
+    useAsyncData<StoreReviewOverview | null>(
+      initialKey,
+      async () => {
+        const id = toValue(productId)
+        if (!id) {
+          return null
+        }
+        return await requestFetch<StoreReviewOverview>('/api/review', {
+          query: { productId: id, pageNo: 1, pageSize: STORE_REVIEW_PAGE_SIZE, lang: locale.value },
+        })
+      },
+      { default: () => null, watch: [initialKey] },
+    )
+
+  watch(initialOverview, (overview) => {
+    if (overview) {
+      applyOverview(overview)
+      error.value = ''
+    } else {
+      summary.value = null
+      records.value = []
+      total.value = 0
+      pages.value = 0
+    }
+    loaded.value = true
+  }, { immediate: true })
+
+  watch(initialError, (err) => {
+    // 评价接口失败按"没有评价"降级，不让它拖垮整页
+    if (err) {
+      error.value = extractReviewErrorMessage(err, '')
+      summary.value = null
+      records.value = []
+      total.value = 0
+      pages.value = 0
+      loaded.value = true
+    }
+  }, { immediate: true })
+
   /** 拉某页；第一页时替换列表，其余页追加 */
   async function fetchPage(targetPage: number, append: boolean) {
     const id = toValue(productId)
@@ -118,9 +173,9 @@ export function useProductReviews(productId: MaybeRefOrGetter<string | undefined
     }
   }
 
-  /** 重新拉第一页（商品切换 / 提交评价后调用） */
+  /** 重新拉第一页（提交评价后调用；商品/语言切换由 useAsyncData 的 key 自动触发） */
   async function refresh() {
-    await fetchPage(1, false)
+    await refreshInitial()
   }
 
   /** 加载更多（追加下一页） */
