@@ -140,6 +140,18 @@
         <a-button type="primary" preIcon="ant-design:search-outlined" @click="searchPicker">搜索</a-button>
       </div>
 
+      <a-alert
+        v-if="pickerError"
+        type="error"
+        show-icon
+        :message="pickerError"
+        class="ppe__alert"
+      >
+        <template #action>
+          <a-button size="small" @click="loadPickerRows">重试</a-button>
+        </template>
+      </a-alert>
+
       <a-table
         size="small"
         rowKey="id"
@@ -481,6 +493,16 @@
   const pickerRows = ref<any[]>([]);
   const pickerKeyword = ref('');
   const pickerSelected = ref<string[]>([]);
+  /**
+   * 跨页选中的商品对象（key = 商品 id）。
+   *
+   * 之前只存 key，confirmPick 又从当前页 pickerRows 里过滤 —— 上一页勾选的商品
+   * 不在当前页数据里，会被静默丢掉，提示却仍说"已添加 N 个"。
+   * 现在按 id 保存对象，翻页只增删当前页对应的条目。
+   */
+  const pickerSelectedMap = ref<Map<string, any>>(new Map());
+  /** 弹窗加载失败原因：保留旧数据并显示后端 message，而不是静默空列表 */
+  const pickerError = ref('');
   const pickerTotal = ref(0);
   const pickerPageNo = ref(1);
   const pickerPageSize = ref(10);
@@ -496,8 +518,23 @@
 
   const pickerRowSelection = computed(() => ({
     selectedRowKeys: pickerSelected.value,
-    onChange: (keys: string[]) => {
+    onChange: (keys: string[], rows: any[]) => {
       pickerSelected.value = keys;
+      const selectedSet = new Set(keys);
+      const next = new Map<string, any>();
+      // 先保留其它页已选中的对象（rows 只包含当前页）
+      for (const [id, item] of pickerSelectedMap.value) {
+        if (selectedSet.has(id)) {
+          next.set(id, item);
+        }
+      }
+      // 再用当前页最新数据覆盖/补充
+      for (const row of rows) {
+        if (selectedSet.has(row.id)) {
+          next.set(row.id, row);
+        }
+      }
+      pickerSelectedMap.value = next;
     },
     // 已在关联列表里的商品不可重复选（契约禁止同一活动重复关联同一商品）
     getCheckboxProps: (row: any) => ({ disabled: existingProductIds.value.has(row.id) }),
@@ -519,6 +556,7 @@
       return;
     }
     pickerLoading.value = true;
+    pickerError.value = '';
     try {
       const res = await productList({
         storeId: props.storeId,
@@ -528,9 +566,10 @@
       });
       pickerRows.value = res?.records || res || [];
       pickerTotal.value = Number(res?.total ?? pickerRows.value.length);
-    } catch (e) {
-      pickerRows.value = [];
-      pickerTotal.value = 0;
+    } catch (e: any) {
+      // 失败时保留上一页数据（翻页失败不该把用户正在看的列表清空），并显示后端 message
+      pickerError.value = e?.message || '加载商品失败，请重试';
+      createMessage.error(pickerError.value);
     } finally {
       pickerLoading.value = false;
     }
@@ -542,6 +581,8 @@
       return;
     }
     pickerSelected.value = [];
+    pickerSelectedMap.value = new Map();
+    pickerError.value = '';
     pickerKeyword.value = '';
     pickerPageNo.value = 1;
     pickerVisible.value = true;
@@ -580,7 +621,14 @@
       createMessage.warning('请先勾选要添加的商品');
       return;
     }
-    const picked = pickerRows.value.filter((item) => pickerSelected.value.includes(item.id));
+    // 从跨页 Map 取对象：上一页勾选的商品也在里面，不会被当前页数据过滤掉
+    const picked = pickerSelected.value
+      .map((id) => pickerSelectedMap.value.get(id))
+      .filter((item): item is any => !!item);
+    if (!picked.length) {
+      createMessage.warning('请先勾选要添加的商品');
+      return;
+    }
     const next = [...rows.value];
     picked.forEach((product: any) => {
       if (next.some((row) => row.productId === product.id && !row.skuId)) {
