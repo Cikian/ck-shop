@@ -23,7 +23,7 @@
     <aside class="ws-list">
       <header class="ws-list__head">
         <span class="ws-list__title">轮播图</span>
-        <span class="ws-list__count">{{ listData.length }} 张</span>
+        <span class="ws-list__count">{{ listSummary }}</span>
         <!-- 批量删除：勾选左侧条目后可用（未保存的草稿没有 id，不能勾选） -->
         <a-button
           type="link"
@@ -53,7 +53,7 @@
       <div class="ws-list__body">
         <!-- vuedraggable v4 必须使用 #item 插槽；搜索状态下禁用拖拽，避免顺序与筛选结果不一致 -->
         <vue-draggable
-          :list="listData"
+          :list="visibleData"
           :item-key="itemKeyOf"
           :animation="180"
           :disabled="!!keyword || dragDisabled"
@@ -266,6 +266,19 @@
       return listData.value;
     }
     return listData.value.filter((item) => [item.desc, item.goods, item.targetUrl].filter(Boolean).join(' ').toLowerCase().includes(kw));
+  });
+
+  /**
+   * 列表实际渲染的数据源：搜索时用过滤结果，否则用原数组。
+   * 之前 vuedraggable 一直绑定 listData，filteredData 只用于空态判断 ——
+   * 输入关键词后列表纹丝不动，只有 0 匹配时才显示"没有匹配"。
+   * 搜索态下拖拽已被 :disabled 禁用，因此不会把过滤后的数组写回顺序。
+   */
+  const visibleData = computed(() => (keyword.value.trim() ? filteredData.value : listData.value));
+
+  const listSummary = computed(() => {
+    const kw = keyword.value.trim();
+    return kw ? `共 ${filteredData.value.length} 条匹配` : `${listData.value.length} 张`;
   });
 
   /** 拖拽用列表：草稿置顶不参与排序，其余按 sort 升序；这里必须返回原数组引用 */
