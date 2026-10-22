@@ -714,3 +714,19 @@ body {
 :root {
   --ui-primary: var(--color-brand-500);
 }
+/* ============================================================================
+ * 移动端输入控件字号下限（iOS Safari 自动缩放修复）
+ *
+ * iOS Safari 在 input/textarea/select 的 font-size < 16px 时，聚焦会放大整个页面，
+ * 用户每次搜索/登录都要手动缩回。项目里大量输入框用的是 text-sm(14px)/text-[13px]，
+ * 逐个改成 16px 既容易漏、又会破坏桌面端紧凑布局，所以这里在移动端统一兜底：
+ * 字号提到 16px，桌面端保持原样。视觉层级仍可通过间距/颜色/字重表达。
+ * ========================================================================== */
+@media (max-width: 767px) {
+  input:not([type='checkbox']):not([type='radio']):not([type='range']),
+  textarea,
+  select,
+  [contenteditable='true'] {
+    font-size: 16px !important;
+  }
+}
