@@ -1490,6 +1490,18 @@ public class ShopOrderServiceImpl
     // 公共过滤与工具
     // ==================================================================
 
+    /**
+     * 关键字是否"看起来像订单号"：SO 开头 + 10~32 位大写字母/数字。
+     * 只有这种输入才走 order_no 等值匹配，普通用户名/姓名不会被误判。
+     */
+    private boolean looksLikeOrderNo(String keyword) {
+        String upper = keyword.toUpperCase();
+        if (!upper.startsWith("SO") || upper.length() < 10 || upper.length() > 32) {
+            return false;
+        }
+        return upper.chars().allMatch(ch -> (ch >= 'A' && ch <= 'Z') || (ch >= '0' && ch <= '9'));
+    }
+
     private void applyCommonFilters(LambdaQueryWrapper<ShopOrder> wrapper, OrderQuery query,
                                     boolean admin) {
         if (StringUtils.isNotBlank(query.getOrderNo())) {
@@ -1497,12 +1509,25 @@ public class ShopOrderServiceImpl
         }
         if (StringUtils.isNotBlank(query.getKeyword())) {
             String keyword = query.getKeyword().trim();
-            // 一个输入框搜全部：订单号 / 用户账号 / 收货人 / 手机号。
-            // 用嵌套 and 包住 or，避免 OR 把外层的店铺/用户条件"或掉"——那是最危险的越权写法
-            wrapper.and(w -> w.like(ShopOrder::getOrderNo, keyword)
-                    .or().like(ShopOrder::getUsername, keyword)
-                    .or().like(ShopOrder::getReceiverName, keyword)
-                    .or().like(ShopOrder::getReceiverPhone, keyword));
+            /*
+             * 一个输入框搜：订单号 / 用户账号 / 收货人 / 手机号。
+             *
+             * 旧实现是 4 个 LIKE '%kw%' OR：username/receiver_name/receiver_phone 都没有索引，
+             * 订单号的唯一索引也会因为前导 % 失效 —— 一次搜索就是全表扫描。
+             * 现在按"关键字像什么"分流：
+             *   · 像订单号（SO + 数字/字母，长度 ≥ 10）→ 走 order_no 等值（唯一索引）；
+             *   · 其它 → 账号/手机号等值 + 收货人前缀匹配（都能用上索引），不再全模糊。
+             * 同时限制关键字长度，超长直接判空（避免恶意的超长 LIKE）。
+             */
+            if (keyword.length() > 50) {
+                wrapper.apply("1 = 0");
+            } else if (looksLikeOrderNo(keyword)) {
+                wrapper.eq(ShopOrder::getOrderNo, keyword.toUpperCase());
+            } else {
+                wrapper.and(w -> w.eq(ShopOrder::getUsername, keyword)
+                        .or().eq(ShopOrder::getReceiverPhone, keyword)
+                        .or().likeRight(ShopOrder::getReceiverName, keyword));
+            }
         }
         if (StringUtils.isNotBlank(query.getOrderStatus())) {
             wrapper.eq(ShopOrder::getOrderStatus, query.getOrderStatus().trim().toUpperCase());
