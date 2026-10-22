@@ -51,3 +51,7 @@ dist/
 ## AI 生成的设计物料与设计稿（体积大，只在本地保留）
 saved-images/
 design-references/
+
+# 本地后端运行日志（由开发机手动启动时生成）
+ck-server/backend-*.log
+ck-server/backend-*.log.err
