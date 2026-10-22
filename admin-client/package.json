@@ -18,6 +18,7 @@
     "reinstall": "rimraf pnpm-lock.yaml && rimraf yarn.lock && rimraf package-lock.json && rimraf node_modules && npm run install",
     "clean:lib": "rimraf node_modules",
     "gen:icon": "esno ./build/generate/icon/index.ts",
+    "audit:vhtml": "node scripts/audit-vhtml.mjs",
     "batch:prettier": "prettier --write  \"src/**/*.{js,json,tsx,css,less,scss,vue,html,md}\"",
     "upgrade:log": "conventional-changelog -p angular -i CHANGELOG.md -s",
     "husky:install": "husky install"

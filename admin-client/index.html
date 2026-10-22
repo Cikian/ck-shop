@@ -9,6 +9,27 @@
       content="width=device-width,initial-scale=1.0,minimum-scale=1.0,maximum-scale=1.0,user-scalable=0"
     />
 
+    <!--
+      Content-Security-Policy（清单 B18）
+
+      管理端的登录 token 存在 localStorage 里，任何 XSS 都能直接读走 —— CSP 是这类
+      攻击最后一道、也是唯一一道"即使代码写错也能兜住"的防线。
+
+      取舍（务必看）：
+        · script-src 保留 'unsafe-inline'/'unsafe-eval'：本文件里的主题引导脚本、
+          百度统计加载器都是内联的，且部分三方库（报表设计器/富文本）会用到 new Function。
+          因此**内联注入仍可执行**，这道 CSP 主要挡住"从外部域加载脚本"这类载荷
+          （把 payload 托管在攻击者自己的域名是最常见手法）。
+        · 允许 https://hm.baidu.com：现有统计脚本；若下线统计应同步删除该白名单。
+        · connect-src 放开 https:：管理端允许配置绝对 API 地址（VITE_GLOB_API_URL）。
+        · 后续收紧方向：把本文件的两段内联脚本移到 /src 下的模块、去掉 unsafe-inline，
+          再用 nonce/hash 白名单；届时才真正具备防内联注入能力。
+    -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://hm.baidu.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; font-src 'self' data:; connect-src 'self' https:; frame-src 'self' https:; worker-src 'self' blob:; media-src 'self' https:; object-src 'none'; base-uri 'self'; form-action 'self'"
+    />
+
     <title><%= title %></title>
     <link rel="icon" href="<%= basePublicPath %>/logo.png" />
     <!-- 全局配置 -->

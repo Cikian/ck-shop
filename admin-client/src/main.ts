@@ -9,6 +9,7 @@ import App from './App.vue';
 import { createApp } from 'vue';
 import { initAppConfigStore } from '/@/logics/initAppConfig';
 import { setupErrorHandle } from '/@/logics/error-handle';
+import { setupIdleLogout } from '/@/utils/idleLogout';
 import { router, createRouter, setupRouter } from '/@/router';
 import { setupRouterGuard } from '/@/router/guard';
 import { setupStore } from '/@/store';
@@ -98,6 +99,11 @@ async function bootstrap(props?: MainAppProps) {
 
   // 挂载应用
   app.mount(getMountContainer(props), true);
+
+  // 空闲 30 分钟自动登出（清单 B18）。
+  // 管理端 token 存在 localStorage、有效期 7 天，共享电脑上"人走了页面还开着"
+  // 是最现实的风险；这里先缩短暴露窗口，真正的短 TTL 需要改后端 JwtUtil。
+  setupIdleLogout();
 
   console.log(" vue3 app 加载完成！")
 
