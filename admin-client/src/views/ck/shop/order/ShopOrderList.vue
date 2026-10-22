@@ -196,6 +196,9 @@
       api: list,
       columns,
       canResize: true,
+      // 默认列集只保留 6 列（订单号/店铺/订单状态/支付状态/应付/下单时间），
+      // 其余列 defaultHidden，运营可在「列设置」里按需打开（A8）
+      showTableSetting: true,
       useSearchForm: false,
       // 订单严禁删除：不绑定 rowSelection，界面上不会出现任何"选中后批量操作"的入口
       actionColumn: {

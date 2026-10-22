@@ -152,6 +152,8 @@ export const columns: BasicColumn[] = [
     title: '用户账号',
     align: 'left',
     dataIndex: 'username',
+    // 默认隐藏：13 列全开会到 ~1.7k px，1366 笔记本必须横向滚动；详情弹窗里有完整信息
+    defaultHidden: true,
     width: 130,
     customRender: ({ text }) => h('span', text || '-'),
   },
@@ -173,6 +175,8 @@ export const columns: BasicColumn[] = [
     title: '退款状态',
     align: 'center',
     dataIndex: 'refundStatus',
+    // 默认隐藏：13 列全开会到 ~1.7k px，1366 笔记本必须横向滚动；详情弹窗里有完整信息
+    defaultHidden: true,
     width: 110,
     customRender: ({ record }) => renderRefundStatusTag(record),
   },
@@ -187,6 +191,8 @@ export const columns: BasicColumn[] = [
     title: '已支付',
     align: 'right',
     dataIndex: 'paidAmount',
+    // 默认隐藏：13 列全开会到 ~1.7k px，1366 笔记本必须横向滚动；详情弹窗里有完整信息
+    defaultHidden: true,
     width: 110,
     customRender: ({ text }) => h('span', { style: 'font-variant-numeric:tabular-nums' }, formatAmount(text)),
   },
@@ -194,6 +200,8 @@ export const columns: BasicColumn[] = [
     title: '已退款',
     align: 'right',
     dataIndex: 'refundAmount',
+    // 默认隐藏：13 列全开会到 ~1.7k px，1366 笔记本必须横向滚动；详情弹窗里有完整信息
+    defaultHidden: true,
     width: 110,
     customRender: ({ text }) => {
       const num = Number(text);
@@ -205,6 +213,8 @@ export const columns: BasicColumn[] = [
     title: '商品件数',
     align: 'center',
     dataIndex: 'totalQuantity',
+    // 默认隐藏：13 列全开会到 ~1.7k px，1366 笔记本必须横向滚动；详情弹窗里有完整信息
+    defaultHidden: true,
     width: 90,
     customRender: ({ record }) => {
       const qty = record.totalQuantity;
@@ -219,6 +229,8 @@ export const columns: BasicColumn[] = [
     title: '收货人',
     align: 'left',
     dataIndex: 'receiverName',
+    // 默认隐藏：13 列全开会到 ~1.7k px，1366 笔记本必须横向滚动；详情弹窗里有完整信息
+    defaultHidden: true,
     width: 150,
     customRender: ({ record }) => {
       const name = record.receiverName || '-';
@@ -241,6 +253,8 @@ export const columns: BasicColumn[] = [
     title: '支付时间',
     align: 'center',
     dataIndex: 'payTime',
+    // 默认隐藏：13 列全开会到 ~1.7k px，1366 笔记本必须横向滚动；详情弹窗里有完整信息
+    defaultHidden: true,
     width: 170,
     customRender: ({ text }) => h('span', text || '-'),
   },
@@ -248,6 +262,8 @@ export const columns: BasicColumn[] = [
     title: '待处理退款',
     align: 'center',
     dataIndex: 'pendingRefundCount',
+    // 默认隐藏：13 列全开会到 ~1.7k px，1366 笔记本必须横向滚动；详情弹窗里有完整信息
+    defaultHidden: true,
     width: 110,
     customRender: ({ text }) => {
       const count = Number(text ?? 0);
