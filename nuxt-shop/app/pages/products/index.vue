@@ -81,6 +81,7 @@
         </div>
 
         <button
+          v-if="hasActiveFilters"
           type="button"
           class="chip shrink-0 text-[var(--color-muted)]"
           @click="clearFilters"
@@ -90,27 +91,11 @@
         </button>
       </div>
 
-      <!-- ===================== 相关搜索 =====================
-           相关搜索词=本店真实分类名（不硬编码任何行业词），
-           换店铺/换分类这套词自动跟着变。 -->
-      <div v-if="rootCategories.length" class="mt-5 flex flex-wrap items-center gap-x-3 gap-y-2">
-        <span class="flex items-center gap-1.5 text-[13px] font-bold text-[var(--color-ink-soft)]">
-          <UIcon name="lucide:trending-up" class="h-3.5 w-3.5 text-[var(--color-brand-500)]" aria-hidden="true" />
-          {{ t('shop.relatedSearch') }}
-        </span>
-        <div class="no-scrollbar flex min-w-0 flex-wrap items-center gap-2">
-          <button
-            v-for="cat in relatedCategories"
-            :key="`related-${cat.id}`"
-            type="button"
-            class="chip shrink-0"
-            :class="keyword === cat.name ? 'chip-active' : ''"
-            @click="applyRelatedKeyword(cat.name)"
-          >
-            {{ cat.name }}
-          </button>
-        </div>
-      </div>
+      <!--
+        「相关搜索」一行已移除：它只是把同一批一级分类名再渲染一遍（点击等于用分类名做关键词搜索），
+        与上面的 chips 完全重复 —— 1440px 下用户会连续看到三行几乎相同的分类入口。
+        真正的搜索词建议需要后端提供搜索日志/热词接口，等有了再加。
+      -->
 
       <!-- ===================== 商品区 ===================== -->
       <section class="mt-6" :aria-busy="pending">
@@ -203,7 +188,7 @@ import { STORE_PRODUCT_PAGE_SIZE, useStoreProductList, type StoreProductSort } f
  *   2) 全部筛选状态（keyword / categoryId / sortBy / pageNo）都写在 URL query 里：
  *      链接可分享、浏览器前进后退可用、刷新不丢状态。
  *      页面只把 route.query 当唯一数据源，本地不放第二份 state（避免两处不同步）。
- *   3) 分类 chips 与「相关搜索」都只用后端真实分类名，零硬编码行业词。
+ *   3) 分类 chips 只用后端真实分类名，零硬编码行业词。
  *
  * 取数约定：两个请求都不 await。客户端导航立即出骨架；SSR 由 useAsyncData
  * 内部的 onServerPrefetch 等待，HTML 仍是完整内容。
@@ -291,8 +276,11 @@ const {
 
 /** /api/categories 返回的就是分类树的根节点数组 */
 const rootCategories = computed(() => categoryTree.value || [])
-/** 相关搜索词：真实分类名，最多 8 个 */
-const relatedCategories = computed(() => rootCategories.value.slice(0, 8))
+
+/** 是否有任何筛选/排序/翻页条件：没有条件时不显示「清空筛选」 */
+const hasActiveFilters = computed(() =>
+  !!keyword.value || !!categoryId.value || sortBy.value !== 'default' || pageNo.value > 1,
+)
 
 /**
  * 改写 URL query（唯一的写入口）。
@@ -322,14 +310,6 @@ function pushQuery(patch: {
 /** 分类 chips：再点一次已选分类 = 取消该分类 */
 function selectCategory(id: string) {
   pushQuery({ categoryId: categoryId.value === id ? '' : id })
-}
-
-/**
- * 相关搜索：把分类名当关键词搜索，并清掉分类筛选——
- * 两个筛选叠加时用户很可能看到 0 结果，不如让“点相关搜索=一次干净的搜索”。
- */
-function applyRelatedKeyword(name: string) {
-  pushQuery({ keyword: name === keyword.value ? '' : name, categoryId: '' })
 }
 
 /** 清空筛选：回到不带任何 query 的 /products（默认排序 + 全部商品） */
