@@ -298,6 +298,7 @@
     "itemsUnit": "articles",
     "brandName": "Cikian Shop",
     "hotTitle": "Meilleures ventes",
+    "hotScrollHint": "Glissez pour voir plus",
     "hotSubtitle": "Les préférés de nos clients",
     "noData": "Aucune donnée",
     "profileFavoritesEmpty": "Aucun favori",

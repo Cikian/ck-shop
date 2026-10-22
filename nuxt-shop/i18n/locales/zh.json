@@ -298,6 +298,7 @@
     "itemsUnit": "件",
     "brandName": "Cikian Shop",
     "hotTitle": "热销爆款",
+    "hotScrollHint": "右滑查看更多",
     "hotSubtitle": "人气好物 不容错过",
     "noData": "暂无数据",
     "profileFavoritesEmpty": "暂无收藏",
