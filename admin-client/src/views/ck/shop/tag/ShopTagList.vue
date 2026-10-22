@@ -52,7 +52,7 @@
           </a-button>
         </a-dropdown>
         <!-- 高级查询 -->
-        <super-query :config="superQueryConfig" @search="handleSuperQuery" />
+        <super-query :key="superQueryKey" :config="superQueryConfig" @search="handleSuperQuery" />
       </template>
       <!--操作栏-->
       <template #action="{ record }">
@@ -74,6 +74,8 @@
 
   const formRef = ref();
   const queryParam = reactive<any>({});
+  /** super-query 的重新挂载 key：重置时 +1，清掉组件内部条件 */
+  const superQueryKey = ref(0);
   const registerModal = ref();
   const activeOptions = [
     { label: '启用', value: 'Y' },
@@ -220,9 +222,10 @@
    * 重置
    */
   function searchReset() {
-    queryParam.code = undefined;
-    queryParam.isActive = undefined;
+    // 清空全部条件（含高级查询写进 queryParam 的键），不只是 code/isActive
+    Object.keys(queryParam).forEach((key) => { delete queryParam[key]; });
     formRef.value.resetFields();
+    superQueryKey.value += 1;
     selectedRowKeys.value = [];
     //刷新数据
     reload();

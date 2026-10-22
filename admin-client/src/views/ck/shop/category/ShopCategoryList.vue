@@ -59,7 +59,7 @@
           </a-button>
         </a-dropdown>
         <!-- 高级查询 -->
-        <super-query :config="superQueryConfig" @search="handleSuperQuery" />
+        <super-query :key="superQueryKey" :config="superQueryConfig" @search="handleSuperQuery" />
       </template>
       <!--操作栏-->
       <template #action="{ record }">
@@ -87,6 +87,8 @@
   const formRef = ref();
   // 默认「仅查看已启用」：与列表首屏看到的口径一致
   const queryParam = reactive<any>({ isShow: 'Y' });
+  /** super-query 的重新挂载 key：重置时 +1，清掉组件内部条件 */
+  const superQueryKey = ref(0);
   const registerModal = ref();
 
   /** 店铺下拉：筛选按店铺 id（storeId），后端自己解析成部门；列表列仍按 sysOrgCode 反查店铺名 */
@@ -262,9 +264,11 @@
    */
   function searchReset() {
     formRef.value.resetFields();
-    // 重置回默认口径：仅查看已启用，且不带店铺筛选
+    // 清空全部条件（含高级查询写进 queryParam 的键），再恢复默认口径：仅查看已启用、不带店铺筛选
+    Object.keys(queryParam).forEach((key) => { delete queryParam[key]; });
     queryParam.isShow = 'Y';
     queryParam.storeId = undefined;
+    superQueryKey.value += 1;
     selectedRowKeys.value = [];
     //刷新数据
     reload();
