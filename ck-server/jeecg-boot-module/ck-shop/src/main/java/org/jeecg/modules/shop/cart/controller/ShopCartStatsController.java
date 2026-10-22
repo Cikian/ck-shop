@@ -7,6 +7,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.shiro.authz.annotation.RequiresPermissions;
 import org.jeecg.common.api.vo.Result;
+import org.jeecg.modules.shop.common.ShopRequestUtils;
 import org.jeecg.modules.shop.cart.entity.dto.CartStatsQuery;
 import org.jeecg.modules.shop.cart.entity.vo.CartStatsEventVO;
 import org.jeecg.modules.shop.cart.entity.vo.CartStatsOverviewVO;
@@ -88,24 +89,8 @@ public class ShopCartStatsController {
         return Result.OK(cartStatsService.storeOptions());
     }
 
+    /** 语言解析统一收敛到 ShopRequestUtils（query lang → x-language → Accept-Language → zh） */
     private String resolveLanguage(HttpServletRequest request) {
-        String language = request.getParameter("lang");
-        if (language == null || language.isEmpty()) {
-            language = request.getHeader("x-language");
-        }
-        if (language == null || language.isEmpty()) {
-            language = request.getHeader("Accept-Language");
-        }
-        if (language == null || language.isEmpty()) {
-            // 后台默认中文：运营看板里出现英文商品名只会增加理解成本
-            return "zh";
-        }
-        if (language.contains(",")) {
-            language = language.split(",")[0];
-        }
-        if (language.contains("-")) {
-            language = language.split("-")[0];
-        }
-        return language.trim().toLowerCase();
+        return ShopRequestUtils.resolveLanguage(request);
     }
 }

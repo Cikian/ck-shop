@@ -8,6 +8,7 @@ import jakarta.servlet.http.HttpServletResponse;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.shiro.authz.annotation.RequiresPermissions;
 import org.jeecg.common.api.vo.Result;
+import org.jeecg.modules.shop.common.ShopRequestUtils;
 import org.jeecg.common.aspect.annotation.AutoLog;
 import org.jeecg.common.exception.JeecgBootException;
 import org.jeecg.common.system.base.controller.JeecgController;
@@ -250,24 +251,8 @@ public class ShopProductController extends JeecgController<ShopProduct, IShopPro
         return Result.ok("文件导入成功！数据行数：" + total);
     }
 
-    /**
-     * 解析语言：优先 x-language，其次 Accept-Language，兜底 zh
-     */
+    /** 语言解析统一收敛到 ShopRequestUtils（query lang → x-language → Accept-Language → zh） */
     private String resolveLanguage(HttpServletRequest request) {
-        String language = request.getHeader("x-language");
-        if (language == null || language.isEmpty()) {
-            language = request.getHeader("Accept-Language");
-        }
-        if (language == null || language.isEmpty()) {
-            return "zh";
-        }
-        // 形如 zh-CN / en-US 时截断到主语言
-        if (language.contains(",")) {
-            language = language.split(",")[0];
-        }
-        if (language.contains("-")) {
-            language = language.split("-")[0];
-        }
-        return language.trim().toLowerCase();
+        return ShopRequestUtils.resolveLanguage(request);
     }
 }

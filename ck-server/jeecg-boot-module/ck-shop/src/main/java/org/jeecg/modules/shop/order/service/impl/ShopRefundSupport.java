@@ -3,6 +3,7 @@ package org.jeecg.modules.shop.order.service.impl;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import org.apache.commons.lang3.StringUtils;
 import org.jeecg.modules.shop.order.constant.RefundOrderStatus;
+import org.jeecg.modules.shop.order.constant.RefundType;
 import org.jeecg.modules.shop.order.entity.ShopOrderItem;
 import org.jeecg.modules.shop.order.entity.ShopOrderRefund;
 import org.jeecg.modules.shop.order.entity.ShopOrderRefundItem;
@@ -99,7 +100,7 @@ public class ShopRefundSupport {
         OrderRefundVO vo = new OrderRefundVO();
         org.springframework.beans.BeanUtils.copyProperties(refund, vo);
         vo.setStatusLabel(RefundOrderStatus.of(refund.getStatus()).getLabel());
-        vo.setRefundTypeLabel("FULL".equals(refund.getRefundType()) ? "全额退款" : "部分退款");
+        vo.setRefundTypeLabel(RefundType.of(refund.getRefundType()).getLabel());
         vo.setItems(items == null ? listItems(refund.getId()) : items);
         return vo;
     }

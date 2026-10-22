@@ -9,6 +9,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.shiro.authz.annotation.RequiresPermissions;
 import org.jeecg.common.api.vo.Result;
+import org.jeecg.modules.shop.common.ShopRequestUtils;
 import org.jeecg.common.aspect.annotation.AutoLog;
 import org.jeecg.common.exception.JeecgBootException;
 import org.jeecg.config.shiro.IgnoreAuth;
@@ -242,21 +243,9 @@ public class SlideshowController {
         return Result.OK(maps);
     }
 
-    /**
-     * 语言解析：优先 x-language，其次 Accept-Language，兜底 en（与改造前保持一致）
-     */
+    /** 语言解析统一收敛到 ShopRequestUtils（query lang → x-language → Accept-Language → zh） */
     private String resolveLanguage(HttpServletRequest request) {
-        String lang = request.getHeader("x-language");
-        if (StringUtils.isBlank(lang)) {
-            lang = request.getHeader("Accept-Language");
-        }
-        if (StringUtils.isBlank(lang)) {
-            return "en";
-        }
-        if (lang.contains(",")) {
-            lang = lang.split(",")[0];
-        }
-        return lang.trim().toLowerCase();
+        return ShopRequestUtils.resolveLanguage(request);
     }
 
     private String asString(Object value) {

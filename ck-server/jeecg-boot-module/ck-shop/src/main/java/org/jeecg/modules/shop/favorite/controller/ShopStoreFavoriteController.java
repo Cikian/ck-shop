@@ -6,6 +6,7 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.extern.slf4j.Slf4j;
 import org.jeecg.common.api.vo.Result;
+import org.jeecg.modules.shop.common.ShopRequestUtils;
 import org.jeecg.common.exception.JeecgBootException;
 import org.jeecg.common.system.vo.LoginUser;
 import org.jeecg.modules.shop.favorite.entity.dto.FavoriteToggleDTO;
@@ -117,27 +118,8 @@ public class ShopStoreFavoriteController {
                 .setStoreOrgCode(orgScopeResolver.resolveStoreOrgCodeOrNull(store));
     }
 
-    /**
-     * 语言解析：与店铺端商品接口保持一致的优先级。
-     * 前端 BFF 会把当前语言同时放进 query 与请求头，这里两条路都接住。
-     */
+    /** 语言解析统一收敛到 ShopRequestUtils（query lang → x-language → Accept-Language → zh） */
     private String resolveLanguage(HttpServletRequest request) {
-        String language = request.getParameter("lang");
-        if (language == null || language.isEmpty()) {
-            language = request.getHeader("x-language");
-        }
-        if (language == null || language.isEmpty()) {
-            language = request.getHeader("Accept-Language");
-        }
-        if (language == null || language.isEmpty()) {
-            return "zh";
-        }
-        if (language.contains(",")) {
-            language = language.split(",")[0];
-        }
-        if (language.contains("-")) {
-            language = language.split("-")[0];
-        }
-        return language.trim().toLowerCase();
+        return ShopRequestUtils.resolveLanguage(request);
     }
 }

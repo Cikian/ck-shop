@@ -5,6 +5,7 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.extern.slf4j.Slf4j;
 import org.jeecg.common.api.vo.Result;
+import org.jeecg.modules.shop.common.ShopRequestUtils;
 import org.jeecg.config.shiro.IgnoreAuth;
 import org.jeecg.modules.shop.category.entity.ShopCategory;
 import org.jeecg.modules.shop.category.entity.vo.StoreCategoryVO;
@@ -71,20 +72,8 @@ public class ShopStoreCategoryController {
         return Result.OK(shopCategoryService.buildStoreTree(orgCode, language));
     }
 
+    /** 语言解析统一收敛到 ShopRequestUtils（query lang → x-language → Accept-Language → zh） */
     private String resolveLanguage(HttpServletRequest request) {
-        String language = request.getHeader("x-language");
-        if (language == null || language.isEmpty()) {
-            language = request.getHeader("Accept-Language");
-        }
-        if (language == null || language.isEmpty()) {
-            return "zh";
-        }
-        if (language.contains(",")) {
-            language = language.split(",")[0];
-        }
-        if (language.contains("-")) {
-            language = language.split("-")[0];
-        }
-        return language.trim().toLowerCase();
+        return ShopRequestUtils.resolveLanguage(request);
     }
 }
