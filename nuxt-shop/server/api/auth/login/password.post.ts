@@ -32,13 +32,13 @@ export default defineEventHandler(async (event) => {
   // 两个维度：
   //   · IP + 邮箱：挡住单 IP 扫同一账号；
   //   · 仅 IP：挡住"一个 IP 换着邮箱撞库"（只有前一个维度时，换邮箱即可绕过）。
-  enforceRateLimit(event, {
+  await enforceRateLimit(event, {
     key: 'auth:login-password',
     limit: 10,
     windowMs: 60_000,
     extra: email,
   })
-  enforceRateLimit(event, {
+  await enforceRateLimit(event, {
     key: 'auth:login-password:ip',
     limit: 20,
     windowMs: 60_000,

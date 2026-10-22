@@ -33,13 +33,13 @@ export default defineEventHandler(async (event) => {
   // 限流：验证码可以被暴力猜（6 位数字），必须限制尝试频率。
   // 后端还有「同一验证码最多错 5 次即作废 + 锁定 15 分钟」的硬限制，
   // 这里是边缘层，防止高频请求先打到后端。
-  enforceRateLimit(event, {
+  await enforceRateLimit(event, {
     key: 'auth:login-email-code',
     limit: 10,
     windowMs: 60_000,
     extra: email,
   })
-  enforceRateLimit(event, {
+  await enforceRateLimit(event, {
     key: 'auth:login-email-code:ip',
     limit: 20,
     windowMs: 60_000,

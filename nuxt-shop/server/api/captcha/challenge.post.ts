@@ -30,7 +30,7 @@ function pickType(body: ChallengeBody | undefined): string {
 }
 
 export default defineEventHandler(async (event) => {
-  enforceRateLimit(event, {
+  await enforceRateLimit(event, {
     key: 'captcha:challenge',
     limit: 20,
     windowMs: 60_000,

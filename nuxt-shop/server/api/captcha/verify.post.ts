@@ -18,7 +18,7 @@ interface VerifyBody {
 }
 
 export default defineEventHandler(async (event) => {
-  enforceRateLimit(event, {
+  await enforceRateLimit(event, {
     key: 'captcha:verify',
     limit: 60,
     windowMs: 60_000,

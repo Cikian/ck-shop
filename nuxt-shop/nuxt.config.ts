@@ -207,6 +207,20 @@ export default defineNuxtConfig({
      * 构建期预压缩 gzip/brotli；若前面已有 nginx 压缩，重复压缩只是多占磁盘。
      */
     compressPublicAssets: { gzip: true, brotli: true },
+
+    /**
+     * 限流计数器存储（清单 B19）。
+     *
+     * 默认（未配置 RATE_LIMIT_REDIS_URL）是进程内存：多实例部署时每个实例各算一份，
+     * 攻击者可以靠轮询实例放大配额。配置 Redis 后所有实例共用同一份计数。
+     *
+     * 环境变量：RATE_LIMIT_REDIS_URL=redis://[:password@]host:port/db
+     */
+    storage: {
+      rate: process.env.RATE_LIMIT_REDIS_URL
+        ? { driver: 'redis', url: process.env.RATE_LIMIT_REDIS_URL }
+        : { driver: 'memory' },
+    },
   },
 
   modules: ['@nuxtjs/i18n', '@nuxtjs/seo', '@nuxt/ui'],

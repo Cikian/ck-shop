@@ -29,13 +29,13 @@ export default defineEventHandler(async (event) => {
 
   // 限流：未登录接口，且验证码可被暴力猜，10 分钟 5 次（按 IP + 邮箱）。
   // 仅按 IP 限一层：重置成功会让旧会话失效，是账号接管的主要路径之一。
-  enforceRateLimit(event, {
+  await enforceRateLimit(event, {
     key: 'auth:reset-password',
     limit: 5,
     windowMs: 10 * 60_000,
     extra: email,
   })
-  enforceRateLimit(event, {
+  await enforceRateLimit(event, {
     key: 'auth:reset-password:ip',
     limit: 10,
     windowMs: 10 * 60_000,

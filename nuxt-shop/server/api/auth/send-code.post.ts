@@ -53,13 +53,13 @@ export default defineEventHandler(async (event) => {
   //   · 同一 IP + 同一邮箱：防单账号刷；
   //   · 同一 IP（不限邮箱）：防"换着邮箱刷"——旧实现只有前者，攻击者
   //     随便填不同邮箱就能绕过，把平台当成免费发信机。
-  enforceRateLimit(event, {
+  await enforceRateLimit(event, {
     key: `auth:send-code:${scene}`,
     limit: 5,
     windowMs: 60_000,
     extra: email,
   })
-  enforceRateLimit(event, {
+  await enforceRateLimit(event, {
     key: `auth:send-code:ip:${scene}`,
     limit: 10,
     windowMs: 60_000,

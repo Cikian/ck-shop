@@ -43,7 +43,7 @@ export default defineEventHandler(async (event) => {
   const encryptedOld = oldPassword ? encryptPassword(oldPassword) : ''
 
   // 限流：改密码接口会校验旧密码，属于可被暴力尝试的凭据校验点。
-  enforceRateLimit(event, {
+  await enforceRateLimit(event, {
     key: 'auth:change-password',
     limit: 10,
     windowMs: 10 * 60_000,
