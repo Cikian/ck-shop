@@ -38,6 +38,8 @@ export function extractCartErrorMessage(error: unknown, fallback: string): strin
  */
 export const CART_COUNT_STATE_KEY = 'store-cart-count'
 export const CART_UNAUTHORIZED_STATE_KEY = 'store-cart-unauthorized'
+/** SSR 播种购物车角标的时间戳（毫秒）；客户端据此跳过冷启动的重复请求（清单 S20） */
+export const CART_COUNT_SEEDED_AT_KEY = 'cart-count-seeded-at'
 
 export const useCart = () => {
   const cart = useState<StoreCart>('store-cart', () => emptyCart())

@@ -27,12 +27,25 @@
 // 服务端结果回来后响应式状态自己更新即可；要"先验证再渲染"的是受保护页面，
 // 那件事由 app/middleware/auth.ts 在路由层完成（它发现 authChecked 已为 true 时直接复用，不再重复请求）。
 
-import { useAuth } from '~~/composables/useAuth'
+import { AUTH_SEED_FRESH_MS, AUTH_SEEDED_AT_KEY, useAuth } from '~~/composables/useAuth'
 
 export default defineNuxtPlugin(() => {
-  const { restoreUser, refreshSession } = useAuth()
+  const { restoreUser, refreshSession, authChecked } = useAuth()
 
   restoreUser()
+
+  /*
+   * 冷启动去重（清单 S20）。
+   *
+   * SSR 刚刚查过一次 /api/auth/session 并种进了 useState，这里再问一次就是
+   * 同一秒里的重复请求（还会跟 Header 的 /api/cart/count 撞在一起）。
+   * 只要播种足够新（默认 60 秒内），就跳过这次校验：
+   *   · 播种来自服务端，本身就是权威结果；
+   *   · 60 秒后（或 SPA 场景没有播种）照旧走 refreshSession 的完整校验。
+   */
+  const seededAt = useState<number>(AUTH_SEEDED_AT_KEY, () => 0)
+  const seededFresh = authChecked.value && seededAt.value > 0 && Date.now() - seededAt.value < AUTH_SEED_FRESH_MS
+  if (seededFresh) return
 
   // 失败（断网等）时 refreshSession 会把本地缓存清掉并按未登录处理 ——
   // 这是有意的 fail-closed：无法确认登录态时，不能继续显示"已登录"。

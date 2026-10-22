@@ -51,6 +51,16 @@ interface AuthResult {
  */
 export const resolveAuthErrorMessage = (error: any): string => readErrorMessage(error, '')
 
+/**
+ * SSR 播种登录态的时间戳（毫秒）。
+ *
+ * 用途（清单 S20）：SSR 已经查过一次 /api/auth/session 并把结果种进 useState，
+ * 客户端插件没必要在冷启动的同一秒里再问一次。播种后 AUTH_SEED_FRESH_MS 内视为可信。
+ */
+export const AUTH_SEEDED_AT_KEY = 'auth-seeded-at'
+/** 播种结果的"新鲜期"：超过这个时间客户端仍会重新校验一次 */
+export const AUTH_SEED_FRESH_MS = 60_000
+
 export const useAuth = () => {
   const userInfo = useState<UserInfo | null>('user-info', () => null)
 

@@ -23,8 +23,8 @@
 // 不会自动转发浏览器的 cookie；useRequestFetch() 会带上当前请求的 cookie/头。
 
 import type { AuthSession } from '#server/api/auth/session.get'
-import { CART_COUNT_STATE_KEY, CART_UNAUTHORIZED_STATE_KEY } from '~~/composables/useCart'
-import { useAuth } from '~~/composables/useAuth'
+import { CART_COUNT_SEEDED_AT_KEY, CART_COUNT_STATE_KEY, CART_UNAUTHORIZED_STATE_KEY } from '~~/composables/useCart'
+import { AUTH_SEEDED_AT_KEY, useAuth } from '~~/composables/useAuth'
 import type { StoreCartCount } from '~~/types/shop-cart'
 import { normalizeCartCount } from '~~/types/shop-cart'
 
@@ -41,6 +41,9 @@ export default defineNuxtRouteMiddleware(async () => {
   const requestFetch = useRequestFetch()
   const count = useState<StoreCartCount>(CART_COUNT_STATE_KEY, () => ({ totalItems: 0, totalQuantity: 0 }))
   const unauthorized = useState<boolean>(CART_UNAUTHORIZED_STATE_KEY, () => false)
+  // 播种时间戳：客户端插件/Header 据此跳过冷启动的重复请求（清单 S20）
+  const authSeededAt = useState<number>(AUTH_SEEDED_AT_KEY, () => 0)
+  const cartSeededAt = useState<number>(CART_COUNT_SEEDED_AT_KEY, () => 0)
 
   try {
     // /api/auth/session 契约上永远返回 200，用 body.authenticated 表达结果
@@ -56,11 +59,13 @@ export default defineNuxtRouteMiddleware(async () => {
         userInfo.value = sessionUser as unknown as NonNullable<typeof userInfo.value>
       }
       authChecked.value = true
+      authSeededAt.value = Date.now()
 
       // 角标失败不影响页面（与 useCart.refreshCount 的"失败静默"口径一致）
       try {
         count.value = normalizeCartCount(await requestFetch('/api/cart/count'))
         unauthorized.value = false
+        cartSeededAt.value = Date.now()
       } catch {
         // 保持默认 0 角标
       }
@@ -69,6 +74,8 @@ export default defineNuxtRouteMiddleware(async () => {
 
     // 明确未登录：也标记 authChecked，避免受保护页的 auth.ts 再问一次服务端
     authChecked.value = true
+    authSeededAt.value = Date.now()
+    cartSeededAt.value = Date.now()
     unauthorized.value = true
   } catch {
     // 服务端这次拿不到会话（后端不可用/网络异常）：

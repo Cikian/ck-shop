@@ -332,8 +332,8 @@
 <script setup lang="ts">
 import type { DropdownMenuItem } from '@nuxt/ui'
 import type { StoreCategoryNode } from '~~/types/store-category'
-import { useAuth } from '~~/composables/useAuth'
-import { useCart } from '~~/composables/useCart'
+import { AUTH_SEED_FRESH_MS, useAuth } from '~~/composables/useAuth'
+import { CART_COUNT_SEEDED_AT_KEY, useCart } from '~~/composables/useCart'
 import { useLoginLinkBare } from '~~/composables/useLoginLink'
 
 /**
@@ -564,8 +564,15 @@ watch(() => route.fullPath, () => {
 }, { immediate: true })
 
 onMounted(() => {
-  // /api/cart/count 需要 httpOnly cookie，只在客户端请求
-  refreshCount()
+  /*
+   * /api/cart/count 需要 httpOnly cookie，只能在客户端请求。
+   * 但如果 SSR 刚刚播过种（60 秒内），这个请求就是重复的 —— 直接用播种值（清单 S20）。
+   */
+  const cartSeededAt = useState<number>(CART_COUNT_SEEDED_AT_KEY, () => 0)
+  const seededFresh = cartSeededAt.value > 0 && Date.now() - cartSeededAt.value < AUTH_SEED_FRESH_MS
+  if (!seededFresh) {
+    refreshCount()
+  }
   document.addEventListener('keydown', onDocumentKeydown)
   document.addEventListener('pointerdown', onDocumentPointerDown)
   window.addEventListener('resize', onWindowResize)
