@@ -190,10 +190,10 @@
 
 <script setup lang="ts">
 import type { StoreCategoryNode } from '~~/types/store-category'
-import type { StoreProductCard } from '~~/types/shop-product'
+import type { StoreProductCard, StoreProductPage } from '~~/types/shop-product'
+import { emptyStoreProductPage } from '~~/composables/useProducts'
 import type { ShopActivePromotion } from '@@/server/api/promotions/active.get'
 import type { SlideItem } from '@@/server/api/home/slide.get'
-import { useStoreProductList } from '~~/composables/useProducts'
 
 /**
  * 首页 = 浏览主战场，结构**完全对齐设计稿**：
@@ -284,20 +284,18 @@ function refreshSecondary() {
 }
 
 // ===========================================================================
-// 4. 热销爆款横排（真实销量排序）
+// 4 + 5. 热销横排与主商品流（一次请求取回，清单 S21）
 // ===========================================================================
-const { data: hotPage, error: hotError, refresh: refreshHot } = useStoreProductList({
-  pageNo: ref(1),
-  pageSize: HOT_PAGE_SIZE,
-  sortBy: ref<'sales'>('sales'),
-})
-
-const hotProducts = computed(() => hotPage.value?.records ?? [])
-
-// ===========================================================================
-// 5. 主商品流
-// ===========================================================================
+//
+// 以前这里是两个 useStoreProductList：热销一条（sortBy=sales）、主列表一条。
+// SSR 要跑两次后端往返，而且主列表还要在客户端剔除热销商品 —— 18 件里重叠 6 件，
+// 用户实际只看到 12 件。现在第 1 页走 /api/home/products：
+//   · 服务端并行取 hot（6 条，销量排序）与 main（多取 6 条，剔除重叠后仍是 18 条）；
+//   · 第 2 页起只取主列表（/api/products），热销横排保持第 1 页的结果不变。
 const pageNo = ref(1)
+
+/** 热销横排的商品：只由第 1 页的聚合请求更新（翻页不会把它清空） */
+const hotProducts = useState<StoreProductCard[]>('home-hot-products', () => [])
 
 /**
  * 「加载更多」的累积层：点击加载更多时把"当前页"快照压栈，渲染时由 computed 摊平。
@@ -310,7 +308,7 @@ const loadedPages = ref<Array<{ page: number; records: StoreProductCard[] }>>([]
 
 /**
  * 换语言时回到第 1 页，并丢掉已累积的旧语言页面。
- * 这份 watch 故意注册在 useStoreProductList **之前**并开 flush: 'sync'：
+ * 这份 watch 故意注册在取数逻辑**之前**并开 flush: 'sync'：
  * 语言变化时先同步改掉页码，请求 key 只变一次；否则会先按旧页码请求一页新语言的商品
  * （白跑一次），更糟的是会把两种语言的商品混进同一条流。
  */
@@ -320,10 +318,33 @@ watch(locale, () => {
   pageNo.value = 1
 }, { flush: 'sync' })
 
-const { data: page, pending, error, refresh } = useStoreProductList({
-  pageNo,
-  pageSize: HOME_PAGE_SIZE,
-})
+const { data: page, pending, error, refresh } = useAsyncData<StoreProductPage>(
+  computed(() => `home-feed-${locale.value}-${pageNo.value}`),
+  async () => {
+    if (pageNo.value === 1) {
+      const feed = await $fetch<{ hot: StoreProductPage; main: StoreProductPage }>('/api/home/products', {
+        query: {
+          lang: locale.value,
+          pageNo: 1,
+          pageSize: HOME_PAGE_SIZE,
+          hotSize: HOT_PAGE_SIZE,
+        },
+      })
+      hotProducts.value = feed?.hot?.records ?? []
+      return feed?.main ?? emptyStoreProductPage(HOME_PAGE_SIZE)
+    }
+
+    const next = await $fetch<StoreProductPage>('/api/products', {
+      query: { lang: locale.value, pageNo: pageNo.value, pageSize: HOME_PAGE_SIZE },
+    })
+    return next ?? emptyStoreProductPage(HOME_PAGE_SIZE)
+  },
+  { default: () => emptyStoreProductPage(HOME_PAGE_SIZE) },
+)
+
+/** 热销与主列表现在是同一次请求：错误与重试口径保持一致 */
+const hotError = error
+const refreshHot = refresh
 
 /** 当前正在展示的页码（后端回传的权威值优先，超出范围时后端会纠正） */
 const currentPageNo = computed(() => page.value?.current || pageNo.value)
