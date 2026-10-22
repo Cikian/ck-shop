@@ -30,9 +30,15 @@
 
 @import "tailwindcss";
 @import "@nuxt/ui";
-/* 只需要它的设计 token（@theme 里的 --color-* 阶梯）；不再经由 @storefront-ui/vue 的 CSS 入口，
- * 该包已从 devDependencies 移除。@storefront-ui/tailwind-config 现在在 dependencies（构建期 import）。 */
-@import "@storefront-ui/tailwind-config";
+/*
+ * 已移除 @import "@storefront-ui/tailwind-config"（清单 S22）。
+ *
+ * 原因：本项目**没有使用任何** @storefront-ui 的组件或 --sf-* 变量
+ * （构建产物里 --sf- 出现次数为 0），但这一行仍会注入一份主题默认值。
+ * 实测移除后入口 CSS 从 242 KB 降到 229 KB（gzip 34 KB → 32 KB），构建正常、
+ * --color-brand-* / --ui-primary / .ui-card 等本项目的 token 全部保留。
+ * 体积基线由 `pnpm check:css`（scripts/analyze-css.mjs）守住。
+ */
 
 @theme {
   /* ===== 品牌色 · 珊瑚玫红 ===== */
