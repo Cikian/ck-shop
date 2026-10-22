@@ -103,13 +103,12 @@
     getImportUrl,
     getExportUrl,
     updateProductStatus,
-    tagAll,
-    categoryList,
-    storeAll,
   } from './ShopProduct.api';
   import ShopProductModal from './components/ShopProductModal.vue';
   import ProductSkuExpand from './components/ProductSkuExpand.vue';
   import { useMessage } from '/@/hooks/web/useMessage';
+  import { usePermission } from '/@/hooks/web/usePermission';
+  import { loadProductReferenceOptions } from './productOptionsCache';
 
   const formRef = ref();
   const queryParam = reactive<any>({});
@@ -170,45 +169,30 @@
     searchQuery();
   }
 
-  /** 加载下拉选项 */
+  /**
+   * 加载下拉选项（模块级缓存 + 店铺按权限懒加载，见 productOptionsCache.ts）。
+   *
+   * 分类/标签/店铺都是分钟级不变的参考数据：以前每次进入列表都要打三个请求，
+   * 其中 storeAll() 对没有 shop-product:filter-store 权限的账号完全没用（筛选项根本不显示）。
+   */
+  const { hasPermission } = usePermission();
+
   async function loadOptions() {
     try {
-      const [categoryRes, tagRes, storeRes] = await Promise.all([
-        categoryList({ pageNo: 1, pageSize: 200, isShow: 'Y' }),
-        tagAll(),
-        // 店铺筛选：启用中的店铺
-        storeAll().catch(() => []),
-      ]);
-      const categoryRecords = categoryRes?.records || categoryRes || [];
-      categoryOptions.value = categoryRecords.map((item: any) => ({
-        label: item.name || item.id,
-        value: item.id,
-      }));
-      const tagRecords = tagRes || [];
-      tagOptions.value = tagRecords.map((item: any) => ({
-        label: pickTranslationName(item) || item.code,
-        value: item.id,
-      }));
-      const storeRecords = storeRes || [];
-      // 筛选仍传 storeId；后端会把 storeId 解析为部门 org_code 可见域
-      storeOptions.value = storeRecords.map((item: any) => ({
+      const includeStores = hasPermission('shop-product:filter-store');
+      const options = await loadProductReferenceOptions(includeStores);
+      categoryOptions.value = options.categories;
+      tagOptions.value = options.tags;
+      storeOptions.value = options.stores.map((item: any) => ({
         label: `${item.name}（${item.code}）`,
         value: item.id,
       }));
       // 「所属店铺」列按商品 sysOrgCode（= 店铺 departOrgCode）反查店铺名
-      setOrgStoreNameMap(storeRecords);
+      setOrgStoreNameMap(options.stores);
     } catch (e) {
       // 下拉加载失败不阻塞列表
       console.warn('加载商品筛选项失败', e);
     }
-  }
-
-  /** 从多语言数组里取中文名称，取不到回退第一条 */
-  function pickTranslationName(record: any): string {
-    const list = record?.translations;
-    if (!Array.isArray(list) || !list.length) return '';
-    const zh = list.find((t: any) => t.languageCode === 'zh' || t.languageCode === 'zh-CN');
-    return (zh || list[0])?.name || '';
   }
 
   /** 新增 */
