@@ -24,52 +24,42 @@
       </div>
     </div>
 
-    <!-- 链接区 -->
+    <!--
+      品牌区。
+      三列「购物指南 / 客户服务 / 关于我们」共 12 个链接已移除：
+      目标页一个都没有实现，渲染成 <span> 只是"看起来能点的假链接"，
+      渲染成 <a href="/"> 更糟（点了刷新当前页）。等页面真正做出来再加。
+    -->
     <div class="mx-auto max-w-7xl px-2 py-12 sm:px-3 lg:px-4">
-      <div class="grid grid-cols-2 gap-8 md:grid-cols-4">
-        <!-- 品牌列 -->
-        <div class="col-span-2 md:col-span-1">
-          <div class="flex items-center gap-2">
-            <span class="brand-gradient flex h-8 w-8 items-center justify-center rounded-[10px] text-white">
-              <UIcon name="lucide:zap" class="h-4 w-4" aria-hidden="true" />
-            </span>
-            <span class="text-[15px] font-black tracking-tight">{{ brandName }}</span>
-          </div>
-          <p class="mt-3 max-w-xs text-[13px] leading-relaxed text-white/55">
-            {{ t('home.description') }}
-          </p>
-          <p class="mt-4 text-xs font-bold uppercase tracking-wider text-white/40">
-            {{ t('footer.followUs') }}
-          </p>
-          <!--
-            社交入口是纯占位：后端没有「店铺社交账号」字段，之前每个图标都指向 href="/"，
-            点了只会刷新当前页 —— 那是假导航。这里改成非交互 span：
-            保留 title 供鼠标悬停识别平台，aria-hidden 让读屏跳过（它不可操作，念出来只会误导）。
-            等后端补了账号字段，再把这些 span 换成真实 <a href="...">。
-          -->
-          <div class="mt-2 flex items-center gap-2">
-            <span
-              v-for="social in socials"
-              :key="social.label"
-              class="flex h-8 w-8 items-center justify-center rounded-full bg-white/10 text-white/70"
-              :title="social.label"
-              aria-hidden="true"
-            >
-              <UIcon :name="social.icon" class="h-4 w-4" />
-            </span>
-          </div>
+      <div class="max-w-xl">
+        <div class="flex items-center gap-2">
+          <span class="brand-gradient flex h-8 w-8 items-center justify-center rounded-[10px] text-white">
+            <UIcon name="lucide:zap" class="h-4 w-4" aria-hidden="true" />
+          </span>
+          <span class="text-[15px] font-black tracking-tight">{{ brandName }}</span>
         </div>
-
-        <!-- 三个链接列：目标页尚未实现，先按纯文本呈现（不出现"能点但没反应"的伪链接） -->
-        <div v-for="column in linkColumns" :key="column.titleKey">
-          <h2 class="text-[13px] font-bold text-white/90">{{ t(column.titleKey) }}</h2>
-          <ul class="mt-4 space-y-2.5">
-            <li v-for="link in column.links" :key="link">
-              <span class="text-[13px] text-white/55">
-                {{ t(link) }}
-              </span>
-            </li>
-          </ul>
+        <p class="mt-3 max-w-xs text-[13px] leading-relaxed text-white/55">
+          {{ t('home.description') }}
+        </p>
+        <p class="mt-4 text-xs font-bold uppercase tracking-wider text-white/40">
+          {{ t('footer.followUs') }}
+        </p>
+        <!--
+          社交入口是纯占位：后端没有「店铺社交账号」字段，之前每个图标都指向 href="/"，
+          点了只会刷新当前页 —— 那是假导航。这里改成非交互 span：
+          保留 title 供鼠标悬停识别平台，aria-hidden 让读屏跳过（它不可操作，念出来只会误导）。
+          等后端补了账号字段，再把这些 span 换成真实 <a href="...">。
+        -->
+        <div class="mt-2 flex items-center gap-2">
+          <span
+            v-for="social in socials"
+            :key="social.label"
+            class="flex h-8 w-8 items-center justify-center rounded-full bg-white/10 text-white/70"
+            :title="social.label"
+            aria-hidden="true"
+          >
+            <UIcon :name="social.icon" class="h-4 w-4" />
+          </span>
         </div>
       </div>
     </div>
@@ -78,11 +68,8 @@
     <div class="border-t border-white/10">
       <div class="mx-auto flex max-w-7xl flex-col gap-3 px-2 py-5 text-xs text-white/45 sm:flex-row sm:items-center sm:justify-between sm:px-3 lg:px-4">
         <p>© {{ year }} {{ brandName }}. {{ t('footer.allRightsReserved') }}</p>
-        <div class="flex flex-wrap items-center gap-4">
-          <span>{{ t('footer.privacyPolicy') }}</span>
-          <span>{{ t('footer.termsOfService') }}</span>
-          <span>{{ t('footer.cookiePolicy') }}</span>
-        </div>
+        <!-- 法务页尚未实现：明确写"即将上线"，而不是把它渲染成可点击的链接 -->
+        <p class="text-white/35">{{ t('footer.legalComingSoon') }}</p>
       </div>
     </div>
   </footer>
@@ -94,8 +81,8 @@
  *
  * 这里是**纯展示**，不再有任何"看起来能点"的元素：
  *   · 社交图标：后端没有「店铺社交账号」字段，所以只做平台标识（非交互 span，带 title）；
- *   · 三列链接 / 法务条款：目标页都还没实现，按纯文本展示。
- * 等后端字段与页面就绪后再换成真实链接（见 docs/store-redesign/后端促销字段清单.md）。
+ *   · 三列链接（12 个）已删除；法务条款改成一行"即将上线"说明。
+ * 等页面真正实现后再换成真实链接。
  */
 const { t } = useI18n()
 
@@ -117,20 +104,5 @@ const socials = [
   { icon: 'lucide:message-circle', label: 'WeChat' },
   { icon: 'lucide:instagram', label: 'Instagram' },
   { icon: 'lucide:youtube', label: 'YouTube' },
-]
-
-const linkColumns = [
-  {
-    titleKey: 'footer.shop',
-    links: ['footer.shoppingGuide', 'footer.paymentMethod', 'footer.shippingDelivery', 'footer.returnPolicy'],
-  },
-  {
-    titleKey: 'footer.customerService',
-    links: ['footer.helpCenter', 'footer.contactUs', 'footer.orderTracking', 'footer.faq'],
-  },
-  {
-    titleKey: 'footer.about',
-    links: ['footer.aboutUs', 'footer.careers', 'footer.press', 'footer.sustainability'],
-  },
 ]
 </script>
