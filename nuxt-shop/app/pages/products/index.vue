@@ -330,11 +330,44 @@ function goToPage(target: number) {
   }
 }
 
+/**
+ * SEO：筛选/排序/分页都是**独立可索引页面**。
+ *
+ * - canonical 参数白名单在 nuxt.config.ts 的 seo.canonicalQueryWhitelist 里维护，
+ *   否则这些变体都会被 canonical 到 /zh/products；
+ * - 关键词搜索结果页没有独特价值，按惯例 noindex（但 follow，保留站内链接权重）；
+ * - 分页页输出 prev/next，帮助爬虫理解序列。
+ */
 useSeoMeta({
   title: () => pageTitle.value,
   // 搜索页的 description 必须是"这次搜索是什么"，而不是分类总览的通用介绍
   description: () => keyword.value
     ? t('shop.searchResultFor', { keyword: keyword.value })
     : t('categories.description'),
+  robots: () => keyword.value ? 'noindex, follow' : 'index, follow',
+})
+
+const siteConfig = useSiteConfig()
+
+/** 生成某一页的绝对 URL（保留当前筛选条件；分页用 pageNo） */
+function absolutePageUrl(targetPage: number): string {
+  const query: Record<string, string> = {}
+  if (keyword.value) query.keyword = keyword.value
+  if (categoryId.value) query.categoryId = categoryId.value
+  if (sortBy.value !== 'default') query.sortBy = sortBy.value
+  if (targetPage > 1) query.pageNo = String(targetPage)
+  const base = String(siteConfig.url || '').replace(/\/+$/, '')
+  return `${base}${localePath({ path: '/products', query })}`
+}
+
+useHead(() => {
+  const link: Array<Record<string, string>> = []
+  if (currentPage.value > 1) {
+    link.push({ rel: 'prev', href: absolutePageUrl(currentPage.value - 1) })
+  }
+  if (currentPage.value < totalPages.value) {
+    link.push({ rel: 'next', href: absolutePageUrl(currentPage.value + 1) })
+  }
+  return { link }
 })
 </script>

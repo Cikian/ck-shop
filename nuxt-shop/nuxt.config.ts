@@ -250,6 +250,17 @@ export default defineNuxtConfig({
     defaultLocale: STORE_DEFAULT_LANG,
   },
 
+  seo: {
+    /*
+     * canonical 保留的查询参数（nuxt-seo-utils 的 canonicalQueryWhitelist）。
+     *
+     * 默认白名单是 page/sort/filter/search/q/category/tag，而本项目的筛选参数叫
+     * keyword/categoryId/sortBy/pageNo —— 不加入白名单时，所有筛选、排序、分页变体
+     * 都会被 canonical 到 /zh/products，等于主动告诉搜索引擎"这些页面都是重复的"。
+     */
+    canonicalQueryWhitelist: ['pageNo', 'sortBy', 'categoryId', 'keyword'],
+  },
+
   runtimeConfig: {
     apiBaseUrl: process.env.API_BASE_URL || 'http://127.0.0.1:9951/api',
 
