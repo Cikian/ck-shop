@@ -123,7 +123,7 @@
             key="content"
             class="product-grid"
           >
-            <StoreProductCard v-for="product in visibleProducts" :key="product.id" :product="product" />
+            <StoreProductCard v-for="(product, idx) in visibleProducts" :key="product.id" :product="product" :eager="idx < 6" />
           </div>
 
           <!--

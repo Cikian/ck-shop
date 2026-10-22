@@ -160,6 +160,32 @@ let motionQuery: MediaQueryList | null = null
 
 const slides = computed(() => props.slides || [])
 
+/**
+ * 首图 preload：hero 是 LCP 元素，等 HTML 解析到 <img> 才开始下载就晚了。
+ * imagesrcset/imagesizes 必须与 ShopImage 生成的候选完全一致（width=1200 → 1200w/1600w），
+ * 否则浏览器会当成两张图，preload 白做还多下一次。
+ */
+useHead(() => {
+  const first = slides.value[0]
+  const pic = first?.pic_url
+  if (!pic || !/^https?:\/\//i.test(pic)) {
+    return {}
+  }
+  const src = encodeURIComponent(pic)
+  return {
+    link: [
+      {
+        rel: 'preload',
+        as: 'image',
+        href: `/api/img?src=${src}&w=1200`,
+        imagesrcset: `/api/img?src=${src}&w=1200 1200w, /api/img?src=${src}&w=1600 1600w`,
+        imagesizes: '100vw',
+        fetchpriority: 'high',
+      },
+    ],
+  }
+})
+
 /** 全部暂停条件都放这里：watch 它即可自动启停定时器 */
 const canAutoplay = computed(() =>
   slides.value.length > 1

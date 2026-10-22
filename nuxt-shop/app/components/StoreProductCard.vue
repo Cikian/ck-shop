@@ -8,6 +8,8 @@
           :alt="product.title"
           width="600"
           height="600"
+          :loading="eager ? 'eager' : 'lazy'"
+          :fetchpriority="eager ? 'high' : 'auto'"
           class="h-full w-full object-cover transition-transform duration-500 ease-out group-hover:scale-105 motion-reduce:transition-none motion-reduce:group-hover:scale-100"
           icon-class="h-9 w-9"
         />
@@ -122,6 +124,8 @@ import { useAuth } from '~~/composables/useAuth'
  */
 const props = defineProps<{
   product: StoreProductCard
+  /** 首屏首行的卡片用 eager：等滚动到才加载会让 LCP 变慢 */
+  eager?: boolean
 }>()
 
 const { t, locale } = useI18n()

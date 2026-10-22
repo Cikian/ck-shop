@@ -97,7 +97,7 @@
 
       <!-- 商品网格：统一用新的 StoreProductCard（价格/角标/统计的渲染契约都在组件里） -->
       <div v-else key="content" class="product-grid">
-        <StoreProductCard v-for="product in records" :key="product.id" :product="product" />
+        <StoreProductCard v-for="(product, idx) in records" :key="product.id" :product="product" :eager="idx < 6" />
       </div>
       </Transition>
 

@@ -137,6 +137,7 @@
               v-for="(product, idx) in records"
               :key="product.id"
               :product="product"
+              :eager="idx < 6"
               :style="{ animationDelay: `${idx * 60}ms` }"
               class="animate-fade-in-up opacity-0 motion-reduce:animate-none motion-reduce:opacity-100"
             />

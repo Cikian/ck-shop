@@ -267,6 +267,8 @@ export default defineNuxtConfig({
     '/api/promotions/active': { swr: 60 },
     '/api/review': { swr: 30 },
     '/api/store/info': { swr: 300 },
+    // 缩放后的图片内容不可变：Nitro 端缓存一天，避免每个访客都重新抓原图+转码
+    '/api/img': { swr: 86400 },
   },
 
   seo: {

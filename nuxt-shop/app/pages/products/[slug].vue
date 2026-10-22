@@ -291,6 +291,7 @@
             v-for="item in related"
             :key="item.id"
             :product="item"
+            :eager="true"
           />
         </div>
         <p v-else class="mt-5 text-sm text-[var(--color-muted)]">{{ t('shop.noData') }}</p>
