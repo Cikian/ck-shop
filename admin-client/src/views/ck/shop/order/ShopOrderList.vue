@@ -125,7 +125,7 @@
 </template>
 
 <script lang="ts" name="ck.shop-shopOrder" setup>
-  import { ref, reactive } from 'vue';
+  import { ref, reactive, watch } from 'vue';
   import dayjs from 'dayjs';
   import { BasicTable, TableAction } from '/@/components/Table';
   import { useListPage } from '/@/hooks/system/useListPage';
@@ -155,6 +155,51 @@
   /** 下单时间区间 / 支付时间区间：界面用 Dayjs，提交前转成 yyyy-MM-dd HH:mm:ss 字符串 */
   const createTimeRange = ref<any[]>([]);
   const payTimeRange = ref<any[]>([]);
+
+  /**
+   * 筛选条件持久化（清单 A21）。
+   *
+   * 以前 9 个条件只存在组件内：刷新页面、切菜单再回来、或误点浏览器返回，
+   * 条件全部丢失，运营得重新选一遍。这里按页面维度存到 sessionStorage：
+   *   · 关闭标签页即清空（不污染下一次会话）；
+   *   · 时间区间单独存（界面是 Dayjs，直接 JSON 化会丢类型）。
+   */
+  const FILTER_STORAGE_KEY = 'ck-shop-order-filters';
+
+  function restoreFilters() {
+    try {
+      const raw = sessionStorage.getItem(FILTER_STORAGE_KEY);
+      if (!raw) return;
+      const saved = JSON.parse(raw) || {};
+      if (saved.query) Object.assign(queryParam, saved.query);
+      if (Array.isArray(saved.createTimeRange) && saved.createTimeRange.length === 2) {
+        createTimeRange.value = saved.createTimeRange.map((item: string) => dayjs(item));
+      }
+      if (Array.isArray(saved.payTimeRange) && saved.payTimeRange.length === 2) {
+        payTimeRange.value = saved.payTimeRange.map((item: string) => dayjs(item));
+      }
+    } catch {
+      // 存储损坏就当没有，不影响列表可用
+    }
+  }
+
+  function persistFilters() {
+    try {
+      sessionStorage.setItem(
+        FILTER_STORAGE_KEY,
+        JSON.stringify({
+          query: queryParam,
+          createTimeRange: (createTimeRange.value || []).map((item: any) => dayjs(item).format(TIME_FORMAT)),
+          payTimeRange: (payTimeRange.value || []).map((item: any) => dayjs(item).format(TIME_FORMAT)),
+        }),
+      );
+    } catch {
+      // 隐私模式/配额满：忽略即可
+    }
+  }
+
+  restoreFilters();
+  watch([queryParam, createTimeRange, payTimeRange], persistFilters, { deep: true });
 
   /** 店铺下拉（启用中的店铺；加载失败不阻塞列表） */
   const storeOptions = ref<any[]>([]);
@@ -339,6 +384,12 @@
     queryParam.includeArchived = false;
     createTimeRange.value = [];
     payTimeRange.value = [];
+    // 重置要连持久化一起清掉，否则刷新后条件又回来了（清单 A21）
+    try {
+      sessionStorage.removeItem(FILTER_STORAGE_KEY);
+    } catch {
+      // ignore
+    }
     reload();
   }
 
