@@ -23,8 +23,16 @@ export default defineEventHandler(async (event): Promise<StoreCart> => {
 
   const body = await readBody<QuantityBody>(event)
   const quantity = Number(body?.quantity)
-  if (!Number.isFinite(quantity) || quantity < 1) {
+  /*
+   * 必须是**整数**：以前只判 >=1，1.9 会被 Math.trunc 成 1 静默接受，
+   * 而提示语却写着"必须是整数"——用户看到的数量与提交的意图不一致。
+   * 这里直接拒绝非整数，并加上限（后端单行数量上限 999，与 DB/业务口径一致）。
+   */
+  if (!Number.isFinite(quantity) || !Number.isInteger(quantity) || quantity < 1) {
     throw createError({ statusCode: 400, statusMessage: '数量必须是大于 0 的整数' })
+  }
+  if (quantity > 999) {
+    throw createError({ statusCode: 400, statusMessage: '单次最多购买 999 件' })
   }
 
   const query = getQuery(event)
@@ -37,7 +45,7 @@ export default defineEventHandler(async (event): Promise<StoreCart> => {
     method: 'POST',
     body: {
       itemId,
-      quantity: Math.trunc(quantity),
+      quantity,
       source: body?.source ?? 'cart',
     },
   })

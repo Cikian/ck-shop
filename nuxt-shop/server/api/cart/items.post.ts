@@ -32,6 +32,15 @@ export default defineEventHandler(async (event): Promise<StoreCart> => {
   const contextLocale = (event.context as Record<string, unknown>).locale
   const lang = resolveStoreLang(body?.lang ?? query.lang ?? contextLocale, 'en')
 
+  // 与修改数量接口同一口径：必须是 1..999 的整数（否则后端会静默截断或报错）
+  const quantity = Number(body?.quantity ?? 1)
+  if (!Number.isFinite(quantity) || !Number.isInteger(quantity) || quantity < 1) {
+    throw createError({ statusCode: 400, statusMessage: '数量必须是大于 0 的整数' })
+  }
+  if (quantity > 999) {
+    throw createError({ statusCode: 400, statusMessage: '单次最多购买 999 件' })
+  }
+
   const api = createApiClient(event, { withAuth: true, lang })
 
   const result = await api<unknown>('/shop/cart/store/add', {
@@ -40,7 +49,7 @@ export default defineEventHandler(async (event): Promise<StoreCart> => {
       productId,
       // 无规格商品必须传空串（后端契约）；null / undefined 统一收敛成空串
       skuId: body?.skuId ? String(body.skuId).trim() : '',
-      quantity: body?.quantity ?? 1,
+      quantity,
       source: body?.source ?? 'api',
     },
   })
