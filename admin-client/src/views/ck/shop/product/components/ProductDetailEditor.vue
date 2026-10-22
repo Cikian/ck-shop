@@ -270,11 +270,15 @@
               <div class="block-field">
                 <span class="block-field__label">列数</span>
                 <div class="block-field__control">
-                  <a-radio-group v-model:value="block.content.columns" :disabled="disabled">
-                    <a-radio-button :value="2">2 列</a-radio-button>
-                    <a-radio-button :value="3">3 列</a-radio-button>
-                  </a-radio-group>
-                  <span class="block-field__hint">移动端自动收敛为 2 列，不会横向溢出</span>
+                  <!--
+                    这里不再放第二个「列数」控件（清单 A23）：
+                    上方「布局」区已经有一组 1/2/3 快捷 + 自定义输入，两处都绑 block.content.columns
+                    且可选范围不一致（1/2/3 vs 2/3），运营会以为改的是不同设置。
+                    现在只展示当前值并指向唯一的调整入口。
+                  -->
+                  <span class="block-field__hint">
+                    当前 {{ block.content.columns || 2 }} 列；列数请在上方「布局」中统一调整（1–{{ columnsMax }} 列，长图切割用 1 列）。移动端自动收敛为 2 列，不会横向溢出。
+                  </span>
                 </div>
               </div>
               <div class="block-field">
