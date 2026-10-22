@@ -122,6 +122,16 @@ public class FlywayConfig {
                                 .sqlMigrationSuffixes(sqlMigrationSuffixes)
                                 .validateOnMigrate(validateOnMigrate)
                                 .baselineOnMigrate(baselineOnMigrate)
+                                /*
+                                 * 清单 B16 备注：这里**不能**用 ignoreMigrationPatterns("*:missing")。
+                                 *
+                                 * Flyway 7.15 Community 版不支持该参数，会在启动时抛
+                                 * FlywayTeamsUpgradeRequiredException（已实测），比原来的问题更糟。
+                                 *
+                                 * 正确的做法是清理孤儿记录本身：历史表里 3.9.5.2 的脚本文件已被删除、
+                                 * 对象也已落库，直接删掉那一行 flyway_schema_history 记录即可
+                                 * （本仓库已在开发库执行）。以后删除迁移脚本时同样要先清历史表。
+                                 */
                                 .cleanDisabled(cleanDisabled)
                                 .load();
                         flyway.migrate();
