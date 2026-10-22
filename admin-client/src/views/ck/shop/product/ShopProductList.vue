@@ -56,7 +56,7 @@
     <BasicTable @register="registerTable" :rowSelection="rowSelection">
       <template #tableTitle>
         <a-button type="primary" v-auth="'shop-product:add'" @click="handleAdd" preIcon="ant-design:plus-outlined">新增商品</a-button>
-        <a-button type="primary" v-auth="'shop-product:exportXls'" preIcon="ant-design:export-outlined" @click="onExportXls">导出</a-button>
+        <a-tooltip title="按当前筛选条件导出（含全部页），不是全量数据"><a-button type="primary" v-auth="'shop-product:exportXls'" preIcon="ant-design:export-outlined" @click="handleExport">导出</a-button></a-tooltip>
         <j-upload-button type="primary" v-auth="'shop-product:importExcel'" preIcon="ant-design:import-outlined" @click="onImportXls">导入</j-upload-button>
         <a-dropdown v-if="selectedRowKeys.length > 0">
           <template #overlay>
@@ -141,6 +141,8 @@
       api: list,
       columns,
       canResize: true,
+      // 列设置：默认列集之外还能自己加（清单 A24）
+      showTableSetting: true,
       useSearchForm: false,
       expandRowByClick: false,
       actionColumn: {
@@ -332,6 +334,28 @@
   /** 查询 */
   function searchQuery() {
     reload();
+  }
+
+  /**
+   * 导出前先讲清楚"导出的是当前筛选结果"（清单 A24）。
+   * 以前点导出直接下载，运营常以为导出的是全量，事后才发现少了一半数据。
+   */
+  function handleExport() {
+    const active = Object.entries(queryParam || {})
+      .filter(([, value]) => value !== undefined && value !== null && value !== '')
+      .map(([key, value]) => `${key}=${value}`);
+    createConfirm({
+      iconType: 'info',
+      title: '导出当前筛选结果',
+      content: active.length
+        ? `将按当前筛选条件导出（${active.join('，')}），包含全部页；不是全量数据。`
+        : '当前没有筛选条件，将导出全部数据。',
+      okText: '开始导出',
+      cancelText: '取消',
+      onOk: () => {
+        onExportXls();
+      },
+    });
   }
 
   /** 重置 */
