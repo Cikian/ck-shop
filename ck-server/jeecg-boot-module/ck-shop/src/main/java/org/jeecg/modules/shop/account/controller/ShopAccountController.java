@@ -171,6 +171,19 @@ public class ShopAccountController {
         return Result.OK(shopAccountService.profile(user.getId()));
     }
 
+    /**
+     * 滑动续期：用当前登录态换一张新 token（清单 S25）。
+     *
+     * <p>只返回 token，不返回用户信息 —— 调用方（BFF）只需要替换 cookie。
+     * 未登录时 Shiro 会先拦掉，不会走到这里。
+     */
+    @Operation(summary = "店铺端-续期登录态")
+    @PostMapping(value = "/refresh-token")
+    public Result<String> refreshToken() {
+        LoginUser user = requireLoginUser();
+        return Result.OK("续期成功", shopAccountService.refreshToken(user.getId()));
+    }
+
     // ==================================================================
     // 登录态校验
     // ==================================================================

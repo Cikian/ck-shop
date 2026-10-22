@@ -95,4 +95,15 @@ public interface IShopAccountService {
     // ==================================================================
 
     ShopProfileVO profile(String userId);
+
+    /**
+     * 用当前登录人重新签发 token（滑动续期，清单 S25）。
+     *
+     * <p>调用方必须已通过 Shiro 认证；这里不再校验密码、不记登录日志，
+     * 只做"账号仍有效"的兜底（不存在 / 已注销 / 已冻结）。
+     *
+     * @param userId 当前登录用户 ID（由 Controller 从登录态取出，不接受请求体传入）
+     * @return 新的 token（有效期与登录时一致）
+     */
+    String refreshToken(String userId);
 }

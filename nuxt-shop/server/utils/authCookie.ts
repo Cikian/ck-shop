@@ -20,15 +20,41 @@ export const ACCESS_TOKEN_COOKIE = 'access-token'
 /** 与后端 token 有效期对齐（7 天）。改动前请先确认 Java 侧 JWT 的过期时间。 */
 const ACCESS_TOKEN_MAX_AGE_SECONDS = 60 * 60 * 24 * 7
 
+/**
+ * 解析 JWT 的 exp（秒）。
+ *
+ * <p>**不校验签名**：签名由 Java 侧校验，这里只用来决定"要不要续期"和"cookie 该活多久"。
+ * 解析失败返回 null（当作未知，按固定 7 天处理）。
+ */
+export function accessTokenExpiresAt(token: string): number | null {
+  const parts = String(token || '').split('.')
+  if (parts.length !== 3) return null
+  try {
+    const payload = JSON.parse(Buffer.from(parts[1]!, 'base64url').toString('utf8'))
+    const exp = Number(payload?.exp)
+    return Number.isFinite(exp) && exp > 0 ? exp : null
+  } catch {
+    return null
+  }
+}
+
 /** 写入登录态 cookie（httpOnly：前端 JS 读不到 token） */
-export function setAccessTokenCookie(event: H3Event, token: string): void {
+export function setAccessTokenCookie(event: H3Event, token: string, maxAgeSeconds?: number): void {
   const config = useRuntimeConfig(event)
+  /*
+   * cookie 的生命周期以 **token 自身的 exp** 为准（清单 S25）。
+   * 以前固定写 7 天：续期换到新 token 后，cookie 仍然按旧的 7 天算，
+   * 于是出现"cookie 还在、token 已过期"或反过来"token 还有效、cookie 先没了"的错位。
+   */
+  const exp = accessTokenExpiresAt(token)
+  const remaining = exp === null ? null : exp - Math.floor(Date.now() / 1000)
+  const maxAge = maxAgeSeconds ?? (remaining !== null && remaining > 0 ? remaining : ACCESS_TOKEN_MAX_AGE_SECONDS)
   setCookie(event, ACCESS_TOKEN_COOKIE, token, {
     httpOnly: true,
     secure: Boolean(config.cookieSecure),
     sameSite: 'lax',
     path: '/',
-    maxAge: ACCESS_TOKEN_MAX_AGE_SECONDS,
+    maxAge,
   })
 }
 

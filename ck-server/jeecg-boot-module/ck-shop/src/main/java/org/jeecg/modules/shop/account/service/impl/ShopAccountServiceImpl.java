@@ -592,6 +592,31 @@ public class ShopAccountServiceImpl implements IShopAccountService {
                 .setCreateTime(formatDate(sysUser.getCreateTime()));
     }
 
+    /**
+     * 滑动续期：用当前登录人重新签发 token（清单 S25）。
+     *
+     * <p>为什么需要：JWT 固定 7 天过期，浏览器 cookie 也是 7 天，
+     * 用户在第 7 天会被"突然"登出。BFF 在 token 剩余不足 1 天时调这里换一张新的，
+     * 只要用户在活跃期内访问过，登录态就会一直续下去。
+     *
+     * <p>安全边界：只认 Shiro 已认证的 userId（Controller 传入），不接受请求体；
+     * 账号被注销/冻结时拒绝，避免"冻结后靠续期继续用"。
+     */
+    @Override
+    public String refreshToken(String userId) {
+        if (StringUtils.isBlank(userId)) {
+            throw new JeecgBootException("请先登录");
+        }
+        ShopAccountUser sysUser = shopAccountMapper.selectByIdActive(userId);
+        if (sysUser == null) {
+            throw new JeecgBootException("当前登录用户不存在，请重新登录");
+        }
+        if (CommonConstant.USER_FREEZE.equals(sysUser.getStatus())) {
+            throw new JeecgBootException("该用户已冻结，请联系客服");
+        }
+        return issueToken(sysUser);
+    }
+
     // ==================================================================
     // 用户创建
     // ==================================================================
