@@ -757,6 +757,23 @@ public class ShopPromotionServiceImpl extends ServiceImpl<ShopPromotionMapper, S
         return true;
     }
 
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public int updateStatusBatch(List<String> ids, String status) {
+        if (CollectionUtils.isEmpty(ids)) {
+            throw new JeecgBootException("请选择要操作的活动!");
+        }
+        int updated = 0;
+        for (String id : ids) {
+            if (StringUtils.isBlank(id)) {
+                continue;
+            }
+            updateStatus(id, status);
+            updated++;
+        }
+        return updated;
+    }
+
     // ==================================================================
     // 管理端 —— 冲突检测
     // ==================================================================

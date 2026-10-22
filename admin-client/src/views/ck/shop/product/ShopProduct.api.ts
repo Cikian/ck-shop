@@ -10,6 +10,7 @@ enum Api {
   save = '/shop/product/add',
   edit = '/shop/product/edit',
   updateStatus = '/shop/product/updateStatus',
+  updateStatusBatch = '/shop/product/updateStatusBatch',
   deleteOne = '/shop/product/delete',
   deleteBatch = '/shop/product/deleteBatch',
   exportXls = '/shop/product/exportXls',
@@ -52,20 +53,30 @@ export const deleteOne = (params, handleSuccess) => {
 
 /**
  * 批量删除
+ * @param count 选中条数：确认框必须写清"删多少条、连带什么"，不能只说"选中数据"
  */
-export const batchDelete = (params, handleSuccess) => {
+export const batchDelete = (params, handleSuccess, count?: number) => {
+  const total = Number(count ?? (Array.isArray(params?.ids) ? params.ids.length : 0));
   createConfirm({
     iconType: 'warning',
     title: '确认删除',
-    content: '是否删除选中数据',
-    okText: '确认',
+    content: `将删除选中的 ${total} 个商品，及其 SKU、图集、多语言内容；删除后不可恢复。`,
+    okText: '确认删除',
     cancelText: '取消',
+    okButtonProps: { danger: true },
     onOk: () => {
       return defHttp.delete({ url: Api.deleteBatch, data: params }, { joinParamsToUrl: true }).then(() => {
         handleSuccess();
       });
     },
   });
+};
+
+/**
+ * 批量上下架
+ */
+export const updateStatusBatch = (params: { ids: string; status: 'Y' | 'N' }) => {
+  return defHttp.post({ url: Api.updateStatusBatch, params }, { joinParamsToUrl: true });
 };
 
 /**

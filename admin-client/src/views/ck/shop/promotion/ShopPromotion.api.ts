@@ -16,6 +16,7 @@ enum Api {
   save = '/shop/promotion/add',
   edit = '/shop/promotion/edit',
   updateStatus = '/shop/promotion/updateStatus',
+  updateStatusBatch = '/shop/promotion/updateStatusBatch',
   copy = '/shop/promotion/copy',
   deleteOne = '/shop/promotion/delete',
   deleteBatch = '/shop/promotion/deleteBatch',
@@ -64,13 +65,15 @@ export const deleteOne = (params, handleSuccess) => {
  * @param params { ids }：selectedRowKeys 数组，axios 会序列化成 ids=a&ids=b，
  *               后端 @RequestParam String ids 取不到逗号串，因此这里显式 join(',')
  */
-export const batchDelete = (params, handleSuccess) => {
+export const batchDelete = (params, handleSuccess, count?: number) => {
+  const total = Number(count ?? (Array.isArray(params?.ids) ? params.ids.length : 0));
   createConfirm({
     iconType: 'warning',
     title: '确认删除',
-    content: '是否删除选中数据',
-    okText: '确认',
+    content: `将删除选中的 ${total} 个活动，及其多语言文案与关联商品；删除后不可恢复。`,
+    okText: '确认删除',
     cancelText: '取消',
+    okButtonProps: { danger: true },
     onOk: () => {
       const ids = Array.isArray(params?.ids) ? params.ids.join(',') : params?.ids;
       return defHttp.delete({ url: Api.deleteBatch, params: { ...params, ids } }, { joinParamsToUrl: true }).then(() => {
@@ -95,6 +98,10 @@ export const saveOrUpdate = (params, isUpdate) => {
  * 上/下线快捷开关
  * @param params { id, status: 'Y' | 'N' }
  */
+export const updateStatusBatch = (params: { ids: string; status: 'Y' | 'N' }) => {
+  return defHttp.post({ url: Api.updateStatusBatch, params }, { joinParamsToUrl: true });
+};
+
 export const updatePromotionStatus = (params) => {
   return defHttp.post({ url: Api.updateStatus, params }, { joinParamsToUrl: true });
 };

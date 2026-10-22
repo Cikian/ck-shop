@@ -108,6 +108,13 @@ public interface IShopPromotionService extends IService<ShopPromotion> {
     boolean updateStatus(String id, String status);
 
     /**
+     * 批量上线/下线：逐条做对象级授权，任一条失败整体回滚。
+     *
+     * @return 实际更新条数
+     */
+    int updateStatusBatch(java.util.List<String> ids, String status);
+
+    /**
      * 冲突检测：这些商品在 [startTime, endTime] 内是否已被别的活动占用。
      *
      * @param productIds 逗号分隔的商品 id（可空 → 返回空结果）

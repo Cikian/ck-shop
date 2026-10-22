@@ -79,6 +79,13 @@ public interface IShopProductService extends IService<ShopProduct> {
     boolean updateStatus(String id, String status);
 
     /**
+     * 批量上下架：逐件做对象级授权，任一件失败整体回滚。
+     *
+     * @return 实际更新条数
+     */
+    int updateStatusBatch(java.util.List<String> ids, String status);
+
+    /**
      * 管理端商品详情（编辑页一次性取全）
      *
      * @param id       商品ID

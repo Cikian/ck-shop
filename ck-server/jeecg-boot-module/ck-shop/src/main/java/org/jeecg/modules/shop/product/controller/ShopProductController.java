@@ -121,6 +121,20 @@ public class ShopProductController extends JeecgController<ShopProduct, IShopPro
     }
 
     /**
+     * 批量上下架（清单 A15）：逐件复用 updateStatus 的对象级授权，
+     * 任一件失败整体回滚，不会出现"部分成功但提示成功"。
+     */
+    @AutoLog(value = "商品-批量上下架")
+    @Operation(summary = "商品-批量上下架")
+    @RequiresPermissions("shop-product:edit")
+    @PostMapping(value = "/updateStatusBatch")
+    public Result<String> updateStatusBatch(@RequestParam(name = "ids") String ids,
+                                            @RequestParam(name = "status") String status) {
+        int updated = shopProductService.updateStatusBatch(Arrays.asList(ids.split(",")), status);
+        return Result.OK("批量" + ("Y".equals(status) ? "上架" : "下架") + "成功，共 " + updated + " 件");
+    }
+
+    /**
      * 通过id删除（软删除）
      */
     @AutoLog(value = "商品-通过id删除")

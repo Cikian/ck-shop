@@ -443,6 +443,23 @@ public class ShopProductServiceImpl extends ServiceImpl<ShopProductMapper, ShopP
         return true;
     }
 
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public int updateStatusBatch(List<String> ids, String status) {
+        if (CollectionUtils.isEmpty(ids)) {
+            throw new JeecgBootException("请选择要操作的商品!");
+        }
+        int updated = 0;
+        for (String id : ids) {
+            if (StringUtils.isBlank(id)) {
+                continue;
+            }
+            updateStatus(id, status);
+            updated++;
+        }
+        return updated;
+    }
+
     /**
      * 按 id 取商品并做越权校验。
      * 所有"按 id 操作"的入口都必须走这里——列表已经过滤了，但接口是可以被直接按 id 调的。

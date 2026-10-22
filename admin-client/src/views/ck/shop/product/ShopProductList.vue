@@ -61,13 +61,22 @@
         <a-dropdown v-if="selectedRowKeys.length > 0">
           <template #overlay>
             <a-menu>
-              <a-menu-item key="1" @click="batchHandleDelete">
+              <a-menu-item key="batch-on" v-auth="'shop-product:edit'" @click="batchChangeStatus('Y')">
+                <Icon icon="ant-design:arrow-up-outlined"></Icon>
+                批量上架（{{ selectedRowKeys.length }}）
+              </a-menu-item>
+              <a-menu-item key="batch-off" v-auth="'shop-product:edit'" @click="batchChangeStatus('N')">
+                <Icon icon="ant-design:arrow-down-outlined"></Icon>
+                批量下架（{{ selectedRowKeys.length }}）
+              </a-menu-item>
+              <!-- 删除放最后并标红：不可恢复的操作不应该排在第一位 -->
+              <a-menu-item key="batch-delete" v-auth="'shop-product:deleteBatch'" danger @click="batchHandleDelete">
                 <Icon icon="ant-design:delete-outlined"></Icon>
-                删除
+                批量删除（{{ selectedRowKeys.length }}）
               </a-menu-item>
             </a-menu>
           </template>
-          <a-button v-auth="'shop-product:deleteBatch'">
+          <a-button v-auth="'shop-product:edit'">
             批量操作
             <Icon icon="mdi:chevron-down"></Icon>
           </a-button>
@@ -103,6 +112,7 @@
     getImportUrl,
     getExportUrl,
     updateProductStatus,
+    updateStatusBatch,
   } from './ShopProduct.api';
   import ShopProductModal from './components/ShopProductModal.vue';
   import ProductSkuExpand from './components/ProductSkuExpand.vue';
@@ -231,7 +241,31 @@
 
   /** 批量删除 */
   async function batchHandleDelete() {
-    await batchDelete({ ids: selectedRowKeys.value }, handleSuccess);
+    await batchDelete({ ids: selectedRowKeys.value }, handleSuccess, selectedRowKeys.value.length);
+  }
+
+  /** 批量上下架：确认框写清条数与影响，避免"点一下就把 N 件商品下线" */
+  function batchChangeStatus(status: 'Y' | 'N') {
+    const count = selectedRowKeys.value.length;
+    if (!count) {
+      return;
+    }
+    const action = status === 'Y' ? '上架' : '下架';
+    createConfirm({
+      iconType: 'warning',
+      title: `确认批量${action}`,
+      content: `将把选中的 ${count} 个商品${action}，${status === 'Y' ? '上架后店铺端立即可见' : '下架后店铺端立即隐藏'}。`,
+      okText: `确认${action}`,
+      cancelText: '取消',
+      onOk: async () => {
+        const res: any = await updateStatusBatch({ ids: selectedRowKeys.value.join(','), status });
+        if (res?.success === false) {
+          throw new Error(res.message || `${action}失败`);
+        }
+        createMessage.success(res?.message || `已${action} ${count} 个商品`);
+        handleSuccess();
+      },
+    });
   }
 
   /** 上架 / 下架 */

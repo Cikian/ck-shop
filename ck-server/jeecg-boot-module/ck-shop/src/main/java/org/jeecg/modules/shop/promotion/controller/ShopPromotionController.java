@@ -201,6 +201,20 @@ public class ShopPromotionController extends JeecgController<ShopPromotion, ISho
     }
 
     /**
+     * 批量上线/下线（清单 A15）：逐条复用 updateStatus 的对象级授权，
+     * 任一条失败整体回滚。
+     */
+    @AutoLog(value = "促销活动-批量上下线")
+    @Operation(summary = "促销活动-批量上下线")
+    @RequiresPermissions("shop-promotion:edit")
+    @PostMapping(value = "/updateStatusBatch")
+    public Result<String> updateStatusBatch(@RequestParam(name = "ids") String ids,
+                                            @RequestParam(name = "status") String status) {
+        int updated = shopPromotionService.updateStatusBatch(Arrays.asList(ids.split(",")), status);
+        return Result.OK("批量" + ("Y".equals(status) ? "上线" : "下线") + "成功，共 " + updated + " 个活动");
+    }
+
+    /**
      * 复制活动（新 id / 新 code，status 强制停用，复制翻译与关联商品）
      */
     @AutoLog(value = "促销活动-复制")
