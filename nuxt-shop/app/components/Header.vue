@@ -10,13 +10,17 @@
     <!-- Row 1 -->
     <div class="mx-auto flex h-16 max-w-7xl items-center gap-3 px-2 sm:px-3 lg:px-4">
       <!-- Logo -->
-      <NuxtLinkLocale to="/" class="flex shrink-0 items-center gap-2" :aria-label="t('common.home')">
+      <NuxtLinkLocale to="/" class="flex min-w-0 shrink items-center gap-2" :aria-label="brandName">
         <span
-          class="brand-gradient flex h-9 w-9 items-center justify-center rounded-[12px] text-white shadow-[0_4px_12px_-2px_rgba(255,77,109,0.5)]"
+          class="brand-gradient flex h-9 w-9 shrink-0 items-center justify-center rounded-[12px] text-white shadow-[0_4px_12px_-2px_rgba(255,77,109,0.5)]"
         >
           <UIcon name="lucide:zap" class="h-5 w-5" aria-hidden="true" />
         </span>
-        <span class="hidden text-[17px] font-black tracking-tight text-[var(--color-ink)] sm:inline">
+        <!--
+          移动端也保留字标（清单 S24）：以前是 hidden sm:inline，390px 下只剩一个闪电图标，
+          用户看不出这是哪个店。这里小一号 + 允许截断，窄屏也不会挤掉右侧的购物车/汉堡。
+        -->
+        <span class="max-w-[36vw] truncate text-[14px] font-black tracking-tight text-[var(--color-ink)] sm:max-w-none sm:text-[17px]">
           {{ brandName }}
         </span>
       </NuxtLinkLocale>
