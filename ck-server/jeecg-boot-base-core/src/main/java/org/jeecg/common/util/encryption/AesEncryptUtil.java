@@ -14,14 +14,25 @@ import java.nio.charset.StandardCharsets;
 @Slf4j
 public class AesEncryptUtil {
 
-    private static final String KEY = EncryptedString.key;
-    private static final String IV  = EncryptedString.iv;
+    /*
+     * 不能在这里 static final 捕获：EncryptedString.key/iv 会在启动时由
+     * EncryptedStringInitializer 用 Spring 配置覆盖（清单 B17 密钥轮换）。
+     * 静态字段在类初始化时求值，一旦捕获就再也读不到轮换后的值 ——
+     * 表现就是"配置改了、口令还是解不开"。所以统一在调用点读取。
+     */
+    private static String key() {
+        return EncryptedString.key;
+    }
+
+    private static String iv() {
+        return EncryptedString.iv;
+    }
 
     /* -------- 新版：CBC + PKCS5Padding (与前端 CryptoJS Pkcs7 兼容) -------- */
     private static String decryptPkcs5(String cipherBase64) throws Exception {
         Cipher cipher = Cipher.getInstance("AES/CBC/PKCS5Padding");
-        SecretKeySpec ks = new SecretKeySpec(KEY.getBytes(StandardCharsets.UTF_8), "AES");
-        IvParameterSpec ivSpec = new IvParameterSpec(IV.getBytes(StandardCharsets.UTF_8));
+        SecretKeySpec ks = new SecretKeySpec(key().getBytes(StandardCharsets.UTF_8), "AES");
+        IvParameterSpec ivSpec = new IvParameterSpec(iv().getBytes(StandardCharsets.UTF_8));
         cipher.init(Cipher.DECRYPT_MODE, ks, ivSpec);
         byte[] plain = cipher.doFinal(Base64.decode(cipherBase64));
         return new String(plain, StandardCharsets.UTF_8);
@@ -30,8 +41,8 @@ public class AesEncryptUtil {
     /* -------- 旧版：CBC + NoPadding (手工补 0) -------- */
     private static String decryptLegacyNoPadding(String cipherBase64) throws Exception {
         Cipher cipher = Cipher.getInstance("AES/CBC/NoPadding");
-        SecretKeySpec ks = new SecretKeySpec(KEY.getBytes(StandardCharsets.UTF_8), "AES");
-        IvParameterSpec ivSpec = new IvParameterSpec(IV.getBytes(StandardCharsets.UTF_8));
+        SecretKeySpec ks = new SecretKeySpec(key().getBytes(StandardCharsets.UTF_8), "AES");
+        IvParameterSpec ivSpec = new IvParameterSpec(iv().getBytes(StandardCharsets.UTF_8));
         cipher.init(Cipher.DECRYPT_MODE, ks, ivSpec);
         byte[] data = cipher.doFinal(Base64.decode(cipherBase64));
         return new String(data, StandardCharsets.UTF_8)
@@ -89,8 +100,8 @@ public class AesEncryptUtil {
             }
             byte[] plaintext = new byte[plaintextLength];
             System.arraycopy(dataBytes, 0, plaintext, 0, dataBytes.length);
-            SecretKeySpec keyspec = new SecretKeySpec(KEY.getBytes(StandardCharsets.UTF_8), "AES");
-            IvParameterSpec ivspec = new IvParameterSpec(IV.getBytes(StandardCharsets.UTF_8));
+            SecretKeySpec keyspec = new SecretKeySpec(key().getBytes(StandardCharsets.UTF_8), "AES");
+            IvParameterSpec ivspec = new IvParameterSpec(iv().getBytes(StandardCharsets.UTF_8));
             cipher.init(Cipher.ENCRYPT_MODE, keyspec, ivspec);
             byte[] encrypted = cipher.doFinal(plaintext);
             return Base64.encodeToString(encrypted);
