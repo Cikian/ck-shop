@@ -1,5 +1,6 @@
 package org.jeecg.modules.shop.store.service.impl;
 
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.core.toolkit.IdWorker;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
@@ -108,6 +109,38 @@ public class ShopStoreServiceImpl extends ServiceImpl<ShopStoreMapper, ShopStore
                     .set(ShopStore::getDepartId, null));
         }
         return ok;
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public int[] importStores(List<ShopStore> rows) {
+        if (rows == null || rows.isEmpty()) {
+            return new int[]{0, 0};
+        }
+        int inserted = 0;
+        int updated = 0;
+        for (ShopStore item : rows) {
+            if (item == null || StringUtils.isBlank(item.getCode())) {
+                continue;
+            }
+            // 主键交给 service 生成；导入只负责「按编码新增或更新」
+            item.setId(null);
+            item.setDelFlag(null);
+            if (StringUtils.isBlank(item.getStatus())) {
+                item.setStatus("Y");
+            }
+            ShopStore exist = this.getOne(new LambdaQueryWrapper<ShopStore>()
+                    .eq(ShopStore::getCode, item.getCode()).last("LIMIT 1"), false);
+            if (exist == null) {
+                saveStore(item);
+                inserted++;
+            } else {
+                item.setId(exist.getId());
+                updateStore(item);
+                updated++;
+            }
+        }
+        return new int[]{inserted, updated};
     }
 
     @Override

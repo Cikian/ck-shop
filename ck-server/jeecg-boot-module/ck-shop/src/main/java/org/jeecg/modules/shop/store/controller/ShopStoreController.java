@@ -239,37 +239,17 @@ public class ShopStoreController extends JeecgController<ShopStore, IShopStoreSe
             params.setHeadRows(1);
             try (InputStream in = file.getInputStream()) {
                 List<ShopStore> list = ExcelImportUtil.importExcel(in, ShopStore.class, params);
-                for (ShopStore item : list) {
-                    if (item == null || StringUtils.isBlank(item.getCode())) {
-                        continue;
-                    }
-                    // 主键交给 service 生成；导入只负责"按编码新增或更新"
-                    item.setId(null);
-                    item.setDelFlag(null);
-                    if (StringUtils.isBlank(item.getStatus())) {
-                        item.setStatus("Y");
-                    }
-                    ShopStore exist = shopStoreService.getOne(new LambdaQueryWrapper<ShopStore>()
-                            .eq(ShopStore::getCode, item.getCode()).last("LIMIT 1"), false);
-                    if (exist == null) {
-                        shopStoreService.saveStore(item);
-                        insertCount++;
-                    } else {
-                        item.setId(exist.getId());
-                        shopStoreService.updateStore(item);
-                        updateCount++;
-                    }
-                }
+                // 整个文件一个事务：任一行校验失败全部回滚，不会出现"前 N-1 行已落库但提示导入失败"
+                int[] counts = shopStoreService.importStores(list);
+                insertCount += counts[0];
+                updateCount += counts[1];
             } catch (JeecgBootException e) {
                 // 校验失败（部门不存在/不是部门节点/部门被别的店铺占用等）直接回给用户
                 return Result.error("导入失败：" + e.getMessage());
             } catch (Exception e) {
+                // 原始异常只进日志：SQL/堆栈不能直接回给浏览器
                 log.error("店铺导入失败", e);
-                String msg = e.getMessage();
-                if (msg != null && msg.contains("Duplicate entry")) {
-                    return Result.error("导入失败：有重复数据（店铺编码重复）");
-                }
-                return Result.error("导入失败：" + msg);
+                return Result.error("导入失败：文件解析或数据写入异常，请检查 Excel 内容后重试（详情见服务端日志）");
             }
         }
         return Result.OK("文件导入成功！新增 " + insertCount + " 条，更新 " + updateCount + " 条");

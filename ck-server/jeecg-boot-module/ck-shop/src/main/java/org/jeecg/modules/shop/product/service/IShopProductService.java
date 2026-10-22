@@ -53,6 +53,14 @@ public interface IShopProductService extends IService<ShopProduct> {
     String updateProduct(ProductDTO dto);
 
     /**
+     * Excel 导入：整个文件一个事务，逐行复用 saveProduct（默认值/校验/SPU 编码生成一致）。
+     *
+     * @param rows 已解析并转换好的商品行
+     * @return 成功导入条数
+     */
+    int importProducts(java.util.List<ProductDTO> rows);
+
+    /**
      * 软删除商品并级联删除子表数据
      */
     boolean removeProduct(String id);

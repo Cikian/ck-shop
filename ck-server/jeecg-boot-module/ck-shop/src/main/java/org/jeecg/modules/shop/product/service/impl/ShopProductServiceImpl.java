@@ -322,6 +322,23 @@ public class ShopProductServiceImpl extends ServiceImpl<ShopProductMapper, ShopP
 
     @Override
     @Transactional(rollbackFor = Exception.class)
+    public int importProducts(List<ProductDTO> rows) {
+        if (CollectionUtils.isEmpty(rows)) {
+            return 0;
+        }
+        int count = 0;
+        for (ProductDTO row : rows) {
+            if (row == null) {
+                continue;
+            }
+            saveProduct(row);
+            count++;
+        }
+        return count;
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
     public String updateProduct(ProductDTO dto) {
         if (dto == null) {
             throw new JeecgBootException("商品数据不能为空!");

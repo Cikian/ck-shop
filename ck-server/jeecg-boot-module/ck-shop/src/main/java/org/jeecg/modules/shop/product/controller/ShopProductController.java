@@ -22,6 +22,7 @@ import org.jeecg.modules.shop.product.service.IShopProductService;
 import org.jeecg.modules.shop.store.ShopOrgScopeResolver;
 import org.jeecgframework.poi.excel.ExcelImportUtil;
 import org.jeecgframework.poi.excel.entity.ImportParams;
+import org.springframework.beans.BeanUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -36,6 +37,7 @@ import org.springframework.web.multipart.MultipartHttpServletRequest;
 import org.springframework.web.servlet.ModelAndView;
 
 import java.io.InputStream;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
@@ -220,6 +222,7 @@ public class ShopProductController extends JeecgController<ShopProduct, IShopPro
                     continue;
                 }
 
+                List<ProductDTO> dtos = new ArrayList<>();
                 for (ShopProduct row : rows) {
                     if (row == null) {
                         continue;
@@ -229,19 +232,20 @@ public class ShopProductController extends JeecgController<ShopProduct, IShopPro
                     row.setDelFlag(null);
                     // ★ 归属收敛：Excel 里填了别的部门 -> 这里直接抛异常拒绝整批导入
                     row.setSysOrgCode(orgScopeResolver.resolveWritableOrgCode(row.getSysOrgCode(), null));
+                    ProductDTO dto = new ProductDTO();
+                    BeanUtils.copyProperties(row, dto);
+                    dtos.add(dto);
                 }
-                shopProductService.saveBatch(rows);
-                total += rows.size();
+                // 复用 saveProduct：默认状态/SPU 编码/校验与手工新增完全一致，
+                // 不再用 saveBatch 绕过业务逻辑（否则导入的商品没有翻译/图集/SKU/默认状态）
+                total += shopProductService.importProducts(dtos);
             }
         } catch (JeecgBootException e) {
             return Result.error("文件导入失败:" + e.getMessage());
         } catch (Exception e) {
+            // 原始异常只进日志：SQL/堆栈不能直接回给浏览器
             log.error("商品导入失败", e);
-            String msg = e.getMessage();
-            if (msg != null && msg.contains("Duplicate entry")) {
-                return Result.error("文件导入失败:有重复数据！");
-            }
-            return Result.error("文件导入失败:" + msg);
+            return Result.error("文件导入失败:文件解析或数据写入异常，请检查 Excel 内容后重试（详情见服务端日志）");
         }
         return Result.ok("文件导入成功！数据行数：" + total);
     }

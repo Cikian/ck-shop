@@ -30,6 +30,14 @@ public interface IShopStoreService extends IService<ShopStore> {
     boolean updateStore(ShopStore store);
 
     /**
+     * Excel 导入：整个文件一个事务，任一行失败全部回滚。
+     *
+     * @param rows 已解析的店铺行（编码为空的行会被跳过）
+     * @return [新增数, 更新数]
+     */
+    int[] importStores(List<ShopStore> rows);
+
+    /**
      * 删除店铺（对象级授权：不能删别的部门的店铺）
      */
     boolean deleteStore(String id);
