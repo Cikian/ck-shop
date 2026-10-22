@@ -148,9 +148,9 @@
           <!-- ===== 右 3 栏：统计 + 标签页 ===== -->
           <div class="lg:col-span-3">
             <!--
-              统计卡：**收藏数已接通真实接口**（GET /api/favorite 的 total）；
-              订单 / 优惠券 / 积分后端仍没有对应接口（订单模块有接口，但本页尚未接入），
-              所以这三项一律显示真实的 0，绝不用 12 / 28 / 5 / 1250 这种编造数字。
+              统计卡：**收藏数 / 订单数已接通真实接口**；
+              优惠券 / 积分后端还没有接口 → 显示「—」+「未开通」角标，
+              不显示 0（0 会被当成"我有 0 张券"），更不用 12 / 28 / 1250 这种编造数字。
             -->
             <div class="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
               <div v-for="stat in stats" :key="stat.label" class="ui-card flex items-center gap-3 p-4">
@@ -158,11 +158,22 @@
                   <UIcon :name="stat.icon" class="h-5 w-5" aria-hidden="true" />
                 </span>
                 <span class="min-w-0">
-                  <span class="tabular block text-2xl font-black leading-none text-[var(--color-ink)]">
+                  <!--
+                    后端尚未提供接口的指标（优惠券/积分）显示「—」+「未开通」，
+                    绝不显示 0 —— 0 会被当成"我有 0 张优惠券"，与"功能还没做"是两回事。
+                  -->
+                  <span v-if="stat.available" class="tabular block text-2xl font-black leading-none text-[var(--color-ink)]">
                     {{ stat.value }}
                   </span>
-                  <span class="mt-1 block truncate text-xs text-[var(--color-muted)]">
+                  <span v-else class="tabular block text-2xl font-black leading-none text-[var(--color-muted)]">—</span>
+                  <span class="mt-1 flex items-center gap-1.5 truncate text-xs text-[var(--color-muted)]">
                     {{ t(stat.label) }}
+                    <span
+                      v-if="!stat.available"
+                      class="rounded-full bg-[var(--color-surface-secondary)] px-1.5 py-0.5 text-[10px] font-bold text-[var(--color-muted)]"
+                    >
+                      {{ t('profile.profileStatComingSoon') }}
+                    </span>
                   </span>
                 </span>
               </div>
@@ -335,14 +346,15 @@ const {
 
 /**
  * 4 张统计卡。
- * 「收藏数」用收藏接口的真实 total，「订单数」用订单接口的真实 total；
- * 优惠券 / 积分后端没有对应接口，只能写常量 0（接口补齐后再接数据）——**绝不用编造的数字填充**。
+ * 「收藏数」「订单数」是真实接口 total；
+ * 优惠券 / 积分后端没有对应接口 → `available: false`，页面显示「— / 未开通」，
+ * **不显示 0**（0 会被误读成"有 0 张券"，与"功能没做"是两回事），更不编造数字。
  */
 const stats = computed(() => [
-  { label: 'shop.profileOrders', value: orderTotal.value, icon: 'lucide:package', iconClass: 'bg-[var(--color-brand-50)] text-[var(--color-brand-600)]' },
-  { label: 'shop.profileFavorites', value: favoriteTotal.value, icon: 'lucide:heart', iconClass: 'bg-[var(--color-error-50)] text-[var(--color-error-600)]' },
-  { label: 'shop.profileCoupons', value: 0, icon: 'lucide:ticket', iconClass: 'bg-[var(--color-warning-50)] text-[var(--color-warning-600)]' },
-  { label: 'shop.profilePoints', value: 0, icon: 'lucide:gift', iconClass: 'bg-[var(--color-success-50)] text-[var(--color-success-600)]' },
+  { label: 'shop.profileOrders', value: orderTotal.value, available: true, icon: 'lucide:package', iconClass: 'bg-[var(--color-brand-50)] text-[var(--color-brand-600)]' },
+  { label: 'shop.profileFavorites', value: favoriteTotal.value, available: true, icon: 'lucide:heart', iconClass: 'bg-[var(--color-error-50)] text-[var(--color-error-600)]' },
+  { label: 'shop.profileCoupons', value: 0, available: false, icon: 'lucide:ticket', iconClass: 'bg-[var(--color-warning-50)] text-[var(--color-warning-600)]' },
+  { label: 'shop.profilePoints', value: 0, available: false, icon: 'lucide:gift', iconClass: 'bg-[var(--color-success-50)] text-[var(--color-success-600)]' },
 ])
 
 /**
