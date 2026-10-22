@@ -40,6 +40,78 @@ const isPrepareOnly = process.argv.some(arg => arg.includes('prepare'))
  */
 const ALLOW_INSECURE_DEMO_SECRETS = (process.env.ALLOW_INSECURE_DEMO_SECRETS || '').toLowerCase() === 'true'
 
+/**
+ * 本地"生产构建"的显式豁免：只用于 `.probe` 脚本在 127.0.0.1 上验构建产物。
+ *
+ * 默认拒绝：生产环境把 STORE_SITE_URL 配成 localhost 或 http:// 时直接抛错，
+ * 必须由部署者显式写下 ALLOW_INSECURE_SITE_URL=true 才放行（每次都会打 warn）。
+ * 与 ALLOW_INSECURE_DEMO_SECRETS 同一思路：不提供静默兜底，但允许知情豁免。
+ */
+const ALLOW_INSECURE_SITE_URL = (process.env.ALLOW_INSECURE_SITE_URL || '').toLowerCase() === 'true'
+
+/**
+ * 站点对外 URL（canonical / hreflang / sitemap / OG:url 的唯一来源）。
+ *
+ * 旧实现写的是 `process.env.STORE_SITE_URL || 'http://localhost:3000'`：
+ * 生产环境漏配时页面一切正常，但全站 canonical、hreflang、sitemap、OG:url
+ * 全部指向 localhost —— 搜索引擎收录的是 localhost，用户分享出去的也是 localhost。
+ * 这类问题在页面上完全看不出来，只能在 Search Console 里事后发现。
+ *
+ * 现在的规则：
+ *   - prepare（postinstall）放行，避免刚 clone 就装不上依赖；
+ *   - dev 允许 localhost / http（本地开发要用）；
+ *   - 生产（build / start）必须配置绝对 URL，且必须是 https、不能是 localhost；
+ *     本地验构建产物时可在 .env 里显式写 ALLOW_INSECURE_SITE_URL=true。
+ */
+function resolveSiteUrl(): string {
+  const fallback = 'http://localhost:3000'
+  const raw = (process.env.STORE_SITE_URL || '').trim()
+  const isProductionRun = process.env.NODE_ENV === 'production'
+
+  if (isPrepareOnly) {
+    return raw || fallback
+  }
+  if (!raw) {
+    if (!isProductionRun) {
+      return fallback
+    }
+    throw new Error(
+      '[nuxt.config] 生产构建/启动必须配置 STORE_SITE_URL（绝对 https:// 地址）。\n'
+      + '  缺失时默认 localhost 会让全站 canonical / hreflang / sitemap / OG:url 全部指向 localhost，\n'
+      + '  而页面看起来完全正常。请在部署环境中配置，例如 STORE_SITE_URL=https://shop.example.com',
+    )
+  }
+
+  let parsed: URL
+  try {
+    parsed = new URL(raw)
+  } catch {
+    throw new Error(`[nuxt.config] STORE_SITE_URL 必须是绝对地址（含协议与域名），当前值：${raw}`)
+  }
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+    throw new Error(`[nuxt.config] STORE_SITE_URL 只支持 http/https，当前协议：${parsed.protocol}`)
+  }
+
+  const insecureHosts = new Set(['localhost', '127.0.0.1', '0.0.0.0', '[::1]'])
+  const insecure = parsed.protocol !== 'https:' || insecureHosts.has(parsed.hostname)
+  if (isProductionRun && insecure) {
+    if (!ALLOW_INSECURE_SITE_URL) {
+      throw new Error(
+        `[nuxt.config] 生产环境的 STORE_SITE_URL 必须是 https 且不能是 localhost，当前值：${raw}。\n`
+        + '  · 生产：改成正式域名（https://shop.example.com）\n'
+        + '  · 仅本地验构建产物：在 .env（已 gitignore）里显式设置 ALLOW_INSECURE_SITE_URL=true',
+      )
+    }
+    console.warn(
+      `[nuxt.config] ⚠️ STORE_SITE_URL 使用了非 https/localhost 地址（已通过 ALLOW_INSECURE_SITE_URL 放行）：${raw}。`
+      + '该构建产物只允许本地验证，禁止部署到生产。',
+    )
+  }
+
+  // 去掉末尾斜杠：Nuxt SEO 会自己拼接路径，双斜杠会产出 //zh 这类 canonical
+  return raw.replace(/\/+$/, '')
+}
+
 function requireSecret(name: string): string {
   const value = (process.env[name] || '').trim()
 
@@ -171,7 +243,7 @@ export default defineNuxtConfig({
   // 每个前台站点（一个店铺）在部署时用自己的域名/站名，否则多店铺共用一份
   // 'localhost:3000' 会产出错误的 canonical / sitemap / OG 链接。
   site: {
-    url: process.env.STORE_SITE_URL || 'http://localhost:3000',
+    url: resolveSiteUrl(),
     name: process.env.STORE_SITE_NAME || 'Cikian Shop',
     description: process.env.STORE_SITE_DESCRIPTION || 'Cikian Shop 多店铺商城',
     // 与 i18n.defaultLocale 同源，避免两处各写一份默认语言
