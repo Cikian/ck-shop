@@ -179,8 +179,27 @@ export const columns: BasicColumn[] = [
 // 高级查询数据
 export const superQuerySchema = {
   spuCode: { title: 'SPU编码', order: 0, view: 'text', type: 'string' },
-  status: { title: '状态: N-下架, Y-上架', order: 1, view: 'text', type: 'string' },
-  categoryId: { title: '分类ID', order: 2, view: 'text', type: 'string' },
-  isRecommend: { title: '是否推荐: N-否, Y-是', order: 4, view: 'text', type: 'string' },
+  status: {
+    title: '状态',
+    order: 1,
+    view: 'list',
+    type: 'string',
+    enum: [
+      { label: '上架', value: 'Y' },
+      { label: '下架', value: 'N' },
+    ],
+  },
+  // categoryId 的选项在 ShopProductList 里按已加载的分类动态注入（view='list'），运营不必再手抄主键
+  categoryId: { title: '分类', order: 2, view: 'list', type: 'string' },
+  isRecommend: {
+    title: '是否推荐',
+    order: 4,
+    view: 'list',
+    type: 'string',
+    enum: [
+      { label: '推荐', value: 'Y' },
+      { label: '不推荐', value: 'N' },
+    ],
+  },
   sortOrder: { title: '排序', order: 5, view: 'number', type: 'number' },
 };

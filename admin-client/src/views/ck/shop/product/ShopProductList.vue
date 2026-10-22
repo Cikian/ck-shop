@@ -92,7 +92,7 @@
 </template>
 
 <script lang="ts" name="ck.shop-shopProduct" setup>
-  import { ref, reactive } from 'vue';
+  import { ref, reactive, watch } from 'vue';
   import { BasicTable, TableAction } from '/@/components/Table';
   import { useListPage } from '/@/hooks/system/useListPage';
   import { columns, superQuerySchema, setOrgStoreNameMap } from './ShopProduct.data';
@@ -159,8 +159,19 @@
   const labelCol = reactive({ xs: 24, sm: 4, xl: 6, xxl: 4 });
   const wrapperCol = reactive({ xs: 24, sm: 20 });
 
-  /** 高级查询配置 */
-  const superQueryConfig = reactive(superQuerySchema);
+  /** 高级查询配置（分类选项在分类加载后动态注入，见下方 watch） */
+  const superQueryConfig = reactive<any>({ ...superQuerySchema });
+  watch(
+    categoryOptions,
+    (options) => {
+      superQueryConfig.categoryId = {
+        ...superQuerySchema.categoryId,
+        view: 'list',
+        enum: options,
+      };
+    },
+    { immediate: true, deep: true },
+  );
 
   function handleSuperQuery(params) {
     Object.keys(params).map((k) => {
