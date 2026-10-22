@@ -136,7 +136,7 @@ function pageButtonClass(pageNumber: number): string | string[] {
     return [
       'flex h-10 min-w-[44px] cursor-pointer items-center justify-center rounded-full border px-3 text-sm font-bold transition-colors disabled:cursor-not-allowed disabled:opacity-40 motion-reduce:transition-none',
       pageNumber === props.current
-        ? 'border-[var(--color-brand-500)] bg-[var(--color-brand-500)] text-white'
+        ? 'border-[var(--color-brand-500)] bg-[var(--color-brand-cta)] text-white'
         : 'border-[var(--color-line)] bg-white text-[var(--color-ink-soft)] hover:border-[var(--color-brand-300)] hover:text-[var(--color-brand-600)]',
     ]
   }

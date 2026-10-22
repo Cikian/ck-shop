@@ -8,6 +8,7 @@
     "generate": "nuxt generate",
     "preview": "nuxt preview",
     "start": "node --env-file-if-exists=.env .output/server/index.mjs",
+    "check:contrast": "node scripts/check-contrast.mjs",
     "postinstall": "nuxt prepare"
   },
   "dependencies": {

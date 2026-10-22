@@ -49,6 +49,10 @@
   --color-brand-900: #7A1B2B;
   --color-brand-950: #4A0F1A;
 
+  /* CTA 专用底色：白字按钮要求 >=4.5:1，brand-500 只有 3.21:1，brand-700 为 5.46:1 */
+  --color-brand-cta: #C42F4A;
+  --color-brand-cta-hover: #9E2438;
+
   /* ===== 点缀 · 明黄 ===== */
   --color-accent: #FFD54A;
   --color-accent-50:  #FFFDF0;
@@ -67,20 +71,24 @@
   --color-cream: #FFF6F2;
   --color-ink: #1F1A1C;
   --color-ink-soft: #4A4244;
-  --color-muted: #8A8189;
+  /* muted 用于 12-13px 正文：原 #8A8189 对白底仅 3.76:1，加深到 5.8:1 */
+  --color-muted: #6B6269;
   --color-line: #F0E2E0;
   --color-line-soft: #F7ECEA;
 
   /* ===== 状态色 ===== */
   --color-success: #22C55E;
   --color-success-50: #F0FDF4;
-  --color-success-600: #16A34A;
+  /* success-600 在 success-50 上原约 3.1:1，加深到 ~4.6:1 */
+  --color-success-600: #15803D;
   --color-warning: #F59E0B;
   --color-warning-50: #FFFBEB;
-  --color-warning-600: #D97706;
+  /* warning-600 在 warning-50 上原为 3.07:1，加深到 ~4.9:1 */
+  --color-warning-600: #B45309;
   --color-error: #EF4444;
   --color-error-50: #FEF2F2;
-  --color-error-600: #DC2626;
+  /* error-600 在 error-50 上原为 4.41:1，加深到 >=4.5:1 */
+  --color-error-600: #B91C1C;
   --color-info: #3B82F6;
   --color-info-50: #EFF6FF;
   --color-info-600: #2563EB;
@@ -267,12 +275,13 @@ body {
 }
 
 .ui-pill-brand {
-  background-color: var(--color-brand);
+  /* 白字按钮：用 CTA 深珊瑚（5.46:1），不再用 brand-500（3.21:1） */
+  background-color: var(--color-brand-cta);
   color: #fff;
 }
 
 .ui-pill-brand:hover {
-  background-color: var(--color-brand-600);
+  background-color: var(--color-brand-cta-hover);
   box-shadow: var(--shadow-pop);
 }
 
@@ -470,7 +479,8 @@ body {
 }
 
 .chip-active {
-  background-color: var(--color-brand-500);
+  /* 白字 chips：同样用 CTA 深色以满足 4.5:1 */
+  background-color: var(--color-brand-cta);
   color: #fff;
   font-weight: 700;
 }

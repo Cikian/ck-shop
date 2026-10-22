@@ -91,7 +91,7 @@
         </button>
         <AsyncButton
           type="button"
-          class="cursor-pointer rounded-full bg-[var(--color-brand-500)] px-5 py-2.5 text-sm font-semibold text-white transition-colors duration-200 hover:bg-[var(--color-brand-600)] disabled:cursor-not-allowed disabled:opacity-50 motion-reduce:transition-none"
+          class="cursor-pointer rounded-full bg-[var(--color-brand-cta)] px-5 py-2.5 text-sm font-semibold text-white transition-colors duration-200 hover:bg-[var(--color-brand-cta-hover)] disabled:cursor-not-allowed disabled:opacity-50 motion-reduce:transition-none"
           :pending="submitting"
           :pending-label="t('order.refundSubmitting')"
           @click="submit"

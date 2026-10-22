@@ -90,7 +90,7 @@
           <span class="hidden sm:inline">{{ t('nav.cart') }}</span>
           <span
             v-if="cartBadge"
-            class="absolute -right-0.5 top-0 flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-[var(--color-brand-500)] px-1 text-[10px] font-black leading-none text-white"
+            class="absolute -right-0.5 top-0 flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-[var(--color-brand-cta)] px-1 text-[10px] font-black leading-none text-white"
             aria-hidden="true"
           >
             {{ cartBadge }}

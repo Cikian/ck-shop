@@ -66,7 +66,7 @@
           <!-- 选中标记：右上角品牌色圆形勾（纯装饰，选中态本身由 aria-pressed 表达） -->
           <span
             v-if="isSelected(spec.id, value.id)"
-            class="absolute -right-1.5 -top-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-[var(--color-brand-500)] text-white"
+            class="absolute -right-1.5 -top-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-[var(--color-brand-cta)] text-white"
             aria-hidden="true"
           >
             <UIcon name="lucide:check" class="h-2.5 w-2.5" />

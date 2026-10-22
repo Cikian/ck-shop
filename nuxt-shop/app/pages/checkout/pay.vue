@@ -110,7 +110,7 @@
             <div class="mt-5 flex flex-col gap-3 sm:flex-row">
               <button
                 type="button"
-                class="hidden h-12 flex-1 items-center justify-center gap-2 rounded-full bg-[var(--color-brand-500)] text-[15px] font-bold text-white transition-colors duration-200 hover:bg-[var(--color-brand-600)] disabled:cursor-not-allowed disabled:bg-[var(--color-ink)]/20 motion-reduce:transition-none lg:flex"
+                class="hidden h-12 flex-1 items-center justify-center gap-2 rounded-full bg-[var(--color-brand-cta)] text-[15px] font-bold text-white transition-colors duration-200 hover:bg-[var(--color-brand-cta-hover)] disabled:cursor-not-allowed disabled:bg-[var(--color-ink)]/20 motion-reduce:transition-none lg:flex"
                 :disabled="paying || expired"
                 @click="payNow"
               >
@@ -181,7 +181,7 @@
               </div>
               <button
                 type="button"
-                class="flex h-12 min-w-[150px] items-center justify-center gap-2 rounded-full bg-[var(--color-brand-500)] px-6 text-[15px] font-bold text-white transition-colors disabled:cursor-not-allowed disabled:bg-[var(--color-ink)]/20"
+                class="flex h-12 min-w-[150px] items-center justify-center gap-2 rounded-full bg-[var(--color-brand-cta)] px-6 text-[15px] font-bold text-white transition-colors disabled:cursor-not-allowed disabled:bg-[var(--color-ink)]/20"
                 :disabled="paying || expired"
                 @click="payNow"
               >

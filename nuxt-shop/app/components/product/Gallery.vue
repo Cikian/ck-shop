@@ -115,7 +115,7 @@
       <div class="absolute right-4 top-4 flex flex-col gap-2">
         <button
           type="button"
-          class="flex h-10 w-10 cursor-pointer items-center justify-center rounded-full bg-white/92 text-[var(--color-ink-soft)] shadow-[var(--shadow-md)] backdrop-blur-sm transition-colors duration-200 hover:bg-[var(--color-brand-500)] hover:text-white motion-reduce:transition-none"
+          class="flex h-10 w-10 cursor-pointer items-center justify-center rounded-full bg-white/92 text-[var(--color-ink-soft)] shadow-[var(--shadow-md)] backdrop-blur-sm transition-colors duration-200 hover:bg-[var(--color-brand-cta)] hover:text-white motion-reduce:transition-none"
           :aria-label="t('product.share')"
           @click="emit('share')"
         >

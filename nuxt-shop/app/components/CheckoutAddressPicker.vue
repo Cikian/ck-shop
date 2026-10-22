@@ -82,7 +82,7 @@
               <span class="text-[13px] tabular text-[var(--color-ink-soft)]">{{ address.receiverPhone }}</span>
               <span
                 v-if="address.isDefault"
-                class="rounded-full bg-[var(--color-brand-500)] px-2 py-0.5 text-[10px] font-bold text-white"
+                class="rounded-full bg-[var(--color-brand-cta)] px-2 py-0.5 text-[10px] font-bold text-white"
               >
                 {{ t('address.defaultTag') }}
               </span>
