@@ -138,11 +138,15 @@ export function createApiClient(
      * app/middleware/auth.ts、首页/商品页的 setup 都在等它 ——
      * 结果是整个前台所有服务端渲染页面一起变慢甚至超时，而不是"降级展示"。
      *
-     * 默认 10s 是给普通 CRUD 的；登录、OAuth 这类**后端内部还要再访问第三方**
-     * 的接口必须用 timeoutMs 单独放宽，否则 BFF 会先于后端超时，
-     * 用户只能看到"后端服务响应超时"，看不到真正的原因（见 google/callback.post.ts）。
+     * 分两档：
+     *   · GET（公开读：商品/分类/评价/轮播…）默认 3s —— 读不到就降级，不能让整页 SSR 白等；
+     *   · 写操作（下单/支付/退款…）默认 10s —— 后端事务需要时间，过早掐断会造成"未知结果"。
+     * 单接口仍可用 timeoutMs 覆盖（登录、OAuth 这类要访问第三方的接口会显式放宽）。
      */
-    timeout: Number(options.timeoutMs) || Number(config.apiTimeoutMs) || 10000,
+    timeout: Number(options.timeoutMs)
+      || (String(options.method || 'GET').toUpperCase() === 'GET'
+        ? Number(config.apiReadTimeoutMs) || 3000
+        : Number(config.apiTimeoutMs) || 10000),
 
     /**
      * 重试刻意关闭（ofetch 默认会对部分失败的 GET 自动重试一次）。

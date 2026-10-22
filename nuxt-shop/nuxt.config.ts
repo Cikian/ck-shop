@@ -250,6 +250,25 @@ export default defineNuxtConfig({
     defaultLocale: STORE_DEFAULT_LANG,
   },
 
+  /*
+   * 公开读接口的 CDN/SWR 缓存。
+   *
+   * 首页一次冷访问会打分类、轮播、促销、热销、主商品流 5 个 BFF 读接口；
+   * 之前没有任何 routeRules，每个访客都穿透到 Java 后端，后端一抖动整页 SSR 就跟着等。
+   * 这些接口的内容都是"分钟级更新即可"的公开数据，用 SWR 足够：
+   *   · 命中缓存直接返回（s-maxage 内不回源）；
+   *   · 过期后先返回旧数据、后台再刷新（stale-while-revalidate），用户永远不等回源。
+   * 购物车/订单/账户等用户态接口**不在**这里，绝不能缓存。
+   */
+  routeRules: {
+    '/api/products/**': { swr: 60 },
+    '/api/categories': { swr: 300 },
+    '/api/home/slide': { swr: 120 },
+    '/api/promotions/active': { swr: 60 },
+    '/api/review': { swr: 30 },
+    '/api/store/info': { swr: 300 },
+  },
+
   seo: {
     /*
      * canonical 保留的查询参数（nuxt-seo-utils 的 canonicalQueryWhitelist）。
@@ -266,6 +285,15 @@ export default defineNuxtConfig({
 
     /** 调用 Java 后端的超时（毫秒）。没有它时后端卡住会把 Nitro 的 SSR 请求一起挂死。 */
     apiTimeoutMs: Number(process.env.API_TIMEOUT_MS || 10000),
+
+    /**
+     * 公开读接口（GET）的超时（毫秒）。
+     *
+     * 写操作（下单/支付/退款）可能需要等后端事务，保持 10s；
+     * 但商品/分类/评价这类读接口一旦卡住，SSR 会把整页拖到和超时一样长。
+     * 降到 3s：读不到就让页面降级（空列表/骨架），而不是让用户盯着白屏。
+     */
+    apiReadTimeoutMs: Number(process.env.API_READ_TIMEOUT_MS || 3000),
 
     /**
      * 当前站点的店铺编码。
