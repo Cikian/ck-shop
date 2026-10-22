@@ -351,6 +351,12 @@ export default defineNuxtConfig({
        * 无需改代码）。取值必须落在 CikVerify 应用的 allowedTypes 内。
        */
       captchaType: process.env.NUXT_PUBLIC_CAPTCHA_TYPE || 'SLIDER',
+
+      /**
+       * 商品价格的 ISO 4217 货币代码（结构化数据 Offer.priceCurrency 用）。
+       * 页面上的货币符号来自 i18n（¥/$/€ 只是展示符号），这里必须给真实代码。
+       */
+      storeCurrency: process.env.STORE_CURRENCY || 'CNY',
     },
   },
 

@@ -304,7 +304,7 @@
 // 商品详情用 View Transitions 做页面级过场（nuxt.config 的 experimental.viewTransition 由基建开启）
 definePageMeta({ viewTransition: true })
 
-import type { SpecSelection, StoreProductCard, StoreProductPage } from '~~/types/shop-product'
+import type { SpecSelection, StoreProductCard, StoreProductDetail, StoreProductPage } from '~~/types/shop-product'
 import { formatCompactCount } from '~~/types/shop-product'
 import { useStorePrice } from '~~/composables/useProducts'
 import { useProductDetail } from '~~/composables/useProductDetail'
@@ -649,6 +649,79 @@ async function handleToggleFavorite() {
  */
 const notFoundTitle = computed(() => t('product.notFound') || 'Product not found')
 
+// ===== 结构化数据（schema.org Product + BreadcrumbList） =====
+// Google 的商品富结果依赖这些字段：name/image/offers 必填，aggregateRating 有评价时才输出。
+// 只在该商品真实存在时输出；404 页不输出任何商品结构化数据（与 noindex 一致）。
+const { storeName } = useStoreInfo()
+const siteConfig = useSiteConfig()
+const priceCurrency = String(useRuntimeConfig().public.storeCurrency || 'CNY')
+
+function buildJsonLd(current: StoreProductDetail, canonicalUrl: string) {
+  const base = String(siteConfig.url || '').replace(/\/+$/, '')
+  const images = (current.images || [])
+    .map(image => image.url)
+    .filter((src): src is string => !!src)
+  const productNode: Record<string, unknown> = {
+    '@context': 'https://schema.org',
+    '@type': 'Product',
+    name: current.seoTitle || current.title,
+    sku: current.spuCode || current.id,
+    url: canonicalUrl,
+    image: images.length ? images : [current.coverUrl, current.mainImage].filter(Boolean),
+    brand: { '@type': 'Brand', name: storeName.value || t('shop.brandName') },
+    offers: {
+      '@type': 'Offer',
+      url: canonicalUrl,
+      price: current.price ?? current.minPrice ?? 0,
+      priceCurrency,
+      availability: current.stock > 0
+        ? 'https://schema.org/InStock'
+        : 'https://schema.org/OutOfStock',
+    },
+  }
+  const description = current.seoDescription || current.subTitle
+  if (description) {
+    productNode.description = description
+  }
+  if (reviewSummary.value && reviewSummary.value.reviewCount > 0) {
+    productNode.aggregateRating = {
+      '@type': 'AggregateRating',
+      ratingValue: reviewSummary.value.ratingAvg,
+      reviewCount: reviewSummary.value.reviewCount,
+      bestRating: 5,
+      worstRating: 1,
+    }
+  }
+
+  const crumbs: Array<Record<string, unknown>> = [
+    { '@type': 'ListItem', position: 1, name: t('common.home'), item: `${base}${localePath('/')}` },
+    { '@type': 'ListItem', position: 2, name: t('products.all'), item: `${base}${localePath('/products')}` },
+  ]
+  if (current.categoryId && current.categoryName) {
+    crumbs.push({
+      '@type': 'ListItem',
+      position: 3,
+      name: current.categoryName,
+      item: `${base}${localePath(`/categories/${current.categoryId}`)}`,
+    })
+  }
+  crumbs.push({
+    '@type': 'ListItem',
+    position: crumbs.length + 1,
+    name: current.title,
+    item: canonicalUrl,
+  })
+
+  return [
+    productNode,
+    {
+      '@context': 'https://schema.org',
+      '@type': 'BreadcrumbList',
+      itemListElement: crumbs,
+    },
+  ]
+}
+
 useHead(() => {
   const current = product.value
   const missing = isNotFound.value
@@ -671,7 +744,18 @@ useHead(() => {
   if (image) {
     meta.push({ property: 'og:image', content: image })
   }
-  return { title, meta }
+
+  const script: Array<Record<string, string>> = []
+  if (!missing && current) {
+    const base = String(siteConfig.url || '').replace(/\/+$/, '')
+    const canonicalUrl = `${base}${localePath(`/products/${current.spuCode || current.id}`)}`
+    script.push({
+      type: 'application/ld+json',
+      innerHTML: JSON.stringify(buildJsonLd(current, canonicalUrl)),
+    })
+  }
+
+  return { title, meta, script }
 })
 
 if (import.meta.server) {
