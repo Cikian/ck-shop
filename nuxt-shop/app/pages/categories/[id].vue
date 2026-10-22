@@ -27,7 +27,7 @@
         <h1 class="text-3xl font-black tracking-tight text-[var(--color-ink)] sm:text-4xl">
           {{ currentCategory?.name || t('categories.title') }}
         </h1>
-        <p v-if="!pending && !error" class="mt-2 text-sm text-[var(--color-muted)]">
+        <p v-if="!pending && !error && !categoryMissing" class="mt-2 text-sm text-[var(--color-muted)]">
           {{ t('products.totalProducts', { count: total }) }}
         </p>
       </header>
@@ -64,6 +64,23 @@
           <UIcon name="lucide:rotate-ccw" class="h-4 w-4" aria-hidden="true" />
           {{ t('common.retry') }}
         </button>
+      </div>
+
+      <!--
+        分类不存在（链接写错 / 分类被删）：不能落到"共 0 件商品"的空态——
+        那会让用户以为分类只是没货，也会被搜索引擎收录成有效页。
+        SSR 同时返回 404 + noindex（见 script 里的 setResponseStatus）。
+      -->
+      <div v-else-if="categoryMissing" key="category-missing" class="ui-card flex flex-col items-center px-6 py-16 text-center">
+        <span class="flex h-16 w-16 items-center justify-center rounded-full bg-[var(--color-error-50)] text-[var(--color-error-600)]">
+          <UIcon name="lucide:folder-x" class="h-7 w-7" aria-hidden="true" />
+        </span>
+        <h2 class="mt-5 text-lg font-black text-[var(--color-ink)]">{{ t('categories.notFoundTitle') }}</h2>
+        <p class="mt-2 max-w-md text-sm text-[var(--color-muted)]">{{ t('categories.notFoundDesc') }}</p>
+        <NuxtLinkLocale to="/categories" class="ui-pill ui-pill-brand mt-6 h-11 px-6 text-sm">
+          <UIcon name="lucide:layout-grid" class="h-4 w-4" aria-hidden="true" />
+          {{ t('categories.backToAll') }}
+        </NuxtLinkLocale>
       </div>
 
       <!-- 空态：该分类下确实没有在售商品 -->
@@ -117,7 +134,7 @@ const categoryId = computed(() => String(route.params.id || ''))
 // 分类名从分类树里取（一次请求，用于标题与面包屑）。
 // 语言：query 带 lang，key 带 locale + 当前分类 id —— 切语言/切分类都要重新请求，
 // 否则标题与面包屑会停留在上一个语言/上一个分类的缓存。
-const { data: categories } = useFetch<StoreCategoryNode[]>('/api/categories', {
+const { data: categories, pending: categoriesPending } = useFetch<StoreCategoryNode[]>('/api/categories', {
   query: computed(() => ({ lang: locale.value })),
   key: computed(() => `store-categories-${categoryId.value}-${locale.value}`),
   default: () => [],
@@ -133,6 +150,19 @@ const currentCategory = computed(() => {
   }
   return null
 })
+
+/** 分类树已加载完但找不到该分类 → 页面语义是 404，不是"该分类没货" */
+const categoryMissing = computed(() => !categoriesPending.value && !currentCategory.value)
+
+if (import.meta.server) {
+  const requestEvent = useRequestEvent()
+  // flush: 'sync'：分类树一落地就写响应状态，赶在响应发出之前
+  watch(categoryMissing, (missing) => {
+    if (missing && requestEvent) {
+      setResponseStatus(requestEvent, 404, 'Not Found')
+    }
+  }, { immediate: true, flush: 'sync' })
+}
 
 const pageSize = STORE_PRODUCT_PAGE_SIZE
 const pageNo = ref(1)
@@ -166,10 +196,16 @@ function goToPage(target: number) {
 }
 
 useSeoMeta({
-  title: () => currentCategory.value?.name || t('categories.title'),
+  title: () => categoryMissing.value
+    ? t('categories.notFoundTitle')
+    : (currentCategory.value?.name || t('categories.title')),
   // description 带上当前分类名，避免所有分类页共用同一段通用介绍
-  description: () => currentCategory.value?.name
-    ? `${currentCategory.value.name} - ${t('categories.description')}`
-    : t('categories.description'),
+  description: () => categoryMissing.value
+    ? t('categories.notFoundDesc')
+    : (currentCategory.value?.name
+      ? `${currentCategory.value.name} - ${t('categories.description')}`
+      : t('categories.description')),
+  // 分类不存在时不要被搜索引擎收录
+  robots: () => categoryMissing.value ? 'noindex, nofollow' : 'index, follow',
 })
 </script>

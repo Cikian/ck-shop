@@ -10,7 +10,10 @@
   "categories": {
     "title": "All categories",
     "description": "Browse this store by category",
-    "empty": "This store has no categories to show yet"
+    "empty": "This store has no categories to show yet",
+    "notFoundTitle": "Category not found",
+    "notFoundDesc": "This category may have been removed, or the link is incorrect.",
+    "backToAll": "Back to all categories"
   },
   "nav": {
     "categories": "Categories",

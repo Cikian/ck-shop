@@ -10,7 +10,10 @@
   "categories": {
     "title": "全部分类",
     "description": "按分类浏览本店商品",
-    "empty": "当前店铺还没有可展示的分类"
+    "empty": "当前店铺还没有可展示的分类",
+    "notFoundTitle": "分类不存在",
+    "notFoundDesc": "该分类可能已被删除，或链接有误。",
+    "backToAll": "返回全部分类"
   },
   "nav": {
     "categories": "分类",

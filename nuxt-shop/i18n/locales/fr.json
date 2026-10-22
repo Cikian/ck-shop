@@ -10,7 +10,10 @@
   "categories": {
     "title": "Toutes les catégories",
     "description": "Parcourir cette boutique par catégorie",
-    "empty": "Cette boutique n'a pas encore de catégories à afficher"
+    "empty": "Cette boutique n'a pas encore de catégories à afficher",
+    "notFoundTitle": "Catégorie introuvable",
+    "notFoundDesc": "Cette catégorie a peut-être été supprimée, ou le lien est incorrect.",
+    "backToAll": "Retour aux catégories"
   },
   "nav": {
     "categories": "Catégories",
