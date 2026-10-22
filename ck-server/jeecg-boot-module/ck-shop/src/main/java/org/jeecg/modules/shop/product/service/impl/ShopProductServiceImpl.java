@@ -296,6 +296,7 @@ public class ShopProductServiceImpl extends ServiceImpl<ShopProductMapper, ShopP
 
         ShopProduct product = new ShopProduct();
         BeanUtils.copyProperties(dto, product);
+        sanitizeStatsFields(product);
         product.setId(IdWorker.getIdStr());
         product.setDelFlag(null);
         // 显式写入归属（非空时 MybatisInterceptor 不会再覆盖），保证与上面的校验结果一致
@@ -344,6 +345,8 @@ public class ShopProductServiceImpl extends ServiceImpl<ShopProductMapper, ShopP
 
         ShopProduct product = new ShopProduct();
         BeanUtils.copyProperties(dto, product);
+        // 统计字段/预占库存只能由业务事件维护，客户端传什么都不能覆盖
+        sanitizeStatsFields(product);
         // 审计字段不覆盖
         product.setCreateBy(null).setCreateTime(null);
         product.setDelFlag(null);
@@ -1547,6 +1550,26 @@ public class ShopProductServiceImpl extends ServiceImpl<ShopProductMapper, ShopP
             return 0;
         }
         return Math.max(0, Math.min(MAX_BLOCK_MARGIN, margin));
+    }
+
+    /**
+     * 清掉只能由服务端/业务事件维护的字段，并做库存非负校验。
+     *
+     * <p>ProductDTO 继承 ShopProduct，前端可以带任意实体字段进来；
+     * 如果直接 copyProperties + save/updateById，就能把
+     * frozenStock（预占库存）、salesCount/favoriteCount/reviewCount（统计值）改成任意数，
+     * 甚至通过 delFlag 软删商品。这里统一置 null：
+     *   · insert 时走库默认值（0）；
+     *   · update 时 MyBatis-Plus 跳过 null，保持库中现值不变。
+     */
+    private void sanitizeStatsFields(ShopProduct product) {
+        product.setFrozenStock(null);
+        product.setSalesCount(null);
+        product.setFavoriteCount(null);
+        product.setReviewCount(null);
+        if (product.getStock() != null && product.getStock() < 0) {
+            throw new JeecgBootException("库存不能为负数");
+        }
     }
 
     /** 新增时的默认值：缺失即补，含自动生成 spu_code */

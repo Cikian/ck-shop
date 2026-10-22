@@ -37,6 +37,7 @@ public class ShopStoreServiceImpl extends ServiceImpl<ShopStoreMapper, ShopStore
 
     @Override
     public String saveStore(ShopStore store) {
+        sanitizeWritableFields(store);
         checkCode(store, null);
         if (StringUtils.isBlank(store.getId())) {
             // 与 JeecgBoot 其它模块一致：主键由 IdWorker 生成，避免前端漏传导致 INSERT 失败
@@ -45,6 +46,24 @@ public class ShopStoreServiceImpl extends ServiceImpl<ShopStoreMapper, ShopStore
         checkDepart(store.getDepartId(), store.getStatus(), null);
         checkCreateAllowed(store);
         return this.save(store) ? store.getId() : null;
+    }
+
+    /**
+     * 写接口直接收实体，必须清掉"只应由服务端/删除接口维护"的字段。
+     *
+     * <p>否则 client 传 {@code delFlag=1} 就能绕过 {@code shop-store:delete} 软删店铺
+     * （updateById 会把它当成普通字段写入）。审计字段同理：创建人/创建时间由服务端设置，
+     * 客户端传什么都不能生效。
+     */
+    private void sanitizeWritableFields(ShopStore store) {
+        if (store == null) {
+            return;
+        }
+        store.setDelFlag(null);
+        store.setCreateBy(null);
+        store.setCreateTime(null);
+        store.setUpdateBy(null);
+        store.setUpdateTime(null);
     }
 
     @Override
@@ -59,6 +78,8 @@ public class ShopStoreServiceImpl extends ServiceImpl<ShopStoreMapper, ShopStore
         }
         // ---- 对象级授权：只能改当前可见域内的店铺（接口可按 id 直调，列表过滤不算数） ----
         checkStoreAccessible(exist);
+        // 删除标记/审计字段只由服务端维护：防止 client 传 delFlag=1 绕过 delete 权限
+        sanitizeWritableFields(store);
         checkCode(store, store.getId());
         if (StringUtils.isBlank(store.getStatus())) {
             store.setStatus(exist.getStatus());

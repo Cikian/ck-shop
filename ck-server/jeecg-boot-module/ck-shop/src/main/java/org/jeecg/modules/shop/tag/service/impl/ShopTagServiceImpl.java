@@ -45,6 +45,8 @@ public class ShopTagServiceImpl extends ServiceImpl<ShopTagMapper, ShopTag> impl
         ShopTag tag = new ShopTag();
         BeanUtils.copyProperties(dto, tag);
         tag.setId(IdWorker.getIdStr());
+        // 删除标记只由 removeTag 维护：防止 client 传 delFlag=1 绕过 shop-tag:delete
+        tag.setDelFlag(null);
         String username = ShopAuditUtils.currentUsername();
         Date now = new Date();
         tag.setCreateBy(username).setCreateTime(now).setUpdateBy(username).setUpdateTime(now);
@@ -68,6 +70,8 @@ public class ShopTagServiceImpl extends ServiceImpl<ShopTagMapper, ShopTag> impl
         ShopTag tag = new ShopTag();
         BeanUtils.copyProperties(dto, tag);
         tag.setCreateBy(null).setCreateTime(null);
+        // 删除标记只由 removeTag 维护：防止 client 传 delFlag=1 绕过 shop-tag:delete
+        tag.setDelFlag(null);
         tag.setUpdateBy(ShopAuditUtils.currentUsername()).setUpdateTime(new Date());
         super.updateById(tag);
 
