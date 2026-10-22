@@ -717,8 +717,10 @@
     loadCategoryRank();
   }
 
-  onMounted(async () => {
-    await loadStores();
+  onMounted(() => {
+    // 店铺下拉与统计互不依赖：并行发起。
+    // 以前是 await loadStores() 之后才 reloadAll()，店铺接口慢时整页统计跟着白屏。
+    void loadStores();
     reloadAll();
   });
 </script>
