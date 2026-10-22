@@ -657,18 +657,30 @@ public class ShopRefundServiceImpl
             if (orderItem == null) {
                 continue;
             }
+            int addQuantity = refundItem.getQuantity() == null ? 0 : refundItem.getQuantity();
             int refundedQty = (orderItem.getRefundQuantity() == null ? 0 : orderItem.getRefundQuantity())
-                    + (refundItem.getQuantity() == null ? 0 : refundItem.getQuantity());
+                    + addQuantity;
             BigDecimal refundedAmount = MoneyUtils.add(orderItem.getRefundAmount(),
                     MoneyUtils.scale(refundItem.getRefundAmount()));
             boolean full = refundedQty >= (orderItem.getQuantity() == null ? 0 : orderItem.getQuantity());
-            orderItemMapper.update(new ShopOrderItem()
+            /*
+             * CAS：只有"已退数量 + 本次数量 <= 购买数量"时才更新。
+             * 正常路径下校验已经拦住超退；这里再兜一层并发/脏数据，
+             * 避免 refund_quantity 被累加到超过 quantity（库存回补也会跟着错）。
+             */
+            int updated = orderItemMapper.update(new ShopOrderItem()
                             .setRefundQuantity(refundedQty)
                             .setRefundAmount(refundedAmount)
                             .setRefundStatus(full ? RefundStatus.FULL.name() : RefundStatus.PARTIAL.name())
                             .setUpdateTime(new Date()),
                     new LambdaUpdateWrapper<ShopOrderItem>()
-                            .eq(ShopOrderItem::getId, orderItem.getId()));
+                            .eq(ShopOrderItem::getId, orderItem.getId())
+                            .apply("refund_quantity + {0} <= quantity", addQuantity));
+            if (updated == 0) {
+                // 渠道退款可能已经成功，不能在这里抛异常回滚整笔；记录错误供人工核对
+                log.error("退款明细写入后更新订单明细已退数量失败（可能并发超退）：orderItemId={}, refundNo={}, addQuantity={}",
+                        orderItem.getId(), refund.getRefundNo(), addQuantity);
+            }
         }
     }
 
@@ -738,21 +750,35 @@ public class ShopRefundServiceImpl
                 lines.add(line);
             }
         } else {
+            /*
+             * 先按 orderItemId 合并数量，再逐项校验。
+             *
+             * 之前是直接遍历请求行：remain 只减「库里的已退数量」，不累计本次请求前面的同 item 行。
+             * 于是同一 orderItemId 出现两次、每次退 1 件，两行都能通过校验，
+             * 最终 refund_quantity 被累加到超过购买数量，库存也按重复数量回补。
+             * 合并后每个 item 只产生一行退款明细，数量是本次请求的总和，校验口径正确。
+             */
+            Map<String, Integer> wantedByItem = new LinkedHashMap<>();
             for (RefundItemDTO dto : requested) {
                 if (dto == null || StringUtils.isBlank(dto.getOrderItemId())) {
                     throw new JeecgBootException("退款明细缺少订单明细ID");
                 }
-                ShopOrderItem item = itemMap.get(dto.getOrderItemId());
+                int quantity = dto.getQuantity() == null ? 0 : dto.getQuantity();
+                if (quantity <= 0) {
+                    throw new JeecgBootException("退款数量必须大于 0");
+                }
+                wantedByItem.merge(dto.getOrderItemId(), quantity, Integer::sum);
+            }
+
+            for (Map.Entry<String, Integer> entry : wantedByItem.entrySet()) {
+                ShopOrderItem item = itemMap.get(entry.getKey());
                 if (item == null) {
                     throw new JeecgBootException("退款明细与订单不匹配，请刷新后重试");
                 }
                 int ordered = item.getQuantity() == null ? 0 : item.getQuantity();
                 int refunded = item.getRefundQuantity() == null ? 0 : item.getRefundQuantity();
                 int remain = ordered - refunded;
-                int want = dto.getQuantity() == null ? 0 : dto.getQuantity();
-                if (want <= 0) {
-                    throw new JeecgBootException("退款数量必须大于 0");
-                }
+                int want = entry.getValue();
                 if (want > remain) {
                     throw new JeecgBootException("商品[" + item.getProductName() + "]最多还能退 "
                             + remain + " 件（已退 " + refunded + " 件）");
