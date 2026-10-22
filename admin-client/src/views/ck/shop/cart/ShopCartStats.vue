@@ -148,6 +148,7 @@
     type CartStatsTrend,
     type CartStoreOption,
   } from './ShopCartStats.api';
+  import { CART_EVENT_LABELS, enumLabel } from '../shared/enumLabels';
 
   // ------------------------------------------------------------------
   // 查询条件
@@ -346,7 +347,13 @@
     { title: '商品', dataIndex: 'title', ellipsis: true },
     { title: '规格', dataIndex: 'skuName', width: 160 },
     { title: '数量', dataIndex: 'quantity', width: 80 },
-    { title: '动作', dataIndex: 'eventType', width: 90 },
+    {
+      title: '动作',
+      dataIndex: 'eventType',
+      width: 110,
+      // 不再显示 ADD/INCR/UPDATE 裸枚举（清单 A22）
+      customRender: ({ text }: any) => enumLabel(CART_EVENT_LABELS, text),
+    },
     { title: '来源', dataIndex: 'source', width: 90 },
   ];
 

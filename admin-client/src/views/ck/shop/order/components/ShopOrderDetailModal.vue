@@ -31,9 +31,9 @@
             <a-descriptions-item label="发货备注">{{ detail.shipRemark || '-' }}</a-descriptions-item>
             <a-descriptions-item label="取消来源">{{ cancelTypeText(detail.cancelType) }}</a-descriptions-item>
             <a-descriptions-item label="取消/关闭原因" :span="2">{{ detail.cancelReason || '-' }}</a-descriptions-item>
-            <a-descriptions-item label="下单来源">{{ detail.orderSource || '-' }}</a-descriptions-item>
+            <a-descriptions-item label="下单来源">{{ enumLabel(ORDER_SOURCE_LABELS, detail.orderSource) }}</a-descriptions-item>
             <a-descriptions-item label="支付渠道">
-              {{ detail.payChannel || '-' }}<span v-if="detail.payType"> / {{ detail.payType }}</span>
+              {{ enumLabel(PAY_CHANNEL_LABELS, detail.payChannel) }}<span v-if="detail.payType"> / {{ enumLabel(PAY_TYPE_LABELS, detail.payType) }}</span>
             </a-descriptions-item>
             <a-descriptions-item label="下单 IP">{{ detail.clientIp || '-' }}</a-descriptions-item>
             <a-descriptions-item label="渠道 / UTM">
@@ -148,6 +148,7 @@
   import { useMessage } from '/@/hooks/web/useMessage';
   import { detail as fetchDetail, type AdminOrderDetailVO, type AdminOrderItemVO, type OrderEventVO } from '../ShopOrder.api';
   import { formatAmount } from '../ShopOrder.data';
+  import { enumLabel, ORDER_SOURCE_LABELS, PAY_CHANNEL_LABELS, PAY_TYPE_LABELS } from '../../shared/enumLabels';
   import OrderEventTimeline from './OrderEventTimeline.vue';
 
   const { createMessage } = useMessage();
