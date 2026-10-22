@@ -72,6 +72,50 @@
                     <mainClass>org.jeecg.JeecgSystemApplication</mainClass>
                 </configuration>
             </plugin>
+
+            <!--
+                Flyway CLI 入口（清单 B16）。
+
+                为什么需要：spring.flyway.enabled=true 但 FlywayAutoConfiguration 被
+                spring.autoconfigure.exclude 排除了（见 application-dev.yml，原因是
+                spring.main.lazy-initialization=true 会干扰 Flyway 初始化），
+                于是 `flyway/sql/mysql` 下的迁移脚本**从来没有被自动执行过**。
+
+                这里把 flyway-maven-plugin 挂到本模块，让运维/开发可以显式跑：
+
+                  # 查看状态（先看有没有 pending / mismatch）
+                  mvn -pl jeecg-module-system/jeecg-system-start flyway:info \
+                      -Dflyway.url=jdbc:mysql://127.0.0.1:3306/ck-shop \
+                      -Dflyway.user=root -Dflyway.password=*** \
+                      -Dflyway.locations=filesystem:./src/main/resources/flyway/sql/mysql \
+                      -Dflyway.ignoreMigrationPatterns='*:missing'
+
+                  # 修复历史表（清掉失败记录、对齐 checksum）
+                  mvn ... flyway:repair   （参数同上）
+
+                  # 执行迁移
+                  mvn ... flyway:migrate  （参数同上）
+
+                flyway-mysql 是 Flyway 10+ 拆出的数据库插件，缺它 Flyway 会报
+                "No Flyway database plugin found to handle jdbc:mysql://..."。
+            -->
+            <plugin>
+                <groupId>org.flywaydb</groupId>
+                <artifactId>flyway-maven-plugin</artifactId>
+                <version>12.4.0</version>
+                <dependencies>
+                    <dependency>
+                        <groupId>org.flywaydb</groupId>
+                        <artifactId>flyway-mysql</artifactId>
+                        <version>12.4.0</version>
+                    </dependency>
+                    <dependency>
+                        <groupId>com.mysql</groupId>
+                        <artifactId>mysql-connector-j</artifactId>
+                        <version>${mysql.version}</version>
+                    </dependency>
+                </dependencies>
+            </plugin>
         </plugins>
     </build>
 

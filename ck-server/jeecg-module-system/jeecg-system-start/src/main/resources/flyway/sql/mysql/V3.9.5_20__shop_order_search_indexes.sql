@@ -7,8 +7,43 @@
 --   receiver_phone 都没有索引，order_no 的唯一索引也因前导 % 失效 —— 每次搜索全表扫描。
 --   代码已改为"订单号等值 / 账号与手机号等值 / 收货人前缀"，这需要等值列上有索引。
 --
--- 说明：MySQL 8 不支持 CREATE INDEX IF NOT EXISTS，本脚本由 Flyway 保证只执行一次。
+-- 为什么写成"先查 information_schema 再决定是否执行"：
+--   MySQL 8 不支持 CREATE INDEX IF NOT EXISTS，而这两个索引在部分环境可能已被手工
+--   创建过。幂等写法保证迁移不会因 "Duplicate key name" 失败（清单 B16）。
 -- -----------------------------------------------------------------------------
 
-CREATE INDEX `idx_order_username` ON `ck_shop_order` (`username`);
-CREATE INDEX `idx_order_receiver_phone` ON `ck_shop_order` (`receiver_phone`);
+SET @idx_user := (
+    SELECT COUNT(*)
+    FROM information_schema.statistics
+    WHERE table_schema = DATABASE()
+      AND table_name = 'ck_shop_order'
+      AND index_name = 'idx_order_username'
+);
+
+SET @ddl_user := IF(
+    @idx_user = 0,
+    'CREATE INDEX `idx_order_username` ON `ck_shop_order` (`username`)',
+    'SELECT 1'
+);
+
+PREPARE stmt_user FROM @ddl_user;
+EXECUTE stmt_user;
+DEALLOCATE PREPARE stmt_user;
+
+SET @idx_phone := (
+    SELECT COUNT(*)
+    FROM information_schema.statistics
+    WHERE table_schema = DATABASE()
+      AND table_name = 'ck_shop_order'
+      AND index_name = 'idx_order_receiver_phone'
+);
+
+SET @ddl_phone := IF(
+    @idx_phone = 0,
+    'CREATE INDEX `idx_order_receiver_phone` ON `ck_shop_order` (`receiver_phone`)',
+    'SELECT 1'
+);
+
+PREPARE stmt_phone FROM @ddl_phone;
+EXECUTE stmt_phone;
+DEALLOCATE PREPARE stmt_phone;
