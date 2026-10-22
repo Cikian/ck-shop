@@ -74,6 +74,14 @@
           </a-table>
         </a-card>
       </template>
+
+      <!-- 详情加载失败：给出失败原因与重试入口，避免只剩空白弹窗 -->
+      <a-result v-else-if="loadError" status="warning" title="退款单详情加载失败" :sub-title="loadError">
+        <template #extra>
+          <a-button type="primary" :loading="loading" @click="retryDetail">重试</a-button>
+          <a-button @click="handleCancel">关闭</a-button>
+        </template>
+      </a-result>
     </a-spin>
   </j-modal>
 </template>
@@ -91,6 +99,10 @@
   const visible = ref(false);
   const loading = ref(false);
   const detail = ref<OrderRefundVO | null>(null);
+  /** 详情加载失败原因：非空时弹窗展示重试页 */
+  const loadError = ref('');
+  /** 最近一次打开的退款单号：重试时复用 */
+  const currentRefundNo = ref('');
 
   const items = computed(() => detail.value?.items || []);
   const images = computed(() => parseApplyImages(detail.value?.applyImages));
@@ -133,15 +145,29 @@
       return;
     }
     title.value = `退款单详情 - ${refundNo}`;
+    currentRefundNo.value = refundNo;
     visible.value = true;
+    await loadDetail(refundNo);
+  }
+
+  /** 拉详情：失败时记录原因，弹窗展示「重试/关闭」而不是空白 */
+  async function loadDetail(refundNo: string) {
     loading.value = true;
+    loadError.value = '';
     detail.value = null;
     try {
       detail.value = await fetchDetail(refundNo);
     } catch (error: any) {
-      createMessage.error(error?.message || '获取退款单详情失败');
+      loadError.value = error?.message || '获取退款单详情失败';
+      createMessage.error(loadError.value);
     } finally {
       loading.value = false;
+    }
+  }
+
+  function retryDetail() {
+    if (currentRefundNo.value) {
+      void loadDetail(currentRefundNo.value);
     }
   }
 

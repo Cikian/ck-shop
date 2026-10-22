@@ -124,6 +124,14 @@
           <OrderEventTimeline :events="events" />
         </a-card>
       </template>
+
+      <!-- 详情加载失败：不能只剩一个空白弹窗，给出原因与重试入口 -->
+      <a-result v-else-if="loadError" status="warning" title="订单详情加载失败" :sub-title="loadError">
+        <template #extra>
+          <a-button type="primary" :loading="loading" @click="retryDetail">重试</a-button>
+          <a-button @click="handleCancel">关闭</a-button>
+        </template>
+      </a-result>
     </a-spin>
   </j-modal>
 </template>
@@ -143,6 +151,10 @@
   const visible = ref(false);
   const loading = ref(false);
   const detail = ref<AdminOrderDetailVO | null>(null);
+  /** 详情加载失败原因：非空时弹窗展示重试页，而不是空白 */
+  const loadError = ref('');
+  /** 最近一次打开的订单号：重试时复用 */
+  const currentOrderNo = ref('');
 
   const isArchived = computed(() => Number(detail.value?.delFlag) === 1);
   const items = computed<AdminOrderItemVO[]>(() => detail.value?.items || []);
@@ -356,15 +368,29 @@
       return;
     }
     title.value = `订单详情 - ${orderNo}`;
+    currentOrderNo.value = orderNo;
     visible.value = true;
+    await loadDetail(orderNo);
+  }
+
+  /** 拉详情：失败时记录原因，弹窗展示「重试/关闭」而不是空白 */
+  async function loadDetail(orderNo: string) {
     loading.value = true;
+    loadError.value = '';
     detail.value = null;
     try {
       detail.value = await fetchDetail(orderNo);
     } catch (error: any) {
-      createMessage.error(error?.message || '获取订单详情失败');
+      loadError.value = error?.message || '获取订单详情失败';
+      createMessage.error(loadError.value);
     } finally {
       loading.value = false;
+    }
+  }
+
+  function retryDetail() {
+    if (currentOrderNo.value) {
+      void loadDetail(currentOrderNo.value);
     }
   }
 
