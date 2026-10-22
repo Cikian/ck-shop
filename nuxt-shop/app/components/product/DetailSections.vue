@@ -252,6 +252,7 @@ import type {
 import type { StoreReview, StoreReviewSummary } from '~~/types/shop-review'
 import { reviewBucketPercent, reviewStars } from '~~/types/shop-review'
 import { sanitizeHtml } from '~~/utils/sanitize-html'
+import { registerScrollTask } from '~/utils/scrollScheduler'
 import ProductDetailBlocks from './ProductDetailBlocks.vue'
 
 const props = withDefaults(defineProps<{
@@ -369,11 +370,22 @@ const anchorItems = computed<{ id: AnchorId; labelKey: string; el: HTMLElement |
   return items
 })
 
-/** 推荐区在页面（不在本组件内）：按 id 解析；其余锚点用组件内 ref */
+/**
+ * 推荐区在页面（不在本组件内）：按 id 解析；其余锚点用组件内 ref。
+ *
+ * 缓存：滚动高亮是**每帧**都要解析的，以前每帧都 getElementById（清单 S23）。
+ * 这里按 id 缓存一次，元素被替换（isConnected 为 false）时自动重查。
+ */
+const anchorElCache = new Map<AnchorId, HTMLElement>()
+
 function resolveAnchorEl(item: { id: AnchorId; el: HTMLElement | null }): HTMLElement | null {
   if (item.el) return item.el
   if (item.id !== 'recommend') return null
-  return document.getElementById('product-recommend')
+  const cached = anchorElCache.get(item.id)
+  if (cached && cached.isConnected) return cached
+  const el = document.getElementById('product-recommend')
+  if (el) anchorElCache.set(item.id, el)
+  return el
 }
 
 /** 当前高亮：优先用户滚动/点击得到的值；首帧回退到第一个可用锚点 */
@@ -390,8 +402,8 @@ function scrollOffset(): number {
   return headerHeight() + (anchorBar.value?.getBoundingClientRect().height ?? 0)
 }
 
-let ticking = false
-let rafId = 0
+/** 共享滚动调度器的注销函数（清单 S23） */
+let stopScrollTask: (() => void) | null = null
 
 function syncStickyTop() {
   const height = headerHeight()
@@ -412,16 +424,9 @@ function updateActiveAnchor() {
   activeAnchor.value = current
 }
 
-function onScroll() {
-  if (ticking) return
-  ticking = true
-  rafId = requestAnimationFrame(() => {
-    ticking = false
-    updateActiveAnchor()
-  })
-}
-
 function onResize() {
+  // 尺寸变化后缓存的元素可能已被替换，清空让下一次解析重新查询
+  anchorElCache.clear()
   syncStickyTop()
   updateActiveAnchor()
 }
@@ -442,16 +447,18 @@ function scrollToAnchor(id: AnchorId) {
 onMounted(() => {
   syncStickyTop()
   updateActiveAnchor()
-  window.addEventListener('scroll', onScroll, { passive: true })
+  /*
+   * 滚动交给全站共享调度器（清单 S23）：
+   * 和 useStickyAside 共用一个 passive 监听 + 一帧 rAF，不再各建一套。
+   */
+  stopScrollTask = registerScrollTask(updateActiveAnchor)
   window.addEventListener('resize', onResize)
 })
 
 onUnmounted(() => {
   // 只清理浏览器侧监听：SSR 不执行 unmount，但加个判断更保险
   if (!import.meta.client) return
-  window.removeEventListener('scroll', onScroll)
+  stopScrollTask?.()
   window.removeEventListener('resize', onResize)
-  if (rafId) cancelAnimationFrame(rafId)
-  ticking = false
 })
 </script>

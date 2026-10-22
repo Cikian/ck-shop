@@ -28,6 +28,7 @@
 //   · 调用方负责 `position: sticky`（桌面）本身，本 composable 只给 `top`。
 
 import type { Ref } from 'vue'
+import { registerScrollTask } from '~~/app/utils/scrollScheduler'
 
 export interface UseStickyAsideOptions {
   /** 右列外层（grid 子项，高度随整行）→ 用来量动作条的 left/width */
@@ -83,6 +84,8 @@ export function useStickyAside(options: UseStickyAsideOptions): UseStickyAsideRe
 
   let rafId = 0
   let scrollRafId = 0
+/** 共享滚动调度器的注销函数（清单 S23） */
+let stopScrollTask: (() => void) | null = null
   let mounted = false
   const observers: ResizeObserver[] = []
 
@@ -291,7 +294,12 @@ export function useStickyAside(options: UseStickyAsideOptions): UseStickyAsideRe
     observeTargets()
     applyLayout()
     window.addEventListener('resize', schedule)
-    window.addEventListener('scroll', scheduleMaskState, { passive: true })
+    /*
+     * 滚动改用全站共享调度器（清单 S23）：
+     * 以前这里和 DetailSections 各自 addEventListener('scroll') + 各自 rAF，
+     * 同一次滚动要做两轮布局读取。现在一次监听、一帧内跑完所有任务。
+     */
+    stopScrollTask = registerScrollTask(applyMaskState)
   })
 
   // 语言切换后文案长度变化 → 面板高度变化；规格切换由 ResizeObserver 兜住
@@ -315,7 +323,7 @@ export function useStickyAside(options: UseStickyAsideOptions): UseStickyAsideRe
   onBeforeUnmount(() => {
     if (!import.meta.client) return
     window.removeEventListener('resize', schedule)
-    window.removeEventListener('scroll', scheduleMaskState)
+    stopScrollTask?.()
     if (rafId) cancelAnimationFrame(rafId)
     if (scrollRafId) cancelAnimationFrame(scrollRafId)
     while (observers.length) observers.pop()?.disconnect()
