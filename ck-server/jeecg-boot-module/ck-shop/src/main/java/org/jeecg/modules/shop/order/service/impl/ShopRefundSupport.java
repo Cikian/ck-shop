@@ -15,7 +15,10 @@ import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
 
 /**
  * 退款单的**只读查询与展示映射**支撑组件。
@@ -54,14 +57,30 @@ public class ShopRefundSupport {
                 .eq(ShopOrderRefundItem::getRefundId, refundId));
     }
 
-    /** 批量转 VO（不带明细行，明细在 toVO 内部按需查） */
+    /**
+     * 批量转 VO（明细行一次 IN 查询后按 refundId 分组）。
+     *
+     * <p>之前是逐条 toVO(refund, null)，内部再 listItems(refund.getId())：
+     * 一页 100 条退款 = 1 次分页 + 100 次明细查询（典型 N+1）。
+     * 现在把这一页的 refundId 收集起来做**一次** IN 查询，内存分组后传入。
+     */
     public List<OrderRefundVO> toVOs(List<ShopOrderRefund> refunds) {
         List<OrderRefundVO> list = new ArrayList<>();
-        if (refunds == null) {
+        if (refunds == null || refunds.isEmpty()) {
             return list;
         }
+        List<String> refundIds = refunds.stream()
+                .map(ShopOrderRefund::getId)
+                .filter(StringUtils::isNotBlank)
+                .collect(Collectors.toList());
+        Map<String, List<ShopOrderRefundItem>> itemsByRefund = refundIds.isEmpty()
+                ? Collections.emptyMap()
+                : refundItemMapper.selectList(new LambdaQueryWrapper<ShopOrderRefundItem>()
+                        .in(ShopOrderRefundItem::getRefundId, refundIds))
+                .stream()
+                .collect(Collectors.groupingBy(ShopOrderRefundItem::getRefundId));
         for (ShopOrderRefund refund : refunds) {
-            list.add(toVO(refund, null));
+            list.add(toVO(refund, itemsByRefund.getOrDefault(refund.getId(), new ArrayList<>())));
         }
         return list;
     }
