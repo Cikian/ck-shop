@@ -12,7 +12,7 @@
     <ShopTagForm ref="registerForm" @ok="submitCallback" :formDisabled="disableSubmit" :formBpm="false"></ShopTagForm>
     <template #footer>
       <a-button @click="handleCancel">取消</a-button>
-      <a-button :class="{ 'jee-hidden': disableSubmit }" type="primary" @click="handleOk">确认</a-button>
+      <a-button :class="{ 'jee-hidden': disableSubmit }" type="primary" :loading="registerForm?.confirmLoading" @click="handleOk">确认</a-button>
     </template>
   </j-modal>
 </template>

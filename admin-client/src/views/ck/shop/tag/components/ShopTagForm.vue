@@ -195,6 +195,8 @@
     add,
     edit,
     submitForm,
+    // 供 Modal 的确认按钮绑定 loading：保存期间禁止重复点击
+    confirmLoading,
   });
 </script>
 
