@@ -416,17 +416,17 @@
 </script>
 
 <style lang="less" scoped>
-  @ed-border: #f0f0f0;
-  @ed-bg: #f5f5f5;
-  @ed-primary: var(--j-global-primary-color, #1677ff);
-  @ed-text: rgba(0, 0, 0, 0.88);
-  @ed-sub: rgba(0, 0, 0, 0.45);
+  @ed-border: var(--shop-border);
+  @ed-bg: var(--shop-surface-muted);
+  @ed-primary: var(--j-global-primary-color, var(--shop-primary));
+  @ed-text: var(--shop-text);
+  @ed-sub: var(--shop-text-secondary);
 
   .ed {
     display: flex;
     flex-direction: column;
     overflow: hidden;
-    background: #fff;
+    background: var(--shop-surface);
     border-radius: 8px;
   }
 
@@ -532,7 +532,7 @@
     justify-content: center;
     height: 100%;
     font-size: 13px;
-    color: rgba(0, 0, 0, 0.25);
+    color: var(--shop-text-tertiary);
   }
 
   .ed__hero-title {
@@ -565,8 +565,8 @@
     font-size: 12px;
     color: @ed-sub;
     cursor: pointer;
-    background: #fff;
-    border: 1px solid #d9d9d9;
+    background: var(--shop-surface);
+    border: 1px solid var(--shop-border-strong);
     border-radius: 4px;
     transition: all 0.2s;
 
@@ -585,7 +585,7 @@
   .ed__lang-dot {
     width: 6px;
     height: 6px;
-    background: #d9d9d9;
+    background: var(--shop-border-strong);
     border-radius: 50%;
 
     &.is-on {
@@ -608,7 +608,7 @@
 
     label {
       font-size: 12px;
-      color: rgba(0, 0, 0, 0.65);
+      color: var(--shop-text-secondary);
     }
 
     &--wide {
@@ -675,7 +675,7 @@
 
     label {
       font-size: 13px;
-      color: rgba(0, 0, 0, 0.65);
+      color: var(--shop-text-secondary);
     }
   }
 
@@ -694,7 +694,7 @@
       margin: 0 !important;
       overflow: hidden;
       background: @ed-bg;
-      border: 1px dashed #d9d9d9;
+      border: 1px dashed var(--shop-border-strong);
       border-radius: 6px;
       transition: border-color 0.2s;
 

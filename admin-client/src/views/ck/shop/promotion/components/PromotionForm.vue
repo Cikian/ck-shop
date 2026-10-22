@@ -837,7 +837,7 @@
 
   .panel-tools__hint {
     font-size: 12px;
-    color: rgba(0, 0, 0, 0.45);
+    color: var(--shop-text-secondary);
   }
 
   .full-width {
@@ -848,7 +848,7 @@
     display: block;
     font-size: 12px;
     line-height: 1.6;
-    color: rgba(0, 0, 0, 0.45);
+    color: var(--shop-text-secondary);
   }
 
   .lang-tab-required {
@@ -875,7 +875,7 @@
         margin: 0 0 4px;
         font-size: 12px;
         line-height: 1.7;
-        color: rgba(0, 0, 0, 0.45);
+        color: var(--shop-text-secondary);
       }
     }
   }

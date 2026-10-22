@@ -354,7 +354,7 @@
     }
 
     &__muted {
-      color: rgba(0, 0, 0, 0.45);
+      color: var(--shop-text-secondary);
       font-size: 12px;
     }
 
@@ -366,7 +366,7 @@
     &__hint {
       display: block;
       margin-top: 4px;
-      color: rgba(0, 0, 0, 0.45);
+      color: var(--shop-text-secondary);
       font-size: 12px;
       line-height: 1.6;
     }

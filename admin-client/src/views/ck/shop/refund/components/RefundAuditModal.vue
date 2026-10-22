@@ -252,7 +252,7 @@
         h('p', `支付单号：${detail.value.paymentNo || '-'}`),
         h('p', `申请退款金额：¥${formatAmount(detail.value.refundAmount)}`),
         h('p', `该订单当前可退金额：¥${formatAmount(refundableAmount.value)}`),
-        h('p', { style: 'margin-top: 8px; color: #cf1322; font-weight: 600' }, '提交后会立即调用渠道退款，且不可撤销。'),
+        h('p', { style: 'margin-top: 8px; color: var(--shop-error); font-weight: 600' }, '提交后会立即调用渠道退款，且不可撤销。'),
       ]),
       onOk: () => submitAudit(),
     });

@@ -311,8 +311,8 @@
 
 <style lang="less" scoped>
   .detail-preview {
-    background: #fff;
-    border: 1px solid #f0f0f0;
+    background: var(--shop-surface);
+    border: 1px solid var(--shop-border);
     border-radius: 12px;
     padding: 14px;
     position: sticky;
@@ -333,14 +333,14 @@
       gap: 6px;
       font-size: 13px;
       font-weight: 600;
-      color: rgba(0, 0, 0, 0.88);
+      color: var(--shop-text);
     }
 
     &__lang {
       padding: 0 6px;
       border-radius: 4px;
       background: #f0f7ff;
-      color: #1677ff;
+      color: var(--shop-primary);
       font-size: 12px;
       font-weight: 400;
       line-height: 18px;
@@ -350,14 +350,14 @@
       margin: 8px 0 12px;
       font-size: 12px;
       line-height: 1.6;
-      color: rgba(0, 0, 0, 0.45);
+      color: var(--shop-text-secondary);
     }
 
     /* 预览视口：滚动只发生在这一层，外部表单滚动不受影响 */
     &__frame {
-      border: 1px solid #f0f0f0;
+      border: 1px solid var(--shop-border);
       border-radius: 10px;
-      background: #fff;
+      background: var(--shop-surface);
       overflow-y: auto;
       max-height: calc(100vh - 300px);
 
@@ -384,7 +384,7 @@
     padding-bottom: 22px;
 
     & + & {
-      border-top: 1px solid #f0f0f0;
+      border-top: 1px solid var(--shop-border);
       padding-top: 20px;
     }
 
@@ -395,14 +395,14 @@
       margin: 0 0 14px;
       font-size: 16px;
       font-weight: 700;
-      color: rgba(0, 0, 0, 0.88);
+      color: var(--shop-text);
     }
 
     &__bar {
       width: 4px;
       height: 16px;
       border-radius: 2px;
-      background: #1677ff;
+      background: var(--shop-primary);
     }
   }
 
@@ -417,7 +417,7 @@
       flex-wrap: wrap;
       gap: 4px 16px;
       padding: 9px 0;
-      border-bottom: 1px solid #f0f0f0;
+      border-bottom: 1px solid var(--shop-border);
 
       &:last-child {
         border-bottom: 0;
@@ -427,7 +427,7 @@
     &__name {
       flex: 0 0 96px;
       font-size: 13px;
-      color: rgba(0, 0, 0, 0.45);
+      color: var(--shop-text-secondary);
       word-break: break-word;
     }
 
@@ -437,7 +437,7 @@
       min-width: 0;
       font-size: 13px;
       font-weight: 500;
-      color: rgba(0, 0, 0, 0.88);
+      color: var(--shop-text);
       word-break: break-word;
     }
   }
@@ -454,7 +454,7 @@
     }
 
     :deep(a) {
-      color: #1677ff;
+      color: var(--shop-primary);
     }
 
     :deep(p) {
@@ -485,7 +485,7 @@
       cursor: zoom-in;
 
       &:focus-visible {
-        outline: 2px solid #1677ff;
+        outline: 2px solid var(--shop-primary);
         outline-offset: 2px;
       }
 
@@ -509,7 +509,7 @@
       cursor: zoom-in;
 
       &:focus-visible {
-        outline: 2px solid #1677ff;
+        outline: 2px solid var(--shop-primary);
         outline-offset: 2px;
       }
 
@@ -539,7 +539,7 @@
       cursor: zoom-in;
 
       &:focus-visible {
-        outline: 2px solid #1677ff;
+        outline: 2px solid var(--shop-primary);
         outline-offset: 2px;
       }
 
@@ -560,7 +560,7 @@
       margin: 0 0 8px;
       font-size: 16px;
       font-weight: 700;
-      color: rgba(0, 0, 0, 0.88);
+      color: var(--shop-text);
     }
   }
 
@@ -569,7 +569,7 @@
       margin: 0 0 8px;
       font-size: 16px;
       font-weight: 700;
-      color: rgba(0, 0, 0, 0.88);
+      color: var(--shop-text);
     }
   }
 
@@ -599,7 +599,7 @@
     }
 
     :deep(a) {
-      color: #1677ff;
+      color: var(--shop-primary);
     }
 
     :deep(h2),
@@ -607,7 +607,7 @@
     :deep(h4) {
       margin: 16px 0 8px;
       font-weight: 700;
-      color: rgba(0, 0, 0, 0.88);
+      color: var(--shop-text);
     }
 
     :deep(ul),
@@ -625,7 +625,7 @@
     :deep(th),
     :deep(td) {
       padding: 6px 10px;
-      border: 1px solid #f0f0f0;
+      border: 1px solid var(--shop-border);
     }
   }
 
@@ -660,20 +660,20 @@
       margin: 0 0 6px;
       font-size: 17px;
       font-weight: 700;
-      color: rgba(0, 0, 0, 0.88);
+      color: var(--shop-text);
     }
 
     &__sub {
       margin: 0;
       font-size: 13px;
-      color: rgba(0, 0, 0, 0.45);
+      color: var(--shop-text-secondary);
     }
   }
 
   .pv-divider {
     margin: 4px 0;
     border: 0;
-    border-top: 1px solid #f0f0f0;
+    border-top: 1px solid var(--shop-border);
   }
 
   .pv-empty {
@@ -681,7 +681,7 @@
     padding: 24px 0;
     text-align: center;
     font-size: 13px;
-    color: rgba(0, 0, 0, 0.35);
+    color: var(--shop-text-tertiary);
   }
 
   /* 移动视口：图文堆叠（图在上）、内边距收窄；宫格列数按配置走 repeat(minmax(0,1fr))，不会横向溢出 */
@@ -724,7 +724,7 @@
       max-width: min(92vw, 1100px);
       max-height: 86vh;
       border-radius: 8px;
-      background: #fff;
+      background: var(--shop-surface);
       box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
     }
 

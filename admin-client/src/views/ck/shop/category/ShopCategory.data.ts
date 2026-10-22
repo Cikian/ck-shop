@@ -37,7 +37,7 @@ export const columns: BasicColumn[] = [
     customRender: ({ record }) => {
       // 分类的归属列就是店铺绑定的部门 org_code，空值表示尚未归属
       if (!record.sysOrgCode) {
-        return h('span', { style: 'color:rgba(0,0,0,.45)' }, '未设置');
+        return h('span', { style: 'color:var(--shop-text-secondary)' }, '未设置');
       }
       const storeName = orgStoreNameMap[record.sysOrgCode];
       if (storeName) {

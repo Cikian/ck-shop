@@ -128,7 +128,7 @@
 </script>
 
 <style lang="less" scoped>
-  @preview-border: #f0f0f0;
+  @preview-border: var(--shop-border);
 
   .promo-preview {
     padding: 0 0 4px;
@@ -145,12 +145,12 @@
   .promo-preview__caption-title {
     font-size: 13px;
     font-weight: 600;
-    color: rgba(0, 0, 0, 0.88);
+    color: var(--shop-text);
   }
 
   .promo-preview__caption-hint {
     font-size: 12px;
-    color: rgba(0, 0, 0, 0.45);
+    color: var(--shop-text-secondary);
   }
 
   /* 秒杀条本体：宽高比与前台接近，圆角/阴影对齐首页卡片 */
@@ -164,7 +164,7 @@
   .promo-preview__mask {
     position: absolute;
     inset: 0;
-    background: rgba(0, 0, 0, 0.45);
+    background: var(--shop-text-secondary);
   }
 
   .promo-preview__glow {
@@ -248,7 +248,7 @@
     font-weight: 800;
     font-variant-numeric: tabular-nums;
     line-height: 1;
-    background: rgba(0, 0, 0, 0.25);
+    background: var(--shop-text-tertiary);
     border-radius: 8px;
   }
 
@@ -275,7 +275,7 @@
     margin: 10px 0 0;
     font-size: 12px;
     line-height: 1.6;
-    color: rgba(0, 0, 0, 0.45);
+    color: var(--shop-text-secondary);
   }
 
   .promo-preview__caption + .promo-preview__bar {

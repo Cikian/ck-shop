@@ -43,7 +43,7 @@ export const columns: BasicColumn[] = [
       const image = cover
         ? h('img', {
             src: cover,
-            style: 'width:44px;height:44px;object-fit:cover;border-radius:6px;border:1px solid #f0f0f0;flex:none',
+            style: 'width:44px;height:44px;object-fit:cover;border-radius:6px;border:1px solid var(--shop-border);flex:none',
             alt: record.title || '商品图',
             loading: 'lazy',
           })
@@ -51,15 +51,15 @@ export const columns: BasicColumn[] = [
             'div',
             {
               style:
-                'width:44px;height:44px;border-radius:6px;border:1px dashed #d9d9d9;display:flex;align-items:center;justify-content:center;color:#bfbfbf;font-size:12px;flex:none',
+                'width:44px;height:44px;border-radius:6px;border:1px dashed var(--shop-border-strong);display:flex;align-items:center;justify-content:center;color:#bfbfbf;font-size:12px;flex:none',
             },
             '无图'
           );
       return h('div', { style: 'display:flex;align-items:center;gap:10px;min-width:0' }, [
         image,
         h('div', { style: 'min-width:0;flex:1' }, [
-          h('div', { style: 'font-weight:500;color:rgba(0,0,0,.88);overflow:hidden;text-overflow:ellipsis;white-space:nowrap' }, record.title || '-'),
-          h('div', { style: 'font-size:12px;color:rgba(0,0,0,.45);overflow:hidden;text-overflow:ellipsis;white-space:nowrap' }, record.spuCode || '-'),
+          h('div', { style: 'font-weight:500;color:var(--shop-text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap' }, record.title || '-'),
+          h('div', { style: 'font-size:12px;color:var(--shop-text-secondary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap' }, record.spuCode || '-'),
         ]),
       ]);
     },
@@ -78,7 +78,7 @@ export const columns: BasicColumn[] = [
     width: 180,
     customRender: ({ record }) => {
       const tags = record.tags || [];
-      if (!tags.length) return h('span', { style: 'color:rgba(0,0,0,.35)' }, '-');
+      if (!tags.length) return h('span', { style: 'color:var(--shop-text-tertiary)' }, '-');
       return h(
         'div',
         { style: 'display:flex;flex-wrap:wrap;gap:4px' },
@@ -99,7 +99,7 @@ export const columns: BasicColumn[] = [
     customRender: ({ record }) => {
       const orgCode = record.sysOrgCode;
       if (!orgCode) {
-        return h('span', { style: 'color:rgba(0,0,0,.35)' }, '-');
+        return h('span', { style: 'color:var(--shop-text-tertiary)' }, '-');
       }
       const storeName = orgStoreNameMap[orgCode];
       if (storeName) {
@@ -165,7 +165,7 @@ export const columns: BasicColumn[] = [
     customRender: ({ text }) => {
       return text === 'Y'
         ? h(Tooltip, { title: '首页推荐商品' }, () => h(Tag, { color: 'gold' }, () => '推荐'))
-        : h('span', { style: 'color:rgba(0,0,0,.35)' }, '-');
+        : h('span', { style: 'color:var(--shop-text-tertiary)' }, '-');
     },
   },
   {

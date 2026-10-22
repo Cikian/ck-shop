@@ -371,6 +371,6 @@
     width: 28px;
     line-height: 32px;
     text-align: center;
-    color: rgba(0, 0, 0, 0.45);
+    color: var(--shop-text-secondary);
   }
 </style>

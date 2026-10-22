@@ -910,11 +910,11 @@
     }
 
     &__stats {
-      color: rgba(0, 0, 0, 0.65);
+      color: var(--shop-text-secondary);
       font-size: 13px;
 
       strong {
-        color: rgba(0, 0, 0, 0.88);
+        color: var(--shop-text);
       }
     }
 
@@ -929,14 +929,14 @@
       flex-wrap: wrap;
       padding: 10px 12px;
       margin-bottom: 12px;
-      background: #fafafa;
-      border: 1px solid #f0f0f0;
+      background: var(--shop-surface-muted);
+      border: 1px solid var(--shop-border);
       border-radius: 8px;
     }
 
     &__bulk-label {
       font-weight: 500;
-      color: rgba(0, 0, 0, 0.88);
+      color: var(--shop-text);
     }
 
     &__bulk-field {
@@ -974,7 +974,7 @@
       height: 22px;
       object-fit: cover;
       border-radius: 3px;
-      border: 1px solid #f0f0f0;
+      border: 1px solid var(--shop-border);
       flex: none;
       display: block;
     }
@@ -987,14 +987,14 @@
       margin-top: 8px;
       font-size: 12px;
       line-height: 1.6;
-      color: rgba(0, 0, 0, 0.45);
+      color: var(--shop-text-secondary);
     }
 
     :deep(.sku-row-unsaleable) {
-      background-color: #fafafa;
+      background-color: var(--shop-surface-muted);
 
       td {
-        color: rgba(0, 0, 0, 0.45);
+        color: var(--shop-text-secondary);
       }
     }
   }
@@ -1012,11 +1012,11 @@
       align-items: center;
       gap: 6px;
       font-weight: 600;
-      color: rgba(0, 0, 0, 0.88);
+      color: var(--shop-text);
       margin-bottom: 10px;
 
       .anticon {
-        color: #1677ff;
+        color: var(--shop-primary);
       }
     }
 
@@ -1035,7 +1035,7 @@
 
     &__label {
       font-size: 12px;
-      color: rgba(0, 0, 0, 0.45);
+      color: var(--shop-text-secondary);
     }
 
     &__select {
@@ -1055,7 +1055,7 @@
     &__hint {
       margin-top: 8px;
       font-size: 12px;
-      color: rgba(0, 0, 0, 0.45);
+      color: var(--shop-text-secondary);
     }
   }
 </style>

@@ -432,7 +432,7 @@
     }
 
     &__hint {
-      color: rgba(0, 0, 0, 0.45);
+      color: var(--shop-text-secondary);
       font-size: 12px;
     }
 
@@ -448,16 +448,16 @@
   }
 
   .spec-card {
-    border: 1px solid #f0f0f0;
+    border: 1px solid var(--shop-border);
     border-radius: 8px;
     padding: 12px 14px 10px;
-    background: #fff;
+    background: var(--shop-surface);
     transition:
       border-color 200ms ease,
       box-shadow 200ms ease;
 
     &:hover {
-      border-color: #d9d9d9;
+      border-color: var(--shop-border-strong);
       box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
     }
 
@@ -474,7 +474,7 @@
     }
 
     &__handle {
-      color: rgba(0, 0, 0, 0.3);
+      color: var(--shop-text-tertiary);
       cursor: grab;
       flex: none;
 
@@ -498,7 +498,7 @@
 
     &__count {
       margin-left: auto;
-      color: rgba(0, 0, 0, 0.45);
+      color: var(--shop-text-secondary);
       font-size: 12px;
     }
   }
@@ -513,14 +513,14 @@
     display: flex;
     align-items: center;
     gap: 4px;
-    border: 1px solid #f0f0f0;
+    border: 1px solid var(--shop-border);
     border-radius: 6px;
     padding: 4px 4px 4px 6px;
-    background: #fafafa;
+    background: var(--shop-surface-muted);
     transition: background-color 180ms ease;
 
     &:hover {
-      background: #fff;
+      background: var(--shop-surface);
     }
 
     &--ghost {
@@ -529,7 +529,7 @@
     }
 
     &__handle {
-      color: rgba(0, 0, 0, 0.3);
+      color: var(--shop-text-tertiary);
       cursor: grab;
       flex: none;
 
@@ -561,13 +561,13 @@
     align-items: flex-start;
     gap: 8px;
     padding: 8px 10px;
-    border: 1px solid #f0f0f0;
+    border: 1px solid var(--shop-border);
     border-radius: 6px;
     cursor: pointer;
     transition: background-color 160ms ease;
 
     &:hover {
-      background: #fafafa;
+      background: var(--shop-surface-muted);
     }
 
     &__body {
@@ -576,19 +576,19 @@
 
     &__title {
       font-weight: 500;
-      color: rgba(0, 0, 0, 0.88);
+      color: var(--shop-text);
     }
 
     &__code {
       margin-left: 6px;
       font-size: 12px;
       font-weight: 400;
-      color: rgba(0, 0, 0, 0.45);
+      color: var(--shop-text-secondary);
     }
 
     &__values {
       font-size: 12px;
-      color: rgba(0, 0, 0, 0.65);
+      color: var(--shop-text-secondary);
       word-break: break-all;
     }
   }

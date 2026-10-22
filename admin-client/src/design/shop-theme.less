@@ -1,0 +1,50 @@
+/*
+ * 商城模块的主题变量（清单 A7）
+ *
+ * 背景：管理端支持深色模式（html[data-theme='dark']），但商城页面里散落了
+ * #fff / #fafafa / #1677ff / rgba(0,0,0,.45) 这类硬编码浅色。
+ * 切到深色后这些区域仍是浅色块、文字也多为黑字，出现白块和不可读文本。
+ *
+ * 这里定义一组语义变量，浅色/深色各一套；组件样式只引用变量，不再写死颜色。
+ * 新增颜色请优先复用这里的变量，避免深色模式再次回归。
+ */
+
+:root {
+  /* 表面 */
+  --shop-surface: #ffffff;
+  --shop-surface-muted: #fafafa;
+  --shop-surface-hover: #f5f5f5;
+  /* 边框 */
+  --shop-border: #f0f0f0;
+  --shop-border-strong: #d9d9d9;
+  /* 文本 */
+  --shop-text: rgba(0, 0, 0, 0.88);
+  --shop-text-secondary: rgba(0, 0, 0, 0.45);
+  --shop-text-tertiary: rgba(0, 0, 0, 0.3);
+  /* 品牌色（跟随主题色） */
+  --shop-primary: var(--j-global-primary-color, #1677ff);
+  --shop-primary-soft: rgba(22, 119, 255, 0.08);
+  /* 状态色 */
+  --shop-success: #52c41a;
+  --shop-warning: #faad14;
+  --shop-error: #ff4d4f;
+  /* 代码/预览块 */
+  --shop-code-bg: #f6f8fa;
+  --shop-error-soft: #fff1f0;
+  --shop-warning-soft: #fffbe6;
+}
+
+html[data-theme='dark'] {
+  --shop-surface: #1f1f1f;
+  --shop-surface-muted: #141414;
+  --shop-surface-hover: #2a2a2a;
+  --shop-border: #303030;
+  --shop-border-strong: #434343;
+  --shop-text: rgba(255, 255, 255, 0.85);
+  --shop-text-secondary: rgba(255, 255, 255, 0.65);
+  --shop-text-tertiary: rgba(255, 255, 255, 0.35);
+  --shop-primary-soft: rgba(255, 255, 255, 0.08);
+  --shop-code-bg: #141414;
+  --shop-error-soft: rgba(255, 77, 79, 0.16);
+  --shop-warning-soft: rgba(250, 173, 20, 0.16);
+}

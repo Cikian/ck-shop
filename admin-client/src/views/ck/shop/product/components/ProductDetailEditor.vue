@@ -825,12 +825,12 @@
     }
 
     &__hint {
-      color: rgba(0, 0, 0, 0.45);
+      color: var(--shop-text-secondary);
       font-size: 12px;
       line-height: 1.6;
 
       strong {
-        color: #1677ff;
+        color: var(--shop-primary);
         font-weight: 600;
       }
     }
@@ -847,8 +847,8 @@
   }
 
   .block-card {
-    background: #fff;
-    border: 1px solid #f0f0f0;
+    background: var(--shop-surface);
+    border: 1px solid var(--shop-border);
     border-radius: 10px;
     overflow: hidden;
     transition:
@@ -856,7 +856,7 @@
       box-shadow 180ms ease;
 
     &:hover {
-      border-color: #d9d9d9;
+      border-color: var(--shop-border-strong);
       box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
     }
 
@@ -875,17 +875,17 @@
       align-items: center;
       gap: 8px;
       padding: 8px 12px 8px 10px;
-      background: #fafafa;
+      background: var(--shop-surface-muted);
       border-bottom: 1px solid transparent;
 
       .is-expanded > & {
-        border-bottom-color: #f0f0f0;
+        border-bottom-color: var(--shop-border);
       }
     }
 
     &__handle {
       flex: none;
-      color: rgba(0, 0, 0, 0.3);
+      color: var(--shop-text-tertiary);
       cursor: grab;
 
       &.is-disabled {
@@ -912,11 +912,11 @@
       cursor: pointer;
 
       &:hover {
-        background: rgba(0, 0, 0, 0.03);
+        background: var(--shop-surface-hover);
       }
 
       &:focus-visible {
-        outline: 2px solid #1677ff;
+        outline: 2px solid var(--shop-primary);
         outline-offset: 1px;
       }
     }
@@ -933,7 +933,7 @@
       text-overflow: ellipsis;
       white-space: nowrap;
       font-size: 13px;
-      color: rgba(0, 0, 0, 0.65);
+      color: var(--shop-text-secondary);
     }
 
     /* 折叠态附带的布局摘要（间距/圆角/列数），便于扫一眼是否有留白 */
@@ -946,20 +946,20 @@
       padding: 0 6px;
       border-radius: 4px;
       background: #f0f7ff;
-      color: #1677ff;
+      color: var(--shop-primary);
       font-size: 11px;
       line-height: 18px;
     }
 
     &__chevron {
       flex: none;
-      color: rgba(0, 0, 0, 0.45);
+      color: var(--shop-text-secondary);
       font-size: 12px;
     }
 
     &__index {
       flex: none;
-      color: rgba(0, 0, 0, 0.35);
+      color: var(--shop-text-tertiary);
       font-size: 12px;
       font-variant-numeric: tabular-nums;
     }
@@ -989,7 +989,7 @@
     gap: 14px;
     margin-bottom: 16px;
     padding-bottom: 16px;
-    border-bottom: 1px dashed #f0f0f0;
+    border-bottom: 1px dashed var(--shop-border);
   }
 
   .edge-row {
@@ -1007,7 +1007,7 @@
     }
 
     &__label {
-      color: rgba(0, 0, 0, 0.45);
+      color: var(--shop-text-secondary);
       font-size: 12px;
     }
 
@@ -1021,11 +1021,11 @@
       gap: 4px;
       margin-left: 4px;
       padding-left: 10px;
-      border-left: 1px solid #f0f0f0;
+      border-left: 1px solid var(--shop-border);
     }
 
     &__quick-label {
-      color: rgba(0, 0, 0, 0.35);
+      color: var(--shop-text-tertiary);
       font-size: 12px;
     }
   }
@@ -1037,12 +1037,12 @@
     margin-right: 8px;
 
     &__prefix {
-      color: rgba(0, 0, 0, 0.45);
+      color: var(--shop-text-secondary);
       font-size: 12px;
     }
 
     &__unit {
-      color: rgba(0, 0, 0, 0.45);
+      color: var(--shop-text-secondary);
       font-size: 12px;
     }
   }
@@ -1061,7 +1061,7 @@
       padding-top: 5px;
       text-align: right;
       font-size: 13px;
-      color: rgba(0, 0, 0, 0.65);
+      color: var(--shop-text-secondary);
       line-height: 1.5;
     }
 
@@ -1088,7 +1088,7 @@
       margin-top: 6px;
       font-size: 12px;
       line-height: 1.6;
-      color: rgba(0, 0, 0, 0.45);
+      color: var(--shop-text-secondary);
 
       &.is-warn {
         color: #d46b08;
@@ -1098,10 +1098,10 @@
     &__empty {
       margin: 0 0 10px;
       padding: 14px;
-      border: 1px dashed #e5e5e5;
+      border: 1px dashed var(--shop-border-strong);
       border-radius: 8px;
       text-align: center;
-      color: rgba(0, 0, 0, 0.35);
+      color: var(--shop-text-tertiary);
       font-size: 12px;
     }
   }
@@ -1112,8 +1112,8 @@
     gap: 10px;
     padding: 10px;
     margin-bottom: 10px;
-    background: #fafafa;
-    border: 1px solid #f0f0f0;
+    background: var(--shop-surface-muted);
+    border: 1px solid var(--shop-border);
     border-radius: 8px;
 
     &__fields {
@@ -1141,7 +1141,7 @@
 
   .create-modal__hint {
     margin: 0 0 14px;
-    color: rgba(0, 0, 0, 0.45);
+    color: var(--shop-text-secondary);
     font-size: 12px;
   }
 
@@ -1157,9 +1157,9 @@
     align-items: flex-start;
     gap: 4px;
     padding: 12px;
-    border: 1px solid #f0f0f0;
+    border: 1px solid var(--shop-border);
     border-radius: 8px;
-    background: #fff;
+    background: var(--shop-surface);
     text-align: left;
     cursor: pointer;
     transition:
@@ -1171,30 +1171,30 @@
     }
 
     &:focus-visible {
-      outline: 2px solid #1677ff;
+      outline: 2px solid var(--shop-primary);
       outline-offset: 1px;
     }
 
     &.is-active {
-      border-color: #1677ff;
+      border-color: var(--shop-primary);
       box-shadow: 0 0 0 1px rgba(22, 119, 255, 0.2);
       background: #f0f7ff;
     }
 
     &__icon {
       font-size: 18px;
-      color: #1677ff;
+      color: var(--shop-primary);
     }
 
     &__label {
       font-size: 13px;
       font-weight: 500;
-      color: rgba(0, 0, 0, 0.88);
+      color: var(--shop-text);
     }
 
     &__desc {
       font-size: 12px;
-      color: rgba(0, 0, 0, 0.45);
+      color: var(--shop-text-secondary);
       line-height: 1.5;
     }
   }
@@ -1202,7 +1202,7 @@
   .copy-modal__line {
     margin: 0 0 12px;
     font-size: 13px;
-    color: rgba(0, 0, 0, 0.65);
+    color: var(--shop-text-secondary);
   }
 
   .copy-modal__warn {

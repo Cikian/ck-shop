@@ -679,12 +679,12 @@
 
   .ppe__count {
     font-size: 13px;
-    color: rgba(0, 0, 0, 0.65);
+    color: var(--shop-text-secondary);
   }
 
   .ppe__hint {
     font-size: 12px;
-    color: rgba(0, 0, 0, 0.45);
+    color: var(--shop-text-secondary);
   }
 
   .ppe__warn {
@@ -699,15 +699,15 @@
     align-items: center;
     padding: 8px 12px;
     margin-bottom: 10px;
-    background: #fafafa;
-    border: 1px solid #f0f0f0;
+    background: var(--shop-surface-muted);
+    border: 1px solid var(--shop-border);
     border-radius: 8px;
   }
 
   .ppe__bulk-label {
     font-size: 13px;
     font-weight: 500;
-    color: rgba(0, 0, 0, 0.65);
+    color: var(--shop-text-secondary);
   }
 
   .ppe__bulk-input {
@@ -717,14 +717,14 @@
   .ppe__product-name {
     overflow: hidden;
     font-weight: 500;
-    color: rgba(0, 0, 0, 0.88);
+    color: var(--shop-text);
     text-overflow: ellipsis;
     white-space: nowrap;
   }
 
   .ppe__product-code {
     font-size: 12px;
-    color: rgba(0, 0, 0, 0.45);
+    color: var(--shop-text-secondary);
   }
 
   .ppe__product-warn {
@@ -745,7 +745,7 @@
 
   .ppe__sort-value {
     min-width: 22px;
-    color: rgba(0, 0, 0, 0.65);
+    color: var(--shop-text-secondary);
   }
 
   .ppe__picker-search {

@@ -61,7 +61,7 @@ export function getTypeText(type?: string): string {
 /** 类型渲染：彩色 Tag */
 export function renderTypeTag(text: any) {
   if (!text) {
-    return h('span', { style: 'color:rgba(0,0,0,.35)' }, '-');
+    return h('span', { style: 'color:var(--shop-text-tertiary)' }, '-');
   }
   return h(Tag, { color: TYPE_COLOR_MAP[text] || 'default' }, () => getTypeText(text));
 }
@@ -74,7 +74,7 @@ export function renderStatusTag(text: any) {
   if (text === 'N') {
     return h(Tag, { color: 'red' }, () => '停用');
   }
-  return h('span', { style: 'color:rgba(0,0,0,.35)' }, '-');
+  return h('span', { style: 'color:var(--shop-text-tertiary)' }, '-');
 }
 
 export type PromotionPhase = '未开始' | '进行中' | '已结束' | '-';
@@ -113,7 +113,7 @@ export function renderPhaseTag(record: Recordable) {
   if (phase === '已结束') {
     return h(Tag, { color: 'default', style: 'margin-right:0' }, () => phase);
   }
-  return h('span', { style: 'color:rgba(0,0,0,.35)' }, '-');
+  return h('span', { style: 'color:var(--shop-text-tertiary)' }, '-');
 }
 
 /**
@@ -125,7 +125,7 @@ export function renderTimeWindow(record: Recordable) {
   const end = record?.endTime || '-';
   return h('div', { style: 'display:flex;flex-direction:column;gap:2px;line-height:1.4' }, [
     h('div', {}, [renderPhaseTag(record)]),
-    h('div', { style: 'font-size:12px;color:rgba(0,0,0,.65)' }, `${start} ~ ${end}`),
+    h('div', { style: 'font-size:12px;color:var(--shop-text-secondary)' }, `${start} ~ ${end}`),
   ]);
 }
 
@@ -187,8 +187,8 @@ export const columns: BasicColumn[] = [
       const title = record.title || '-';
       const sub = record.subTitle ? String(record.subTitle) : '';
       return h('div', { style: 'min-width:0' }, [
-        h('div', { style: 'font-weight:500;color:rgba(0,0,0,.88);overflow:hidden;text-overflow:ellipsis;white-space:nowrap', title }, title),
-        sub ? h('div', { style: 'font-size:12px;color:rgba(0,0,0,.45)', title: sub }, sub) : null,
+        h('div', { style: 'font-weight:500;color:var(--shop-text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap', title }, title),
+        sub ? h('div', { style: 'font-size:12px;color:var(--shop-text-secondary)', title: sub }, sub) : null,
       ]);
     },
   },

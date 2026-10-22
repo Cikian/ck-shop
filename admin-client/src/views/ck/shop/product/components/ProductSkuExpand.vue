@@ -104,17 +104,17 @@
       height: 34px;
       object-fit: cover;
       border-radius: 4px;
-      border: 1px solid #f0f0f0;
+      border: 1px solid var(--shop-border);
     }
 
     .sku-muted {
-      color: rgba(0, 0, 0, 0.45);
+      color: var(--shop-text-secondary);
       font-size: 12px;
     }
 
     :deep(.sku-row-unsaleable) {
-      background-color: #fafafa;
-      color: rgba(0, 0, 0, 0.45);
+      background-color: var(--shop-surface-muted);
+      color: var(--shop-text-secondary);
     }
   }
 </style>

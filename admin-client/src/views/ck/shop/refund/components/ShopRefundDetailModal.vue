@@ -52,7 +52,7 @@
             <a-descriptions-item label="重试次数">{{ detail.retryCount ?? 0 }}</a-descriptions-item>
             <a-descriptions-item label="失败码">{{ detail.failCode || '-' }}</a-descriptions-item>
             <a-descriptions-item label="失败原因" :span="2">
-              <span :style="detail.failReason ? 'color:#cf1322' : ''">{{ detail.failReason || '-' }}</span>
+              <span :style="detail.failReason ? 'color:var(--shop-error)' : ''">{{ detail.failReason || '-' }}</span>
             </a-descriptions-item>
           </a-descriptions>
         </a-card>

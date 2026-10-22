@@ -163,13 +163,13 @@
 
       .event-type {
         font-weight: 500;
-        color: rgba(0, 0, 0, 0.88);
+        color: var(--shop-text);
       }
 
       .event-time {
         margin-left: auto;
         font-size: 12px;
-        color: rgba(0, 0, 0, 0.45);
+        color: var(--shop-text-secondary);
       }
     }
 
@@ -179,18 +179,18 @@
       gap: 12px;
       margin-top: 2px;
       font-size: 12px;
-      color: rgba(0, 0, 0, 0.45);
+      color: var(--shop-text-secondary);
     }
 
     .event-status {
       margin-top: 4px;
       font-size: 12px;
-      color: rgba(0, 0, 0, 0.65);
+      color: var(--shop-text-secondary);
     }
 
     .event-remark {
       margin-top: 4px;
-      color: rgba(0, 0, 0, 0.75);
+      color: var(--shop-text);
       word-break: break-all;
     }
 
@@ -214,7 +214,7 @@
       overflow: auto;
       font-size: 12px;
       line-height: 1.5;
-      background: rgba(0, 0, 0, 0.03);
+      background: var(--shop-surface-hover);
       border-radius: 4px;
       white-space: pre-wrap;
       word-break: break-all;

@@ -208,6 +208,6 @@
   .form-field-hint {
     font-size: 12px;
     line-height: 1.6;
-    color: rgba(0, 0, 0, 0.45);
+    color: var(--shop-text-secondary);
   }
 </style>

@@ -237,12 +237,12 @@
         h('div', { style: 'display:flex;gap:8px;align-items:flex-start' }, [
           h('img', {
             src: record.productImage || '',
-            style: 'width:40px;height:40px;object-fit:cover;border-radius:4px;border:1px solid #f0f0f0;flex:none',
+            style: 'width:40px;height:40px;object-fit:cover;border-radius:4px;border:1px solid var(--shop-border);flex:none',
           }),
           h('div', { style: 'min-width:0;line-height:1.5' }, [
             h('div', { style: 'font-weight:500' }, record.productName || '-'),
-            h('div', { style: 'font-size:12px;color:rgba(0,0,0,.45)' }, record.skuName || '无规格'),
-            h('div', { style: 'font-size:12px;color:rgba(0,0,0,.35)' }, `SPU：${record.spuCode || '-'} / SKU：${record.skuCode || '-'}`),
+            h('div', { style: 'font-size:12px;color:var(--shop-text-secondary)' }, record.skuName || '无规格'),
+            h('div', { style: 'font-size:12px;color:var(--shop-text-tertiary)' }, `SPU：${record.spuCode || '-'} / SKU：${record.skuCode || '-'}`),
           ]),
         ]),
     },
@@ -295,7 +295,7 @@
       title: '渠道流水号',
       dataIndex: 'channelTradeNo',
       width: 200,
-      customRender: ({ text }: any) => (text ? h('span', text) : h('span', { style: 'color:rgba(0,0,0,.35)' }, '（渠道未返回）')),
+      customRender: ({ text }: any) => (text ? h('span', text) : h('span', { style: 'color:var(--shop-text-tertiary)' }, '（渠道未返回）')),
     },
     {
       title: '状态',
@@ -328,7 +328,7 @@
       dataIndex: 'errorMsg',
       width: 160,
       customRender: ({ record }: any) =>
-        record.errorMsg ? h('span', { style: 'color:#cf1322' }, record.errorMsg) : h('span', { style: 'color:rgba(0,0,0,.35)' }, '-'),
+        record.errorMsg ? h('span', { style: 'color:var(--shop-error)' }, record.errorMsg) : h('span', { style: 'color:var(--shop-text-tertiary)' }, '-'),
     },
   ];
 
@@ -357,14 +357,14 @@
       title: '渠道退款流水号',
       dataIndex: 'channelRefundNo',
       width: 200,
-      customRender: ({ text }: any) => (text ? h('span', text) : h('span', { style: 'color:rgba(0,0,0,.35)' }, '（未提交/未返回）')),
+      customRender: ({ text }: any) => (text ? h('span', text) : h('span', { style: 'color:var(--shop-text-tertiary)' }, '（未提交/未返回）')),
     },
     { title: '到账时间', dataIndex: 'refundTime', width: 170, customRender: ({ text }: any) => h('span', text || '-') },
     {
       title: '失败原因',
       dataIndex: 'failReason',
       width: 150,
-      customRender: ({ text }: any) => (text ? h('span', { style: 'color:#cf1322' }, text) : h('span', { style: 'color:rgba(0,0,0,.35)' }, '-')),
+      customRender: ({ text }: any) => (text ? h('span', { style: 'color:var(--shop-error)' }, text) : h('span', { style: 'color:var(--shop-text-tertiary)' }, '-')),
     },
   ];
 
@@ -424,7 +424,7 @@
   }
 
   .amount-refund {
-    color: #cf1322;
+    color: var(--shop-error);
   }
 
   .detail-json {

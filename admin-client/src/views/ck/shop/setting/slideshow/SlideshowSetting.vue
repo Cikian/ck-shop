@@ -488,11 +488,11 @@
 </script>
 
 <style lang="less" scoped>
-  @ws-border: #f0f0f0;
-  @ws-bg: #f5f5f5;
-  @ws-primary: var(--j-global-primary-color, #1677ff);
-  @ws-text: rgba(0, 0, 0, 0.88);
-  @ws-sub: rgba(0, 0, 0, 0.45);
+  @ws-border: var(--shop-border);
+  @ws-bg: var(--shop-surface-muted);
+  @ws-primary: var(--j-global-primary-color, var(--shop-primary));
+  @ws-text: var(--shop-text);
+  @ws-sub: var(--shop-text-secondary);
 
   .ws-page {
     display: flex;
@@ -507,12 +507,12 @@
     gap: 8px;
     align-items: center;
     padding: 10px 12px;
-    background: #fff;
+    background: var(--shop-surface);
     border-radius: 8px;
 
     &__label {
       font-size: 13px;
-      color: rgba(0, 0, 0, 0.65);
+      color: var(--shop-text-secondary);
     }
 
     &__select {
@@ -520,7 +520,7 @@
     }
 
     &__hint {
-      color: rgba(0, 0, 0, 0.45);
+      color: var(--shop-text-secondary);
       font-size: 12px;
     }
   }
@@ -539,7 +539,7 @@
     display: flex;
     flex-direction: column;
     overflow: hidden;
-    background: #fff;
+    background: var(--shop-surface);
     border-radius: 8px;
   }
 
@@ -582,7 +582,7 @@
 
   .ws-list__help {
     flex: none;
-    color: rgba(0, 0, 0, 0.25);
+    color: var(--shop-text-tertiary);
     cursor: help;
   }
 
@@ -603,7 +603,7 @@
     transition: background 0.2s;
 
     &:hover {
-      background: #fafafa;
+      background: var(--shop-surface-muted);
 
       .ws-item__handle {
         opacity: 1;
@@ -636,7 +636,7 @@
     align-items: center;
     justify-content: center;
     width: 14px;
-    color: rgba(0, 0, 0, 0.25);
+    color: var(--shop-text-tertiary);
     cursor: grab;
     opacity: 0;
     transition: opacity 0.2s;
@@ -681,7 +681,7 @@
     justify-content: center;
     height: 100%;
     font-size: 11px;
-    color: rgba(0, 0, 0, 0.25);
+    color: var(--shop-text-tertiary);
   }
 
   .ws-item__main {
@@ -709,8 +709,8 @@
     padding: 0 4px;
     font-size: 11px;
     line-height: 16px;
-    color: rgba(0, 0, 0, 0.25);
-    background: #fafafa;
+    color: var(--shop-text-tertiary);
+    background: var(--shop-surface-muted);
     border: 1px solid @ws-border;
     border-radius: 3px;
 
@@ -737,7 +737,7 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    background: #fff;
+    background: var(--shop-surface);
     border-radius: 8px;
   }
 

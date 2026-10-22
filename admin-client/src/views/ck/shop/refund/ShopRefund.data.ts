@@ -76,7 +76,7 @@ export function renderRefundOrderStatusTag(record: Recordable) {
   const code = record?.status;
   const text = record?.statusLabel || code;
   if (!text) {
-    return h('span', { style: 'color:rgba(0,0,0,.35)' }, '-');
+    return h('span', { style: 'color:var(--shop-text-tertiary)' }, '-');
   }
   return h(Tag, { color: REFUND_ORDER_STATUS_COLOR[code] || 'default', style: 'margin-right:0' }, () => String(text));
 }
@@ -116,7 +116,7 @@ export const columns: BasicColumn[] = [
     customRender: ({ record }) => {
       const text = record.refundTypeLabel || record.refundType;
       if (!text) {
-        return h('span', { style: 'color:rgba(0,0,0,.35)' }, '-');
+        return h('span', { style: 'color:var(--shop-text-tertiary)' }, '-');
       }
       return h(Tag, { color: record.refundType === 'FULL' ? 'red' : 'orange', style: 'margin-right:0' }, () => String(text));
     },
@@ -150,7 +150,7 @@ export const columns: BasicColumn[] = [
               h(
                 'div',
                 {
-                  style: 'font-size:12px;color:rgba(0,0,0,.45);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:150px',
+                  style: 'font-size:12px;color:var(--shop-text-secondary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:150px',
                 },
                 desc
               )
@@ -192,8 +192,8 @@ export const columns: BasicColumn[] = [
       }
       // 失败原因比重试次数更有价值：客服据此判断"是该重试还是该找渠道"
       return record.failReason
-        ? h(Tooltip, { title: record.failReason }, () => h('span', { style: 'color:#cf1322' }, record.failCode ? `失败：${record.failCode}` : '失败'))
-        : h('span', { style: 'color:rgba(0,0,0,.35)' }, '-');
+        ? h(Tooltip, { title: record.failReason }, () => h('span', { style: 'color:var(--shop-error)' }, record.failCode ? `失败：${record.failCode}` : '失败'))
+        : h('span', { style: 'color:var(--shop-text-tertiary)' }, '-');
     },
   },
   {

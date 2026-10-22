@@ -55,7 +55,7 @@
             <a-statistic
               title="已关闭但已收款订单（掉单）"
               :value="closedButPaid"
-              :value-style="closedButPaid > 0 ? { color: '#cf1322', fontWeight: 600 } : undefined"
+              :value-style="closedButPaid > 0 ? { color: 'var(--shop-error)', fontWeight: 600 } : undefined"
             />
             <p class="risk-hint"> 必须长期为 0。不为 0 说明"用户付了钱、订单却关着"，不会体现在任何常规经营指标里，需立即人工处理。 </p>
           </a-card>
@@ -122,7 +122,7 @@
           <a-statistic title="今日实收" :value="overview?.todayPaidAmount ?? 0" :precision="2" prefix="¥" />
         </a-col>
         <a-col :xs="12" :sm="6">
-          <a-statistic title="今日退款" :value="overview?.todayRefundAmount ?? 0" :precision="2" prefix="¥" :value-style="{ color: '#cf1322' }" />
+          <a-statistic title="今日退款" :value="overview?.todayRefundAmount ?? 0" :precision="2" prefix="¥" :value-style="{ color: 'var(--shop-error)' }" />
         </a-col>
       </a-row>
     </a-card>
@@ -516,7 +516,7 @@
           symbolSize: 6,
           yAxisIndex: 1,
           data: rows.map((row) => Number(row.gmv ?? 0)),
-          itemStyle: { color: '#1677ff' },
+          itemStyle: { color: 'var(--shop-primary)' },
         },
         {
           name: '实收',
@@ -534,7 +534,7 @@
           symbolSize: 6,
           yAxisIndex: 1,
           data: rows.map((row) => Number(row.refundAmount ?? 0)),
-          itemStyle: { color: '#cf1322' },
+          itemStyle: { color: 'var(--shop-error)' },
         },
         {
           name: '净收入',
@@ -650,7 +650,7 @@
         cancelText: '取消',
         content: h('div', [
           h('p', impact),
-          h('p', { style: 'color: #cf1322; font-weight: 600' }, '任务会批量改变订单/支付状态，且不可撤销。'),
+          h('p', { style: 'color: var(--shop-error); font-weight: 600' }, '任务会批量改变订单/支付状态，且不可撤销。'),
           needTyping
             ? h('div', { style: 'margin-top: 8px' }, [
                 h('p', `本次影响条数超过 50，请手动输入「${size}」以确认：`),
@@ -735,7 +735,7 @@
 
 <style lang="less" scoped>
   .risk-card {
-    border: 1px solid #f0f0f0;
+    border: 1px solid var(--shop-border);
 
     .risk-title {
       font-weight: 600;
@@ -744,16 +744,16 @@
 
   .risk-card--danger {
     border-color: #ffa39e;
-    background: #fff1f0;
+    background: var(--shop-error-soft);
   }
 
   .risk-item--danger {
-    background: #fff1f0;
+    background: var(--shop-error-soft);
     border: 1px solid #ffa39e;
   }
 
   .risk-item--warn {
-    background: #fffbe6;
+    background: var(--shop-warning-soft);
     border: 1px solid #ffe58f;
   }
 
@@ -761,6 +761,6 @@
     margin: 6px 0 0;
     font-size: 12px;
     line-height: 1.4;
-    color: rgba(0, 0, 0, 0.45);
+    color: var(--shop-text-secondary);
   }
 </style>

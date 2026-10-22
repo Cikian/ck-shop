@@ -104,7 +104,7 @@ export function formatRate(value: any): string {
 function renderLabelTag(label: any, code: any, colorMap: Record<string, string>) {
   const text = label || code;
   if (!text) {
-    return h('span', { style: 'color:rgba(0,0,0,.35)' }, '-');
+    return h('span', { style: 'color:var(--shop-text-tertiary)' }, '-');
   }
   return h(Tag, { color: colorMap[code] || 'default', style: 'margin-right:0' }, () => String(text));
 }
@@ -206,7 +206,7 @@ export const columns: BasicColumn[] = [
     customRender: ({ text }) => {
       const num = Number(text);
       const refunded = Number.isFinite(num) && num > 0;
-      return h('span', { style: `font-variant-numeric:tabular-nums;${refunded ? 'color:#cf1322;font-weight:500' : ''}` }, formatAmount(text));
+      return h('span', { style: `font-variant-numeric:tabular-nums;${refunded ? 'color:var(--shop-error);font-weight:500' : ''}` }, formatAmount(text));
     },
   },
   {
@@ -220,7 +220,7 @@ export const columns: BasicColumn[] = [
       const qty = record.totalQuantity;
       const kinds = record.itemCount;
       if (qty === null || qty === undefined) {
-        return h('span', { style: 'color:rgba(0,0,0,.35)' }, '-');
+        return h('span', { style: 'color:var(--shop-text-tertiary)' }, '-');
       }
       return h(Tooltip, { title: `${kinds ?? 0} 种商品` }, () => h('span', `${qty} 件`));
     },
@@ -238,7 +238,7 @@ export const columns: BasicColumn[] = [
       return h('div', { style: 'line-height:1.5' }, [
         h('div', name),
         // 手机号是**后端已脱敏**后的值，这里原样展示，前端不做二次加工
-        phone ? h('div', { style: 'font-size:12px;color:rgba(0,0,0,.45)' }, phone) : null,
+        phone ? h('div', { style: 'font-size:12px;color:var(--shop-text-secondary)' }, phone) : null,
       ]);
     },
   },
@@ -268,7 +268,7 @@ export const columns: BasicColumn[] = [
     customRender: ({ text }) => {
       const count = Number(text ?? 0);
       if (!Number.isFinite(count) || count <= 0) {
-        return h('span', { style: 'color:rgba(0,0,0,.35)' }, '无');
+        return h('span', { style: 'color:var(--shop-text-tertiary)' }, '无');
       }
       // 待审核退款是客服的处理压力，用红点 + 数字提示，避免被埋在长列表里
       return h(Tooltip, { title: `${count} 笔退款申请待审核` }, () => h(Badge, { count, overflowCount: 99, style: 'margin-right:0' }));
