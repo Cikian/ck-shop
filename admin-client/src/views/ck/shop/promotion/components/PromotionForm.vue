@@ -183,7 +183,7 @@
               <a-tab-pane v-for="lang in LANGUAGES" :key="lang.code">
                 <template #tab>
                   <span>{{ lang.name }}</span>
-                  <span v-if="lang.code === 'zh'" class="lang-tab-required">必填</span>
+                  <span v-if="lang.code === REQUIRED_LANG" class="lang-tab-required">必填</span>
                   <Icon v-else-if="hasContent(lang.code)" icon="ant-design:check-outlined" class="lang-tab-ok" />
                 </template>
                 <a-row :gutter="24">
@@ -192,7 +192,7 @@
                       <a-input
                         v-model:value="translationOf(lang.code).title"
                         :maxlength="100"
-                        :placeholder="lang.code === 'zh' ? '例如 限时秒杀（必填）' : '可留空，前台回退中文'"
+                        :placeholder="lang.code === REQUIRED_LANG ? '例如 限时秒杀（必填）' : '可留空，前台回退中文'"
                         allow-clear
                         :disabled="disabled"
                       />
@@ -283,7 +283,8 @@
   import PromotionPreview from './PromotionPreview.vue';
   import { useMessage } from '/@/hooks/web/useMessage';
   import { checkConflict, queryById, saveOrUpdate, storeAll } from '../ShopPromotion.api';
-  import { PROMOTION_LANGUAGES, PROMOTION_TIME_FORMAT, getTypeText, PROMOTION_TYPE_OPTIONS } from '../ShopPromotion.data';
+  import { listLang } from '/@/api/common/api';
+  import { PROMOTION_TIME_FORMAT, getTypeText, PROMOTION_TYPE_OPTIONS } from '../ShopPromotion.data';
 
   const props = withDefaults(defineProps<{ formDisabled?: boolean }>(), { formDisabled: false });
 
@@ -291,7 +292,28 @@
 
   const { createMessage } = useMessage();
 
-  const LANGUAGES = PROMOTION_LANGUAGES;
+  /** 启用的语言列表（/sys/lang 只返回 enabled='Y' 的；不再写死 zh/en/fr） */
+  const LANGUAGES = ref<any[]>([]);
+  /** 第一个启用语言视为必填语言（默认中文） */
+  const REQUIRED_LANG = computed(() => LANGUAGES.value[0]?.code || 'zh');
+
+  /** 启用的语言来自系统语言管理（与商品表单同一份 /sys/lang），新增/禁用语言后本页自动跟随 */
+  async function loadLanguages() {
+    if (LANGUAGES.value.length) {
+      return;
+    }
+    try {
+      const res: any = await listLang();
+      const list = Array.isArray(res) ? res : (res?.result || []);
+      LANGUAGES.value = (list || []).filter((item: any) => item && item.code);
+    } catch (e) {
+      // 语言接口失败：保留空列表，表单仍可打开，但提示运营联系管理员
+      console.warn('加载语言列表失败', e);
+    }
+    if (!activeLang.value) {
+      activeLang.value = REQUIRED_LANG.value;
+    }
+  }
   const TYPE_OPTIONS = PROMOTION_TYPE_OPTIONS;
   const TIME_FORMAT = PROMOTION_TIME_FORMAT;
   const typeText = getTypeText;
@@ -303,7 +325,7 @@
   const productEditorRef = ref();
   const confirmLoading = ref(false);
   const activeTab = ref('basic');
-  const activeLang = ref('zh');
+  const activeLang = ref('');
   const timeRange = ref<DayjsLike[] | null>(null);
   const storeOptions = ref<any[]>([]);
 
@@ -327,8 +349,8 @@
     linkUrl: '',
     bgImage: '',
     status: 'Y',
-    // 一上来就铺满 zh/en/fr，避免渲染期为了取值而 push（会在 render 里改状态）
-    translations: PROMOTION_LANGUAGES.map((lang) => ({ languageCode: lang.code, title: '', subTitle: '' })),
+    // 语言加载完成后再由 syncTranslations() 铺满，避免在 render 里改状态
+    translations: [],
     products: [],
   });
 
@@ -416,7 +438,7 @@
   }
 
   /** 预览用的中文文案（只读，不在 render 里创建数据） */
-  const zhTranslation = computed<any>(() => formData.translations.find((t: any) => t?.languageCode === 'zh') || { title: '', subTitle: '' });
+  const zhTranslation = computed<any>(() => formData.translations.find((t: any) => t?.languageCode === REQUIRED_LANG.value) || { title: '', subTitle: '' });
 
   function hasContent(code: string): boolean {
     const item = formData.translations.find((t: any) => t?.languageCode === code);
@@ -426,7 +448,7 @@
   /** 按固定的 zh/en/fr 重建翻译数组，已有内容保留 */
   function syncTranslations(seed?: any[]) {
     const source: any[] = Array.isArray(seed) ? seed : [];
-    formData.translations = LANGUAGES.map((lang) => {
+    formData.translations = LANGUAGES.value.map((lang) => {
       const existed = source.find((t: any) => t?.languageCode === lang.code);
       return {
         languageCode: lang.code,
@@ -438,8 +460,8 @@
 
   /** 提交用：zh 始终提交，其它语言有内容才提交 */
   function cleanTranslations() {
-    return LANGUAGES.map((lang) => translationOf(lang.code))
-      .filter((item: any) => item.languageCode === 'zh' || String(item.title || '').trim() || String(item.subTitle || '').trim())
+    return LANGUAGES.value.map((lang) => translationOf(lang.code))
+      .filter((item: any) => item.languageCode === REQUIRED_LANG.value || String(item.title || '').trim() || String(item.subTitle || '').trim())
       .map((item: any) => ({
         languageCode: item.languageCode,
         title: String(item.title || '').trim() || null,
@@ -576,7 +598,7 @@
     // 主表 title/subTitle 是「默认/兜底文案」：列表页显示它、某语言没有翻译时回退到它。
     // 它们与 zh 翻译是同一份内容，这里显式带上（后端在缺失时也会从 zh 推导）——
     // 两边都填不会冲突，也不会因为后端版本差异而报「活动名称不能为空」。
-    const zh = translations.find((item: any) => item.languageCode === 'zh') || { title: null, subTitle: null };
+    const zh = translations.find((item: any) => item.languageCode === REQUIRED_LANG.value) || { title: null, subTitle: null };
     return {
       id: formData.id || undefined,
       title: zh.title,
@@ -618,19 +640,20 @@
       linkUrl: '',
       bgImage: '',
       status: 'Y',
-      translations: LANGUAGES.map((lang) => ({ languageCode: lang.code, title: '', subTitle: '' })),
+      translations: LANGUAGES.value.map((lang) => ({ languageCode: lang.code, title: '', subTitle: '' })),
       products: [],
     });
     timeRange.value = null;
     if (!keepTab) {
       activeTab.value = 'basic';
     }
-    activeLang.value = 'zh';
+    activeLang.value = REQUIRED_LANG.value;
   }
 
   /** 新增 */
   async function add() {
     resetForm();
+    await loadLanguages();
     await loadStores();
     await nextTick();
     formRef.value?.clearValidate?.();
@@ -644,6 +667,7 @@
    */
   async function edit(record: any, options: { keepTab?: boolean } = {}) {
     resetForm(!!options.keepTab);
+    await loadLanguages();
     await loadStores();
     await nextTick();
     formRef.value?.clearValidate?.();
@@ -720,7 +744,7 @@
     // 多语言：中文标题必填（契约：至少一条 translations 且必须包含 zh）
     if (!String(translationOf('zh').title || '').trim()) {
       activeTab.value = 'content';
-      activeLang.value = 'zh';
+      activeLang.value = REQUIRED_LANG.value;
       createMessage.warning('请填写简体中文的活动名称');
       return;
     }

@@ -48,15 +48,10 @@ const TYPE_COLOR_MAP: Record<string, string> = {
 };
 
 /**
- * 活动多语言清单。
- * 契约 1 明确：语言清单的唯一来源是 nuxt-shop/types/store-locale.ts 的 STORE_LOCALES（zh/en/fr），
- * 这里按同一份清单固定三类，保证运营看到的就是前台会读的三种语言。
+ * 活动多语言清单已改为运行时从 `/sys/lang` 读取（PromotionForm 的 loadLanguages）。
+ * 之前这里写死 zh/en/fr：系统语言管理新增/禁用语言后，促销页不跟随，
+ * 而商品表单早已用 listLang() 动态生成 —— 两套口径不一致。
  */
-export const PROMOTION_LANGUAGES = [
-  { code: 'zh', name: '简体中文' },
-  { code: 'en', name: 'English' },
-  { code: 'fr', name: 'Français' },
-];
 
 /** 类型中文 */
 export function getTypeText(type?: string): string {
