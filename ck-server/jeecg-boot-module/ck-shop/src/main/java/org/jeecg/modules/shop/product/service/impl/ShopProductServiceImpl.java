@@ -195,7 +195,11 @@ public class ShopProductServiceImpl extends ServiceImpl<ShopProductMapper, ShopP
         if (query != null) {
             wrapper.eq(StringUtils.isNotBlank(query.getSpuCode()), "spu_code", query.getSpuCode());
             wrapper.eq(StringUtils.isNotBlank(query.getStatus()), "status", query.getStatus());
-            wrapper.eq(StringUtils.isNotBlank(query.getCategoryId()), "category_id", query.getCategoryId());
+            /*
+             * categoryId 不在这里做 eq：下面统一按「该分类及其全部后代」做 in。
+             * 以前 eq + in 同时生效（AND），父分类下只挂少量商品时，
+             * 运营按父分类筛选会漏掉所有子分类商品 —— 与店铺端口径也不一致。
+             */
             wrapper.eq(StringUtils.isNotBlank(query.getIsRecommend()), "is_recommend", query.getIsRecommend());
         }
         String keyword = query == null ? null : query.getKeyword();
