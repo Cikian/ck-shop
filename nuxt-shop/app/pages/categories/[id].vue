@@ -136,7 +136,9 @@ const categoryId = computed(() => String(route.params.id || ''))
 // 否则标题与面包屑会停留在上一个语言/上一个分类的缓存。
 const { data: categories, pending: categoriesPending } = useFetch<StoreCategoryNode[]>('/api/categories', {
   query: computed(() => ({ lang: locale.value })),
-  key: computed(() => `store-categories-${categoryId.value}-${locale.value}`),
+  // 与 Header / 首页共用同一个 key：分类树与 categoryId 无关，
+  // 以前 key 里带 categoryId 会让每个分类页都重新请求一遍分类树
+  key: computed(() => `store-categories-${locale.value}`),
   default: () => [],
 })
 
@@ -165,7 +167,14 @@ if (import.meta.server) {
 }
 
 const pageSize = STORE_PRODUCT_PAGE_SIZE
-const pageNo = ref(1)
+/**
+ * 页码以 URL 为唯一数据源：第 2 页刷新/分享/浏览器后退都能回到第 2 页。
+ * 旧实现是本地 ref，刷新即回第 1 页。
+ */
+const pageNo = computed(() => {
+  const parsed = Number(route.query.pageNo)
+  return Number.isFinite(parsed) && parsed >= 1 ? Math.trunc(parsed) : 1
+})
 
 const {
   data: page,
@@ -183,10 +192,17 @@ const total = computed(() => page.value?.total ?? 0)
 const currentPage = computed(() => page.value?.current || pageNo.value)
 const totalPages = computed(() => Math.max(1, page.value?.pages ?? 0))
 
+const router = useRouter()
+const localePath = useLocalePath()
+
 function goToPage(target: number) {
   const next = Math.min(Math.max(target, 1), totalPages.value)
   if (next === currentPage.value) return
-  pageNo.value = next
+  // 写回 query（第 1 页不保留 pageNo，保持 URL 干净）
+  void router.push(localePath({
+    path: `/categories/${categoryId.value}`,
+    query: next > 1 ? { pageNo: String(next) } : {},
+  }))
   if (import.meta.client) {
     window.scrollTo({
       top: 0,
