@@ -270,6 +270,8 @@
    * 前端不满足权限时不显示按钮（而不是"显示了点了才 403"）。
    */
   const canManageAllStores = computed(() => hasPermission('shop-store:manage-all'));
+  /** 成本/毛利字段级权限：无 shop-order:cost 时隐藏对应卡片与列（后端同时返回空值） */
+  const canViewCost = computed(() => hasPermission('shop-order:cost'));
 
   // ------------------------------------------------------------------
   // 查询条件
@@ -356,8 +358,12 @@
       { title: '客单价', value: data?.avgOrderAmount ?? 0, hint: '实收 / 已支付订单数' },
       { title: '优惠合计', value: data?.discountAmount ?? 0, hint: '促销 + 券 + 积分 + 会员' },
       { title: '运费合计', value: data?.freightAmount ?? 0, hint: '' },
-      { title: '成本合计', value: data?.costAmount ?? 0, hint: '后台专属口径' },
-      { title: '毛利', value: data?.grossProfit ?? 0, hint: '成交 − 优惠 − 成本，不扣退款' },
+      ...(canViewCost.value
+        ? [
+            { title: '成本合计', value: data?.costAmount ?? 0, hint: '后台专属口径' },
+            { title: '毛利', value: data?.grossProfit ?? 0, hint: '成交 − 优惠 − 成本，不扣退款' },
+          ]
+        : []),
     ];
   });
 
@@ -366,7 +372,9 @@
     return [
       { title: '支付转化率', text: formatRate(data?.payConversionRate), hint: '已支付订单数 / 订单总数' },
       { title: '退款率', text: formatRate(data?.refundRate), hint: '按金额算，不按单数' },
-      { title: '毛利率', text: formatRate(data?.grossProfitRate), hint: '毛利 / 成交金额' },
+      ...(canViewCost.value
+        ? [{ title: '毛利率', text: formatRate(data?.grossProfitRate), hint: '毛利 / 成交金额' }]
+        : []),
       { title: '加购用户数', text: `${data?.cartUsers ?? 0}`, hint: '区间内加购去重人数' },
       { title: '下单用户数', text: `${data?.orderUsers ?? 0}`, hint: '区间内下单去重人数' },
       { title: '加购转化率', text: formatRate(data?.cartConversionRate), hint: '下单用户数 / 加购用户数' },
@@ -559,23 +567,23 @@
   const productRankList = ref<Recordable[]>([]);
   const categoryRankList = ref<Recordable[]>([]);
 
-  const productRankColumns = [
+  const productRankColumns = computed(() => [
     { title: '排名', dataIndex: 'rank', width: 70 },
     { title: '商品 / 规格', dataIndex: 'product' },
     { title: '销量(件)', dataIndex: 'quantity', width: 100 },
     { title: '订单数', dataIndex: 'orderCount', width: 100 },
     { title: '销售额', dataIndex: 'salesAmount', width: 130 },
-    { title: '毛利', dataIndex: 'grossProfit', width: 130 },
-  ];
+    ...(canViewCost.value ? [{ title: '毛利', dataIndex: 'grossProfit', width: 130 }] : []),
+  ]);
 
-  const categoryRankColumns = [
+  const categoryRankColumns = computed(() => [
     { title: '排名', dataIndex: 'rank', width: 70 },
     { title: '分类', dataIndex: 'categoryName', customRender: ({ text }: any) => text || '（无分类）' },
     { title: '销量(件)', dataIndex: 'quantity', width: 110 },
     { title: '订单数', dataIndex: 'orderCount', width: 110 },
     { title: '销售额', dataIndex: 'salesAmount', width: 140 },
-    { title: '毛利', dataIndex: 'grossProfit', width: 140 },
-  ];
+    ...(canViewCost.value ? [{ title: '毛利', dataIndex: 'grossProfit', width: 140 }] : []),
+  ]);
 
   /** row-key 用组合键：商品/SKU/分类都可能出现同 rank 的空值行 */
   function withRankKey(rows: OrderStatsRankVO[]): Recordable[] {

@@ -6,6 +6,7 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.shiro.authz.annotation.RequiresPermissions;
 import org.jeecg.common.api.vo.Result;
+import org.jeecg.modules.shop.common.ShopCostPermission;
 import org.jeecg.modules.shop.order.entity.dto.OrderActionDTO;
 import org.jeecg.modules.shop.order.entity.dto.OrderQuery;
 import org.jeecg.modules.shop.order.entity.dto.OrderRemarkDTO;
@@ -63,14 +64,35 @@ public class ShopAdminOrderController {
     @RequiresPermissions("shop-order:list")
     @GetMapping(value = "/list")
     public Result<Page<AdminOrderListVO>> list(OrderQuery query) {
-        return Result.OK(orderService.adminPage(query));
+        Page<AdminOrderListVO> page = orderService.adminPage(query);
+        maskCostIfForbidden(page);
+        return Result.OK(page);
     }
 
     @Operation(summary = "订单-详情(含支付单/退款单/完整操作流水)")
     @RequiresPermissions("shop-order:detail")
     @GetMapping(value = "/detail")
     public Result<AdminOrderDetailVO> detail(@RequestParam(name = "orderNo") String orderNo) {
-        return Result.OK(orderService.adminDetail(orderNo));
+        AdminOrderDetailVO detail = orderService.adminDetail(orderNo);
+        // 成本/毛利字段级权限：无 shop-order:cost 时服务端直接置空（前端隐藏只是第二层）
+        if (!ShopCostPermission.canViewCost()) {
+            detail.setCostAmount(null);
+            detail.setGrossProfit(null);
+        }
+        return Result.OK(detail);
+    }
+
+    /**
+     * 列表里的成本/毛利同样按字段级权限裁剪：列表与详情必须同一口径，
+     * 否则"详情看不到、列表里却能看到"等于没做权限。
+     */
+    private void maskCostIfForbidden(Page<AdminOrderListVO> page) {
+        if (page != null && page.getRecords() != null && !ShopCostPermission.canViewCost()) {
+            page.getRecords().forEach(vo -> {
+                vo.setCostAmount(null);
+                vo.setGrossProfit(null);
+            });
+        }
     }
 
     @Operation(summary = "订单-发货")

@@ -5,6 +5,7 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.shiro.authz.annotation.RequiresPermissions;
 import org.jeecg.common.api.vo.Result;
+import org.jeecg.modules.shop.common.ShopCostPermission;
 import org.jeecg.common.exception.JeecgBootException;
 import org.jeecg.modules.shop.order.entity.dto.OrderQuery;
 import org.jeecg.modules.shop.order.entity.vo.OrderStatsOverviewVO;
@@ -66,7 +67,14 @@ public class ShopAdminOrderStatsController {
     @RequiresPermissions("shop-order:stats")
     @GetMapping(value = "/overview")
     public Result<OrderStatsOverviewVO> overview(OrderQuery query) {
-        return Result.OK(statsService.overview(query));
+        OrderStatsOverviewVO overview = statsService.overview(query);
+        // 成本/毛利字段级权限：无 shop-order:cost 时不返回真实数值
+        if (!ShopCostPermission.canViewCost()) {
+            overview.setCostAmount(null);
+            overview.setGrossProfit(null);
+            overview.setGrossProfitRate(null);
+        }
+        return Result.OK(overview);
     }
 
     @Operation(summary = "统计-订单状态分布(饼图)")
@@ -88,7 +96,7 @@ public class ShopAdminOrderStatsController {
     @GetMapping(value = "/rank/product")
     public Result<List<OrderStatsRankVO>> rankProduct(OrderQuery query,
                                                       @RequestParam(name = "limit", required = false) Integer limit) {
-        return Result.OK(statsService.rankByProduct(query, limit));
+        return Result.OK(maskRankCost(statsService.rankByProduct(query, limit)));
     }
 
     @Operation(summary = "统计-热销分类排行")
@@ -96,7 +104,15 @@ public class ShopAdminOrderStatsController {
     @GetMapping(value = "/rank/category")
     public Result<List<OrderStatsRankVO>> rankCategory(OrderQuery query,
                                                        @RequestParam(name = "limit", required = false) Integer limit) {
-        return Result.OK(statsService.rankByCategory(query, limit));
+        return Result.OK(maskRankCost(statsService.rankByCategory(query, limit)));
+    }
+
+    /** 排行里的毛利同样按字段级权限裁剪 */
+    private List<OrderStatsRankVO> maskRankCost(List<OrderStatsRankVO> rows) {
+        if (rows != null && !ShopCostPermission.canViewCost()) {
+            rows.forEach(row -> row.setGrossProfit(null));
+        }
+        return rows;
     }
 
     @Operation(summary = "运维-手动触发超时关单任务")

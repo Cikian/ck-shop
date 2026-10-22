@@ -51,7 +51,8 @@
         <!-- ==================== 金额明细 ==================== -->
         <a-card :bordered="false" size="small" class="detail-card" title="金额明细">
           <template #extra>
-            <a-tag color="purple">成本 / 毛利为后台专属字段，前台不可见</a-tag>
+            <a-tag v-if="canViewCost" color="purple">成本 / 毛利为后台专属字段，前台不可见</a-tag>
+            <a-tag v-else color="default">无成本/毛利查看权限（shop-order:cost）</a-tag>
           </template>
           <a-descriptions bordered size="small" :column="{ xs: 2, sm: 3, xl: 4 }">
             <a-descriptions-item label="吊牌价合计">¥{{ formatAmount(detail.totalAmount) }}</a-descriptions-item>
@@ -72,11 +73,14 @@
             <a-descriptions-item label="已退款">
               <span class="amount-strong amount-refund">¥{{ formatAmount(detail.refundAmount) }}</span>
             </a-descriptions-item>
-            <a-descriptions-item label="成本合计">¥{{ formatAmount(detail.costAmount) }}</a-descriptions-item>
-            <a-descriptions-item label="毛利">
-              <span class="amount-strong">¥{{ formatAmount(detail.grossProfit) }}</span>
-              <span class="text-xs text-gray-400">（不扣退款）</span>
-            </a-descriptions-item>
+            <!-- 成本/毛利：无 shop-order:cost 时后端已置空，这里整块不渲染 -->
+            <template v-if="canViewCost">
+              <a-descriptions-item label="成本合计">¥{{ formatAmount(detail.costAmount) }}</a-descriptions-item>
+              <a-descriptions-item label="毛利">
+                <span class="amount-strong">¥{{ formatAmount(detail.grossProfit) }}</span>
+                <span class="text-xs text-gray-400">（不扣退款）</span>
+              </a-descriptions-item>
+            </template>
             <a-descriptions-item label="商品总重量">{{ detail.totalWeight ?? '-' }} kg</a-descriptions-item>
             <a-descriptions-item label="币种">{{ detail.currency || '-' }}</a-descriptions-item>
           </a-descriptions>
@@ -140,6 +144,7 @@
   import { computed, h, ref } from 'vue';
   import { Tag } from 'ant-design-vue';
   import JModal from '/@/components/Modal/src/JModal/JModal.vue';
+  import { usePermission } from '/@/hooks/web/usePermission';
   import { useMessage } from '/@/hooks/web/useMessage';
   import { detail as fetchDetail, type AdminOrderDetailVO, type AdminOrderItemVO, type OrderEventVO } from '../ShopOrder.api';
   import { formatAmount } from '../ShopOrder.data';
@@ -155,6 +160,9 @@
   const loadError = ref('');
   /** 最近一次打开的订单号：重试时复用 */
   const currentOrderNo = ref('');
+  /** 成本/毛利字段级权限（与后端 shop-order:cost 同一口径） */
+  const { hasPermission } = usePermission();
+  const canViewCost = computed(() => hasPermission('shop-order:cost'));
 
   const isArchived = computed(() => Number(detail.value?.delFlag) === 1);
   const items = computed<AdminOrderItemVO[]>(() => detail.value?.items || []);
