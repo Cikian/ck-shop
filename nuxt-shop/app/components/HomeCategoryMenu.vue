@@ -43,10 +43,19 @@
         >
           <!--
             图标是**装饰性**的（分类名始终以文字展示，图标不承担语义）。
-            按分类名做关键词匹配，匹配不到就用中性图标 ——
+            优先用后端配置的 iconUrl（与语言无关），没有才按分类名做多语言关键词匹配 ——
             绝不按"第几个分类"轮换：那会在户外店里把手机图标配给「户外服装」。
           -->
-          <UIcon :name="iconFor(category.name)" class="h-[18px] w-[18px] shrink-0" aria-hidden="true" />
+          <img
+            v-if="category.iconUrl"
+            :src="category.iconUrl"
+            alt=""
+            aria-hidden="true"
+            loading="lazy"
+            decoding="async"
+            class="h-[18px] w-[18px] shrink-0 rounded-[4px] object-cover"
+          >
+          <UIcon v-else :name="iconFor(category.name)" class="h-[18px] w-[18px] shrink-0" aria-hidden="true" />
           <span class="min-w-0 flex-1 truncate">{{ category.name }}</span>
           <UIcon
             v-if="hasChildren(category)"
@@ -178,37 +187,41 @@ function hasChildren(category: StoreCategoryNode): boolean {
 onUnmounted(cancelClose)
 
 /**
- * 装饰图标：按分类名做**关键词**匹配，匹配不到用中性图标。
+ * 装饰图标：优先用后端给的 `iconUrl`，没有才按分类名做**关键词**匹配。
  *
  * 为什么不能按位置轮换：分类数量与顺序完全由后端决定，
  * 户外店只有 4 个分类时，位置轮换会把「手机图标」配给「户外服装」——
  * 比没有图标更糟，用户会以为点错地方了。
+ *
+ * 为什么规则里同时写中/英/法（清单 S19）：
+ * 分类名会按语言本地化（/en、/fr），只写中文关键词时非中文站点会**全部**退化成
+ * 通用标签图标。英文/法文用 \b 词边界，避免 "car" 命中 "carpet" 这类误配。
  *
  * 匹配不到时退化成 `lucide:tag`，是"不猜"而不是"乱猜"。
  * 规则顺序有讲究：先匹配更具体的品类词（包 / 鞋 / 工具），
  * 再匹配泛化词（智能 / 数码），否则「户外工具」会被「户外」抢先命中。
  */
 const ICON_RULES: Array<{ test: RegExp; icon: string }> = [
-  { test: /包|箱/, icon: 'lucide:backpack' },
-  { test: /鞋|靴/, icon: 'lucide:footprints' },
-  { test: /服装|服饰|衣|裤/, icon: 'lucide:shirt' },
-  { test: /露营|帐篷|营地/, icon: 'lucide:tent' },
-  { test: /工具|五金|器材|配件/, icon: 'lucide:wrench' },
-  { test: /户外|登山|徒步/, icon: 'lucide:mountain' },
-  { test: /手表|穿戴/, icon: 'lucide:watch' },
-  { test: /手机|通信/, icon: 'lucide:smartphone' },
-  { test: /电脑|办公|笔电|笔记本/, icon: 'lucide:laptop' },
-  { test: /影音|耳机|音箱|音乐/, icon: 'lucide:headphones' },
-  { test: /数码|电器|电子/, icon: 'lucide:plug' },
-  { test: /相机|摄影|摄像/, icon: 'lucide:camera' },
-  { test: /食品|生鲜|零食|粮|茶|酒/, icon: 'lucide:apple' },
-  { test: /美妆|护肤|化妆|香氛/, icon: 'lucide:sparkles' },
-  { test: /家居|家纺|家具|厨具/, icon: 'lucide:sofa' },
-  { test: /运动|健身/, icon: 'lucide:dumbbell' },
-  { test: /母婴|玩具|童/, icon: 'lucide:baby' },
-  { test: /图书|文具|书/, icon: 'lucide:book-open' },
-  { test: /汽车|车品/, icon: 'lucide:car' },
-  { test: /珠宝|首饰|饰/, icon: 'lucide:gem' },
+  { test: /包|箱|\b(bags?|backpacks?|luggage|sacs?)\b|\bsacs?\b/i, icon: 'lucide:backpack' },
+  { test: /鞋|靴|\b(shoes?|boots?|sneakers?|chaussures?|bottes?)\b/i, icon: 'lucide:footprints' },
+  { test: /服装|服饰|衣|裤|\b(apparel|clothing|shirts?|pants?|v[êe]tements?)\b/i, icon: 'lucide:shirt' },
+  { test: /露营|帐篷|营地|\b(camping|tents?|tente)\b/i, icon: 'lucide:tent' },
+  { test: /工具|五金|器材|配件|\b(tools?|hardware|outils?)\b/i, icon: 'lucide:wrench' },
+  { test: /户外|登山|徒步|\b(outdoor|hiking|trekking|randonn[ée]e)\b/i, icon: 'lucide:mountain' },
+  { test: /手表|穿戴|\b(watches?|wearables?|montres?)\b/i, icon: 'lucide:watch' },
+  { test: /手机|通信|\b(phones?|smartphones?|t[ée]l[ée]phones?)\b/i, icon: 'lucide:smartphone' },
+  { test: /电脑|办公|笔电|笔记本|\b(laptops?|computers?|ordinateurs?)\b/i, icon: 'lucide:laptop' },
+  { test: /影音|耳机|音箱|音乐|\b(audio|headphones?|[ée]couteurs?|speakers?)\b/i, icon: 'lucide:headphones' },
+  { test: /数码|电器|电子|\b(electronics?|[ée]lectronique|gadgets?)\b/i, icon: 'lucide:plug' },
+  { test: /相机|摄影|摄像|\b(cameras?|photography|appareils? photo)\b/i, icon: 'lucide:camera' },
+  { test: /食品|生鲜|零食|粮|茶|酒|\b(food|grocer|snacks?|aliments?)\b/i, icon: 'lucide:apple' },
+  { test: /美妆|护肤|化妆|香氛|\b(beauty|skincare|cosmetics?|cosm[ée]tiques?)\b/i, icon: 'lucide:sparkles' },
+  { test: /家居|家纺|家具|厨具|\b(home|furniture|kitchen|maison)\b/i, icon: 'lucide:sofa' },
+  { test: /运动|健身|\b(sports?|fitness|gym)\b/i, icon: 'lucide:dumbbell' },
+  { test: /母婴|玩具|童|\b(baby|kids?|toys?|b[ée]b[ée])\b/i, icon: 'lucide:baby' },
+  { test: /图书|文具|书|\b(books?|stationery|livres?)\b/i, icon: 'lucide:book-open' },
+  { test: /汽车|车品|\b(cars?|automotive|auto)\b/i, icon: 'lucide:car' },
+  { test: /珠宝|首饰|饰|\b(jewel(le)?ry|bijoux)\b/i, icon: 'lucide:gem' },
 ]
 
 const FALLBACK_ICON = 'lucide:tag'
