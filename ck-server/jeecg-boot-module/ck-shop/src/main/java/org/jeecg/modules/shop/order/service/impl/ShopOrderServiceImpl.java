@@ -397,8 +397,11 @@ public class ShopOrderServiceImpl
                 .setUserAgent(StringUtils.left(context.getUserAgent(), 500))
                 .setReferrer(StringUtils.left(
                         StringUtils.defaultIfBlank(dto.getReferrer(), context.getReferrer()), 500))
-                .setChannelCode(StringUtils.defaultIfBlank(dto.getChannelCode(), context.getChannelCode()))
-                .setUtmSource(StringUtils.defaultIfBlank(dto.getUtmSource(), context.getUtmSource()))
+                // channel_code / utm_source 都是 varchar(64)：渠道参数来自投放链接，长度不可控，一律截断
+                .setChannelCode(StringUtils.left(
+                        StringUtils.defaultIfBlank(dto.getChannelCode(), context.getChannelCode()), 64))
+                .setUtmSource(StringUtils.left(
+                        StringUtils.defaultIfBlank(dto.getUtmSource(), context.getUtmSource()), 64))
                 .setBuyerRemark(StringUtils.left(StringUtils.trimToNull(dto.getBuyerRemark()), 500))
                 .setDelFlag(0)
                 .setCreateBy(context.getUsername())
@@ -494,17 +497,37 @@ public class ShopOrderServiceImpl
                 || StringUtils.isBlank(dto.getReceiverAddress())) {
             throw new JeecgBootException("请选择收货地址，或完整填写收货人、手机号与详细地址");
         }
+        /*
+         * 长度校验必须在下单前做：receiver_name/receiver_phone/receiver_address 是
+         * varchar(50/30/255)，超长会直接抛 DataIntegrityViolationException，
+         * 用户看到的是 500「系统异常」，整笔订单在事务里回滚。
+         * 这里按列宽明确拒绝并给出可读文案（不静默截断收货信息）。
+         */
+        requireMaxLength("收货人姓名", dto.getReceiverName(), 50);
+        requireMaxLength("收货人手机号", dto.getReceiverPhone(), 30);
+        requireMaxLength("收货详细地址", dto.getReceiverAddress(), 255);
+    }
+
+    private void requireMaxLength(String label, String value, int maxLength) {
+        if (value != null && value.trim().length() > maxLength) {
+            throw new JeecgBootException(label + "不能超过 " + maxLength + " 个字符");
+        }
     }
 
     private void applyAddressSnapshot(ShopOrder order, ShopUserAddress address, OrderSubmitDTO dto) {
         Map<String, Object> snapshot = new LinkedHashMap<>();
         if (address != null) {
-            order.setReceiverName(address.getReceiverName())
-                    .setReceiverPhone(address.getReceiverPhone())
+            /*
+             * 地址簿虽然是共享表，但订单列宽更窄（name 50 / phone 30 / address 255），
+             * 历史数据或其它入口写入的超长值不能把下单打成 500 —— 这里按订单列宽截断，
+             * 完整地址仍保存在 addressSnapshotJson 里可追溯。
+             */
+            order.setReceiverName(StringUtils.left(address.getReceiverName(), 50))
+                    .setReceiverPhone(StringUtils.left(address.getReceiverPhone(), 30))
                     .setReceiverProvince(address.getProvince())
                     .setReceiverCity(address.getCity())
                     .setReceiverDistrict(address.getDistrict())
-                    .setReceiverAddress(address.getDetailAddress())
+                    .setReceiverAddress(StringUtils.left(address.getDetailAddress(), 255))
                     .setReceiverPostalCode(address.getPostalCode())
                     .setReceiverTag(address.getAddressTag());
             snapshot.put("source", "addressBook");
