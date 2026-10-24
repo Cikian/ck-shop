@@ -96,6 +96,16 @@ public class ShopProductReview implements Serializable {
     @Schema(description = "评价内容")
     private String content;
 
+    /**
+     * 评价图片：JSON 数组字符串（如 {@code ["https://…","https://…"]}），NULL 表示无图。
+     *
+     * 为什么是一列 JSON 而不是子表：评价图片是"跟着一条评价走的只读列表"，
+     * 没有单独查询/统计需求，子表只会多一次 JOIN 和一套增删改逻辑。
+     * 服务端读取时会走 {@code parseImages} 的白名单校验（只认 http(s)/站内绝对路径，最多 9 张）。
+     */
+    @Schema(description = "评价图片(JSON 数组字符串；NULL=无图)")
+    private String images;
+
     /** 是否匿名: true-隐藏昵称 */
     @Schema(description = "是否匿名")
     private Boolean anonymous;

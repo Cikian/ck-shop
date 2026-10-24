@@ -11,7 +11,8 @@
 
   区块数据来源（契约 4.2）：
     规格参数 = 新字段 params（KV）优先，为空时回退历史自动行 specRows；
-    用户评价 = 真实汇总（分数 + 星级分布）+ 分页评价列表，条数为 0 时整块不渲染；
+    用户评价 = 真实汇总（分数 + 星级分布）+ 正文预览 3 条 + 左侧抽屉浏览全部（滚动续页），
+               条数为 0 时整块不渲染；
     商品详情 = description（简介，清洗后）+ detailBlocks（模块渲染），都空显示「暂无商品描述」；
     类似推荐 = 同分类真实商品。
 -->
@@ -87,12 +88,14 @@
       </section>
 
       <!--
-        2. 用户评价（真实数据：汇总 + 星级分布 + 分页列表）
+        2. 用户评价（真实数据：汇总 + 星级分布 + 预览列表 + 全量抽屉）
 
         「0 值不渲染」：是否出现整块（以及锚点里的「用户评价」）只由 reviewTotal 决定 ——
         reviewTotal === 0 时这块彻底不渲染，绝不会出现"0 分 / 0 条评价"的空壳。
 
-        布局：汇总卡（左）+ 星级分布（右）在桌面并排、移动端上下堆叠；下方是评价列表 + 加载更多。
+        布局：汇总卡（左）+ 星级分布（右）在桌面并排、移动端上下堆叠；
+        下方只预览 2~3 条评价，更多评价通过「查看全部评价」在**左侧抽屉**里滚动浏览
+        （抽屉内滚动到底自动续页，见 ProductReviewDrawer）。
         锚点 id 仍为 review（页面内 #review 直达），滚动/高亮仍由上面的 ref 驱动。
       -->
       <section
@@ -164,15 +167,22 @@
           </div>
         </div>
 
-        <!-- 评价列表：昵称（匿名走 i18n）/ 星级 / 日期 / 规格（空则整行不渲染）/ 内容（空则只剩星级） -->
-        <ul v-if="reviewList.length" class="mt-5 divide-y divide-[var(--color-line-soft)]">
+        <!--
+          评价列表：正文只预览**前 PREVIEW_REVIEW_COUNT 条**（用户 2026-10 本轮要求：2~3 条即可），
+          更多评价点「查看全部评价」进左侧抽屉滚动浏览（见 ProductReviewDrawer）。
+
+          每条：昵称（匿名走 i18n）/ 星级 / 日期 / 规格（空则整行不渲染）/ 内容（空则只剩星级）。
+          预览里的正文做 4 行截断：详情页不该被三条长评撑开，
+          完整内容在抽屉里逐条完整展示。
+        -->
+        <ul v-if="previewReviews.length" class="mt-5 divide-y divide-[var(--color-line-soft)]">
           <li
-            v-for="(review, index) in reviewList"
+            v-for="(review, index) in previewReviews"
             :key="`${review.id || 'review'}-${index}`"
             class="py-5 first:pt-1 last:pb-0"
           >
             <div class="flex flex-wrap items-center gap-x-3 gap-y-1.5">
-              <span class="text-[13px] font-bold text-[var(--color-ink)]">{{ reviewName(review) }}</span>
+              <span class="text-[13px] font-bold text-[var(--color-ink)]">{{ reviewDisplayName(review, t('review.anonymous')) }}</span>
               <span class="flex items-center gap-0.5" aria-hidden="true">
                 <UIcon
                   v-for="star in 5"
@@ -183,28 +193,60 @@
                 />
               </span>
               <span class="sr-only">{{ review.rating }} / 5</span>
-              <span v-if="review.createTime" class="tabular text-[13px] text-[var(--color-muted)]">{{ reviewDate(review.createTime) }}</span>
+              <span v-if="review.createTime" class="tabular text-[13px] text-[var(--color-muted)]">{{ reviewDateText(review.createTime) }}</span>
             </div>
             <p v-if="review.skuName" class="mt-1 break-words text-[13px] text-[var(--color-muted)]">{{ review.skuName }}</p>
             <p
               v-if="review.content"
-              class="mt-2 whitespace-pre-line break-words text-[15px] leading-relaxed text-[var(--color-ink-soft)]"
+              class="mt-2 line-clamp-4 whitespace-pre-line break-words text-[15px] leading-relaxed text-[var(--color-ink-soft)]"
             >{{ review.content }}</p>
+
+            <!-- 买家秀：预览里最多露 3 张（多的折成 +N），点击放大，完整列表在抽屉里 -->
+            <div v-if="review.images?.length" class="mt-2.5">
+              <ReviewPhotos
+                :images="review.images"
+                :title="productTitle"
+                variant="preview"
+                :preview-limit="3"
+              />
+            </div>
           </li>
         </ul>
 
-        <!-- 加载更多：只负责 emit，取数在页面里（loadMore）；请求中禁用并换文案 -->
-        <div v-if="reviewHasMore" class="mt-6 flex justify-center">
+        <!--
+          查看全部评价：总条数多于预览条数时才出现
+          （总数本身就是 1~3 条时，抽屉里不会有新内容，就不该给一个点了没增量收益的入口）。
+        -->
+        <div v-if="hasMoreThanPreview" class="mt-6 flex justify-center">
           <button
             type="button"
-            class="ui-pill ui-pill-ghost h-10 px-5 text-[13px] disabled:cursor-not-allowed disabled:opacity-45"
-            :disabled="reviewLoadingMore"
-            :aria-busy="reviewLoadingMore ? 'true' : undefined"
-            @click="emit('load-more')"
+            class="ui-pill ui-pill-ghost h-11 cursor-pointer px-6 text-sm"
+            aria-haspopup="dialog"
+            :aria-expanded="reviewDrawerOpen ? 'true' : 'false'"
+            @click="reviewDrawerOpen = true"
           >
-            {{ reviewLoadingMore ? t('review.loadingMore') : t('review.loadMore') }}
+            {{ t('review.viewAll') }}
+            <span class="tabular text-[13px] font-bold text-[var(--color-muted)]">· {{ reviewTotalCount }}</span>
+            <UIcon name="lucide:chevron-right" class="h-4 w-4" aria-hidden="true" />
           </button>
         </div>
+
+        <!--
+          左侧抽屉：抽屉内滚动到底部自动续页（用户无感加载）。
+          取数仍由页面负责（本组件只把 load-more 原样转发），
+          与旧版「加载更多」按钮走的是同一条 loadMoreReviews 链路。
+        -->
+        <ProductReviewDrawer
+          v-model:open="reviewDrawerOpen"
+          :summary="reviewSummary"
+          :reviews="reviewList"
+          :total="reviewTotalCount"
+          :has-more="reviewHasMore"
+          :loading-more="reviewLoadingMore"
+          :error="reviewError"
+          :product-title="productTitle"
+          @load-more="emit('load-more')"
+        />
       </section>
 
       <!-- 3. 商品详情（契约 4.2）：顶部简介 description（清洗后），下方结构化模块 -->
@@ -250,10 +292,17 @@ import type {
   StoreProductParam,
 } from '~~/types/shop-product'
 import type { StoreReview, StoreReviewSummary } from '~~/types/shop-review'
-import { reviewBucketPercent, reviewStars } from '~~/types/shop-review'
+import {
+  reviewBucketPercent,
+  reviewDateText,
+  reviewDisplayName,
+  reviewStars,
+} from '~~/types/shop-review'
 import { sanitizeHtml } from '~~/utils/sanitize-html'
 import { registerScrollTask } from '~/utils/scrollScheduler'
 import ProductDetailBlocks from './ProductDetailBlocks.vue'
+import ProductReviewDrawer from './ProductReviewDrawer.vue'
+import ReviewPhotos from './ReviewPhotos.vue'
 
 const props = withDefaults(defineProps<{
   /** 商品简介 HTML（管理端录入）；空则不渲染正文 */
@@ -275,9 +324,9 @@ const props = withDefaults(defineProps<{
    * 0 条时整块不渲染（项目铁律：0 值不渲染）。
    */
   reviewTotal: number
-  /** 还有下一页 → 显示「加载更多」 */
+  /** 还有下一页 → 抽屉滚到底部会继续取（正文不再有「加载更多」按钮） */
   reviewHasMore?: boolean
-  /** 正在追加下一页（按钮禁用 + 换文案） */
+  /** 正在追加下一页（抽屉底部换骨架屏） */
   reviewLoadingMore?: boolean
   /** 评价请求失败的可读文案；非空时只渲染一行提示，不弹窗、不阻塞其它区块 */
   reviewError?: string
@@ -313,6 +362,19 @@ const hasDescription = computed(() => sanitizedDescription.value.length > 0)
 /** 只有真实存在评价（条数 > 0）才渲染评价区；0 条 → 区块与锚点都不出现 */
 const hasReviewSection = computed(() => props.reviewTotal > 0 && !!props.reviewSummary)
 const reviewList = computed(() => props.reviews ?? [])
+
+/**
+ * 正文预览条数（用户 2026-10 本轮要求：只展示 2~3 条，多的进抽屉）。
+ * 3 条既能让用户看出"这商品确实有人买/有人评"，又不至于把下面的商品详情推到很远。
+ */
+const PREVIEW_REVIEW_COUNT = 3
+/** 正文只画前 3 条；抽屉里画全部已加载项（含抽屉内续页追加的页） */
+const previewReviews = computed(() => reviewList.value.slice(0, PREVIEW_REVIEW_COUNT))
+/** 总条数多于预览条数 → 才给「查看全部评价」入口（1~3 条时抽屉没有增量内容） */
+const hasMoreThanPreview = computed(() => reviewTotalCount.value > PREVIEW_REVIEW_COUNT)
+/** 全量评价抽屉的开关：只有正文列表这一个入口，所以状态放在本组件里 */
+const reviewDrawerOpen = ref(false)
+
 /** 大分数：summary 已归一化（reviewCount > 0 时才可能是非 0），模板里不再对可空值做运算 */
 const ratingAvgText = computed(() => (props.reviewSummary ? props.reviewSummary.ratingAvg.toFixed(1) : ''))
 const summaryStars = computed(() => reviewStars(props.reviewSummary?.ratingAvg ?? null))
@@ -328,16 +390,11 @@ const distributionRows = computed(() => {
   }))
 })
 
-/** 昵称：匿名（或后端没给昵称）一律显示 i18n 的「匿名用户」——三语站点不把中文写死在模板里 */
-function reviewName(review: StoreReview): string {
-  if (review.anonymous || !review.username) return t('review.anonymous')
-  return review.username
-}
-
-/** 时间只显示到日：createTime 是后端统一格式的 yyyy-MM-dd HH:mm:ss */
-function reviewDate(createTime: string): string {
-  return createTime.slice(0, 10)
-}
+/*
+ * 昵称 / 日期格式化收敛在 types/shop-review.ts（reviewDisplayName / reviewDateText）：
+ * 正文预览与抽屉两处渲染同一条评价，格式化必须同源，否则会出现
+ * 一边"匿名用户"一边空字符串、一边带时间一边只带日期的不一致。
+ */
 
 // ===== 吸顶锚点导航 =====
 // 顺序与模板一致：规格参数 → 用户评价 → 商品详情 → 类似推荐（契约 4.1）

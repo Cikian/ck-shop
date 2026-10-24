@@ -98,6 +98,19 @@ export function useProductReviews(productId: MaybeRefOrGetter<string | undefined
       { default: () => null, watch: [initialKey] },
     )
 
+  /*
+   * 为什么这两个 watch 要 `flush: 'sync'`（2026-10 本轮补的）：
+   *
+   * useAsyncData 在 SSR 阶段返回的是"setup 里 await 的那个 promise"，
+   * 数据是在 setup 的**异步续体**里落到 initialOverview 上的。
+   * 默认 flush（pre）会把回调排进微任务队列，而 Vue 的 SSR 渲染紧接着 setup 完成就同步执行 ——
+   * 于是渲染那一刻 summary / records 还是空的，评价区（以及锚点「用户评价」）
+   * 在服务端整块被 v-if 挡掉，只能等客户端 hydration 后再冒出来，
+   * 把下面的「商品详情」整段往下推（长详情页的 CLS 就来自这里）。
+   *
+   * flush: 'sync' 让回调在数据落下的那一刻同步执行，SSR 首次渲染就能带上真实评价。
+   * 源（initialOverview / initialError）每次请求只变一次，同步回调不会带来额外开销。
+   */
   watch(initialOverview, (overview) => {
     if (overview) {
       applyOverview(overview)
@@ -109,7 +122,7 @@ export function useProductReviews(productId: MaybeRefOrGetter<string | undefined
       pages.value = 0
     }
     loaded.value = true
-  }, { immediate: true })
+  }, { immediate: true, flush: 'sync' })
 
   watch(initialError, (err) => {
     // 评价接口失败按"没有评价"降级，不让它拖垮整页
@@ -121,7 +134,7 @@ export function useProductReviews(productId: MaybeRefOrGetter<string | undefined
       pages.value = 0
       loaded.value = true
     }
-  }, { immediate: true })
+  }, { immediate: true, flush: 'sync' })
 
   /** 拉某页；第一页时替换列表，其余页追加 */
   async function fetchPage(targetPage: number, append: boolean) {

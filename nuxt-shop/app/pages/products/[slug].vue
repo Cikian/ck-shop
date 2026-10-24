@@ -287,11 +287,15 @@
           </NuxtLinkLocale>
         </div>
         <div v-if="related.length" class="mt-5 grid grid-cols-2 gap-4 sm:gap-5 lg:grid-cols-6 lg:gap-6">
+          <!--
+            推荐区在首屏之外（详情页往下 3000px+），**不要** eager：
+            eager 会把这 6 张图提到 high 优先级、和首屏 JS 抢连接，
+            实测会明显拖慢水合（用户反馈的"图片加载时按钮点不动"）。
+          -->
           <StoreProductCard
             v-for="item in related"
             :key="item.id"
             :product="item"
-            :eager="true"
           />
         </div>
         <p v-else class="mt-5 text-sm text-[var(--color-muted)]">{{ t('shop.noData') }}</p>

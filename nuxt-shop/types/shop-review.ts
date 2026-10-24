@@ -31,6 +31,8 @@ export interface StoreReview {
   anonymous: boolean
   /** 下单时的规格文案，可能为空串 */
   skuName: string
+  /** 买家秀图片（最多 9 张；无图是空数组，模板据此不渲染图片区） */
+  images: string[]
   /** yyyy-MM-dd HH:mm:ss（后端统一格式化），解析失败时为空串 */
   createTime: string
 }
@@ -102,8 +104,56 @@ export function normalizeReview(raw: unknown): StoreReview {
     username: toNullableString(item.username),
     anonymous: toBoolean(item.anonymous),
     skuName: toNullableString(item.skuName) ?? '',
+    images: normalizeReviewImages(item.images),
     createTime: toNullableString(item.createTime) ?? '',
   }
+}
+
+/** 一条评价最多几张图（服务端同样截断到 9；前端再挡一次，避免脏数据把宫格撑爆） */
+const MAX_REVIEW_IMAGES = 9
+
+/**
+ * 评价图片归一化。
+ *
+ * 后端正常下发的是 `string[]`（它已经解析过 JSON 列并做过白名单过滤），
+ * 但 BFF 这一层仍按"不信任输入"处理：
+ *   - 兼容 `string[]` / JSON 字符串 / 逗号分隔三种写法；
+ *   - 只放行 http(s) 与站内绝对路径（`/img/...`），挡掉 `javascript:` 之类；
+ *   - 最多 {@link MAX_REVIEW_IMAGES} 张，去空白；
+ *   - 没有图就返回空数组 —— 模板据此不渲染图片区，不会留一个空容器。
+ */
+export function normalizeReviewImages(raw: unknown): string[] {
+  const source: unknown[] = Array.isArray(raw)
+    ? raw
+    : typeof raw === 'string'
+      ? splitImageString(raw)
+      : []
+
+  const images: string[] = []
+  for (const entry of source) {
+    if (typeof entry !== 'string') continue
+    const url = entry.trim()
+    if (!url) continue
+    if (!/^(https?:\/\/|\/)/i.test(url)) continue
+    images.push(url)
+    if (images.length >= MAX_REVIEW_IMAGES) break
+  }
+  return images
+}
+
+/** 字符串形态的图片列表：优先按 JSON 数组解析，失败再按逗号切 */
+function splitImageString(raw: string): unknown[] {
+  const value = raw.trim()
+  if (!value) return []
+  if (value.startsWith('[')) {
+    try {
+      const parsed: unknown = JSON.parse(value)
+      return Array.isArray(parsed) ? parsed : []
+    } catch {
+      return []
+    }
+  }
+  return value.split(',')
 }
 
 /**
@@ -180,6 +230,26 @@ export function normalizeReviewSubmitResult(raw: unknown): StoreReviewSubmitResu
     review,
     summary: normalizeReviewSummary(item.summary),
   }
+}
+
+/**
+ * 列表里展示的昵称：匿名（或后端没给昵称）一律用调用方传入的本地化「匿名用户」。
+ *
+ * 为什么由调用方传文案：三语站点不能把中文写死在类型层，
+ * 而评价区（正文预览 + 左侧全量抽屉）两处都要显示昵称，格式化逻辑必须同源，
+ * 否则一边打码一边不打码、一边"匿名用户"一边空字符串。
+ */
+export function reviewDisplayName(review: StoreReview, anonymousLabel: string): string {
+  if (review.anonymous || !review.username) return anonymousLabel
+  return review.username
+}
+
+/**
+ * 列表里展示的日期：只到日。
+ * createTime 是后端统一格式化的 yyyy-MM-dd HH:mm:ss，解析失败时归一化阶段已置空串。
+ */
+export function reviewDateText(createTime: string): string {
+  return createTime.slice(0, 10)
 }
 
 /**

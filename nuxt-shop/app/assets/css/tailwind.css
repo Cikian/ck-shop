@@ -226,6 +226,18 @@ html {
   scroll-behavior: smooth;
   /* 锚点跳转时为固定导航让位（用总高度：移动端两行 128px / 桌面 116px） */
   scroll-padding-top: calc(var(--nav-total-height) + 16px);
+  /*
+   * 滚动条槽位常驻（2026-10-23）：
+   *
+   * 评价抽屉 / 其它弹层打开时会把 body 的滚动条隐藏（reka-ui 的滚动锁）。
+   * 滚动条一消失，视口宽度就多出 10px（见下方 ::-webkit-scrollbar 的宽度），
+   * 于是 fixed 的 Header 里居中的容器、以及所有按视口居中的内容都会**横向跳一下**，
+   * 关闭时再跳回去 —— 看起来像"导航栏左右抖动"。
+   *
+   * scrollbar-gutter: stable 让滚动条槽位无论有没有滚动条都占着，
+   * 锁定/解锁前后内容宽度完全一致，打开抽屉时页面纹丝不动。
+   */
+  scrollbar-gutter: stable;
 }
 
 body {
@@ -235,6 +247,15 @@ body {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   line-height: 1.6;
+  /*
+   * 弹层滚动锁会**再补一次**滚动条宽度（reka-ui 用 `innerWidth - clientWidth` 算出来，
+   * 写成 body 的 inline padding-right）。可上面的 scrollbar-gutter: stable 已经把槽位常驻了，
+   * 这一补就是重复补偿：
+   *   · fixed 的 Header 不受 body padding 影响 → 不动；
+   *   · 其余所有在文档流里的内容整体左移 10px → "除了导航栏，整个页面都在左右跳"。
+   * 本项目 body 从不需要右侧内边距，这里直接把它钉成 0（inline 样式只能靠 !important 覆盖）。
+   */
+  padding-right: 0 !important;
 }
 
 /* 中文正文数字对比度更好：价格与统计数字统一用这套字重节奏 */
@@ -744,5 +765,309 @@ body {
   select,
   [contenteditable='true'] {
     font-size: 16px !important;
+  }
+}
+
+/* ==========================================================================
+   全屏加载遮罩（app/components/AppPageLoader.vue）
+   --------------------------------------------------------------------------
+   用途：水合完成前明确告诉用户"正在准备"，而不是让人对着点不动的页面。
+
+   性能约束（务必守住）：
+     · 所有动画只动 transform / opacity —— 走合成层，不触发布局与重绘；
+     · 不用 canvas、不跑 JS 循环、不做大面积 backdrop-filter / blur；
+     · 动画元素共 8 个，每个只做一件简单的事（旋转 / 放大淡出 / 位移）。
+   无障碍：prefers-reduced-motion 下全部动画关闭，只留静态构图。
+   ========================================================================== */
+
+.page-loader {
+  position: fixed;
+  inset: 0;
+  z-index: 300;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  background-color: var(--color-cream);
+  /* 自成一层：内部动画不影响页面其它区域的绘制 */
+  contain: strict;
+  /* JS 万一挂了也不能永远挡住页面：14s 后自动淡出并放开点击 */
+  animation: page-loader-safety 0.4s ease 14s forwards;
+}
+
+.page-loader--leaving {
+  opacity: 0;
+  transform: scale(1.012);
+  pointer-events: none;
+  transition: opacity 0.32s var(--ease-standard), transform 0.32s var(--ease-standard);
+}
+
+/* 背景光晕（静态） */
+.page-loader__glow {
+  position: absolute;
+  width: 720px;
+  height: 720px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(255, 77, 109, 0.12) 0%, rgba(255, 77, 109, 0) 62%);
+  pointer-events: none;
+}
+
+/* 底部山脊：低透明度装饰，站内"户外"语义 */
+.page-loader__ridge {
+  position: absolute;
+  inset: auto 0 0 0;
+  height: 148px;
+  color: var(--color-brand-200);
+  opacity: 0.55;
+  pointer-events: none;
+}
+
+.page-loader__ridge svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+/* 山脊后的"晨光"横扫：一条渐变带缓慢平移 */
+.page-loader__aurora {
+  position: absolute;
+  inset: auto 0 0 0;
+  height: 148px;
+  pointer-events: none;
+  background: linear-gradient(90deg, rgba(255, 213, 74, 0) 0%, rgba(255, 213, 74, 0.28) 45%, rgba(255, 213, 74, 0) 70%);
+  width: 60%;
+  will-change: transform;
+  animation: page-loader-drift 7s cubic-bezier(0.45, 0, 0.55, 1) infinite;
+}
+
+/* ---------- 标记区 ---------- */
+.page-loader__mark {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 208px;
+  height: 208px;
+  margin-bottom: 22px;
+}
+
+/* 轨道参考线（静态圆环，给构图以结构） */
+.page-loader__track {
+  position: absolute;
+  border-radius: 50%;
+  border: 1px solid var(--color-line);
+}
+
+.page-loader__track--a { width: 124px; height: 124px; }
+.page-loader__track--b { width: 168px; height: 168px; border-color: var(--color-line-soft); }
+
+/* 扩散涟漪：两圈错峰放大淡出 */
+.page-loader__ring {
+  position: absolute;
+  width: 108px;
+  height: 108px;
+  border-radius: 50%;
+  border: 2px solid var(--color-brand-300);
+  opacity: 0;
+  will-change: transform, opacity;
+  animation: page-loader-ripple 2.6s cubic-bezier(0.2, 0.6, 0.3, 1) infinite;
+}
+
+.page-loader__ring--b {
+  border-color: var(--color-accent-300);
+  animation-delay: 1.3s;
+}
+
+/* 轨道：整圈旋转，光点挂在轨道顶端 */
+.page-loader__orbit {
+  position: absolute;
+  width: 124px;
+  height: 124px;
+  border-radius: 50%;
+  will-change: transform;
+  animation: page-loader-spin 2.6s linear infinite;
+}
+
+.page-loader__orbit--b {
+  width: 168px;
+  height: 168px;
+  animation-duration: 3.8s;
+  animation-direction: reverse;
+}
+
+/* 光点 + 拖尾（拖尾是伪元素的渐变，同样只做旋转位移） */
+.page-loader__dot {
+  position: absolute;
+  top: -5px;
+  left: 50%;
+  width: 10px;
+  height: 10px;
+  margin-left: -5px;
+  border-radius: 50%;
+  background-color: var(--color-brand-500);
+  box-shadow: 0 0 12px 2px rgba(255, 77, 109, 0.35);
+}
+
+.page-loader__dot::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 44px;
+  height: 3px;
+  border-radius: 999px;
+  transform: translate(-100%, -50%);
+  background: linear-gradient(90deg, rgba(255, 77, 109, 0) 0%, rgba(255, 77, 109, 0.55) 100%);
+}
+
+.page-loader__dot--accent {
+  width: 8px;
+  height: 8px;
+  margin-left: -4px;
+  background-color: var(--color-accent-500);
+  box-shadow: 0 0 10px 2px rgba(245, 194, 31, 0.35);
+}
+
+.page-loader__dot--accent::after {
+  width: 34px;
+  height: 2px;
+  background: linear-gradient(90deg, rgba(245, 194, 31, 0) 0%, rgba(245, 194, 31, 0.6) 100%);
+}
+
+/* 核心：品牌圆 + 山形标记，缓慢浮沉 */
+.page-loader__core {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 76px;
+  height: 76px;
+  border-radius: 50%;
+  background: linear-gradient(150deg, var(--color-brand-400) 0%, var(--color-brand-600) 100%);
+  color: #fff;
+  box-shadow: 0 16px 34px -12px rgba(255, 77, 109, 0.6);
+  will-change: transform;
+  animation: page-loader-float 2.8s ease-in-out infinite;
+}
+
+/* 核心外圈高光：conic 渐变慢转，制造"有光在走"的活力感 */
+.page-loader__core::before {
+  content: '';
+  position: absolute;
+  inset: -6px;
+  border-radius: 50%;
+  background: conic-gradient(from 0deg, rgba(255, 255, 255, 0) 0deg, rgba(255, 255, 255, 0.85) 60deg, rgba(255, 255, 255, 0) 140deg);
+  mask: radial-gradient(farthest-side, transparent calc(100% - 3px), #000 calc(100% - 2px));
+  -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 3px), #000 calc(100% - 2px));
+  will-change: transform;
+  animation: page-loader-spin 3.2s linear infinite;
+}
+
+.page-loader__core svg {
+  width: 34px;
+  height: 34px;
+}
+
+/* ---------- 文案 ---------- */
+.page-loader__brand {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  color: var(--color-ink);
+  will-change: transform, opacity;
+  animation: page-loader-rise 0.6s var(--ease-standard) both;
+}
+
+.page-loader__hint {
+  margin-top: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--color-muted);
+  will-change: transform, opacity;
+  animation: page-loader-rise 0.6s var(--ease-standard) 0.08s both;
+}
+
+/* ---------- 扫光进度条 ---------- */
+.page-loader__bar {
+  position: relative;
+  margin-top: 18px;
+  width: 180px;
+  height: 4px;
+  overflow: hidden;
+  border-radius: 999px;
+  background-color: var(--color-line);
+}
+
+.page-loader__bar-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 38%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--color-brand-400), var(--color-accent-400));
+  will-change: transform;
+  animation: page-loader-sweep 1.25s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+
+@keyframes page-loader-spin {
+  to { transform: rotate(360deg); }
+}
+
+@keyframes page-loader-ripple {
+  0%   { transform: scale(0.74); opacity: 0.6; }
+  70%  { transform: scale(1.5); opacity: 0; }
+  100% { transform: scale(1.5); opacity: 0; }
+}
+
+@keyframes page-loader-float {
+  0%, 100% { transform: translateY(-4px); }
+  50%      { transform: translateY(4px); }
+}
+
+@keyframes page-loader-sweep {
+  0%   { transform: translateX(-110%); }
+  100% { transform: translateX(265%); }
+}
+
+@keyframes page-loader-drift {
+  0%   { transform: translateX(-60%); }
+  100% { transform: translateX(170%); }
+}
+
+@keyframes page-loader-rise {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes page-loader-safety {
+  to { opacity: 0; pointer-events: none; visibility: hidden; }
+}
+
+/* 减少动效：静态构图 + 进度条满格，不再有旋转/涟漪/扫光/晨光 */
+@media (prefers-reduced-motion: reduce) {
+  .page-loader,
+  .page-loader__ring,
+  .page-loader__orbit,
+  .page-loader__core,
+  .page-loader__core::before,
+  .page-loader__bar-fill,
+  .page-loader__aurora,
+  .page-loader__brand,
+  .page-loader__hint {
+    animation: none !important;
+  }
+
+  .page-loader__ring {
+    opacity: 0.3;
+    transform: scale(1.24);
+  }
+
+  .page-loader__bar-fill {
+    width: 100%;
+    background: linear-gradient(90deg, var(--color-brand-300), var(--color-brand-500));
+  }
+
+  .page-loader__aurora {
+    opacity: 0.4;
   }
 }

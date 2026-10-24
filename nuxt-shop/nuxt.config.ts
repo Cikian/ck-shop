@@ -281,8 +281,17 @@ export default defineNuxtConfig({
     '/api/promotions/active': { swr: 60 },
     '/api/review': { swr: 30 },
     '/api/store/info': { swr: 300 },
-    // 缩放后的图片内容不可变：Nitro 端缓存一天，避免每个访客都重新抓原图+转码
-    '/api/img': { swr: 86400 },
+    /*
+     * ⚠️ `/api/img` **绝对不能**挂 routeRules 的 swr/cache（2026-10-23 踩过）：
+     *
+     * 那条规则会把响应体序列化成 JSON 再回放，图片这种二进制被存成
+     * `{"type":"Buffer","data":[82,73,70,70,…]}`，命中缓存时浏览器拿到的是这段文本
+     * （前 16 字节 `7b0a2020227479706522`），`<img>` 立刻 error —— 现象就是
+     * "刷新后图片全裂、3~5 秒后才冒出来"（ShopImage 退回原图 URL）。
+     *
+     * 现在缓存做在 server/api/img.get.ts 内部（Buffer LRU + in-flight 去重），
+     * 浏览器/CDN 侧靠该接口自己下的 `cache-control: immutable`。
+     */
   },
 
   seo: {

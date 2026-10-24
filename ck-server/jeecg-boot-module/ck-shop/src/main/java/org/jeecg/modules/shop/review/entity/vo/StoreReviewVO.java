@@ -8,6 +8,7 @@ import org.springframework.format.annotation.DateTimeFormat;
 
 import java.io.Serializable;
 import java.util.Date;
+import java.util.List;
 
 /**
  * <p>
@@ -45,6 +46,15 @@ public class StoreReviewVO implements Serializable {
 
     @Schema(description = "下单时的规格文案")
     private String skuName;
+
+    /**
+     * 评价图片（最多 9 张，已按白名单过滤；无图为 null）。
+     *
+     * 库里存 JSON 数组字符串，这里在服务端就解析成数组下发：
+     * 让前端各自 split 一遍，迟早会出现"一边能显示、一边不能显示"的分歧。
+     */
+    @Schema(description = "评价图片URL列表(无图为 null)")
+    private List<String> images;
 
     @JsonFormat(timezone = "GMT+8", pattern = "yyyy-MM-dd HH:mm:ss")
     @DateTimeFormat(pattern = "yyyy-MM-dd HH:mm:ss")

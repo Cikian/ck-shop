@@ -291,7 +291,51 @@ public class ShopProductReviewServiceImpl extends ServiceImpl<ShopProductReviewM
                 .setAnonymous(anonymous)
                 .setUsername(anonymous ? null : maskNickname(review.getUsername()))
                 .setSkuName(review.getSkuName())
+                .setImages(parseImages(review.getImages()))
                 .setCreateTime(review.getCreateTime());
+    }
+
+    /** 一条评价最多展示 9 张图（3×3）：超出直接截断，避免有人塞 100 条把前端撑爆 */
+    private static final int MAX_REVIEW_IMAGES = 9;
+
+    /**
+     * 解析评价图片列（JSON 数组字符串，也容忍逗号分隔的老写法）。
+     *
+     * 三条约束都放在服务端，不指望前端守规矩：
+     * <ol>
+     *   <li><b>白名单</b>：只放行 http(s) 与站内绝对路径（以 / 开头）。
+     *       将来接上传接口时，库里就算混进 {@code javascript:…} 也不会被下发；</li>
+     *   <li><b>上限</b>：最多 {@code MAX_REVIEW_IMAGES} 张；</li>
+     *   <li><b>空值即 null</b>：没有图的评价不下发空数组，前端按"没有图片区"渲染。</li>
+     * </ol>
+     */
+    private List<String> parseImages(String raw) {
+        if (StringUtils.isBlank(raw)) {
+            return null;
+        }
+        String value = raw.trim();
+        // 去掉 JSON 数组的方括号；下面按逗号切，顺带兼容 ["a","b"] 与 a,b 两种写法
+        if (value.startsWith("[")) {
+            value = value.substring(1);
+        }
+        if (value.endsWith("]")) {
+            value = value.substring(0, value.length() - 1);
+        }
+        List<String> images = new ArrayList<>();
+        for (String part : value.split(",")) {
+            String url = part.trim().replaceAll("^\"|\"$", "").trim();
+            if (url.isEmpty()) {
+                continue;
+            }
+            if (!url.startsWith("http://") && !url.startsWith("https://") && !url.startsWith("/")) {
+                continue;
+            }
+            images.add(url);
+            if (images.size() >= MAX_REVIEW_IMAGES) {
+                break;
+            }
+        }
+        return images.isEmpty() ? null : images;
     }
 
     /**
