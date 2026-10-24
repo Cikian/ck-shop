@@ -34,7 +34,7 @@ Bash
 
 ```bash
 # 1. 克隆脚手架到新的业务项目目录
-git clone <你的 ck-boot-starter 私有库地址.git> ck-shop
+git clone https://github.com/Cikian/ck-boot-starter.git ck-shop
 
 # 2. 进入新项目目录
 cd ck-shop
