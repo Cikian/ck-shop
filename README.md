@@ -32,7 +32,7 @@ ck-boot-starter/
 
 Bash
 
-```
+```bash
 # 1. 克隆脚手架到新的业务项目目录
 git clone <你的 ck-boot-starter 私有库地址.git> ck-shop
 
@@ -55,7 +55,7 @@ git push -u origin main
 
 Bash
 
-```
+```bash
 git add .
 git commit -m "feat: init shop module"
 git push origin main
@@ -69,7 +69,7 @@ git push origin main
 
 Bash
 
-```
+```bash
 cd ck-boot-starter
 
 # 1. 切到官方镜像分支并拉取最新官方代码
@@ -92,7 +92,7 @@ git push origin main
 
 Bash
 
-```
+```bash
 cd ck-shop
 
 # 1. 拉取脚手架底座仓库的最新变更
