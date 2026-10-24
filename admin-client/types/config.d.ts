@@ -171,6 +171,8 @@ export interface GlobConfig {
   isQiankunMicro: boolean;
   // 【JEECG作为乾坤子应用】乾坤子应用入口
   qiankunMicroAppEntry?: string;
+  // 登录页人机验证（CikVerify）验证码类型，默认 POW
+  captchaType?: string;
 }
 export interface GlobEnvConfig {
   // Site title
@@ -204,4 +206,6 @@ export interface GlobEnvConfig {
   VITE_GLOB_ONLINE_DOCUMENT_VERSION?: string;
   // 当前运行在什么平台
   VITE_GLOB_RUN_PLATFORM?: 'web' | 'electron';
+  // 登录页人机验证（CikVerify）验证码类型：POW / SLIDER / ROTATE / CONCAT / WORD_IMAGE_CLICK
+  VITE_GLOB_CAPTCHA_TYPE?: string;
 }

@@ -22,6 +22,15 @@
 
 const SAFE_IMG_SOURCES = ["'self'", 'data:', 'blob:', 'https:']
 
+/**
+ * CikVerify 验证码 SDK 的 tac 资源来自官方 CDN（`@cikian/captcha-web` 默认
+ * `assetBaseUrl=https://cdn.cap.cikian.cn/assets/tac`，注入 tac.js + tac.css）。
+ * 不在这里放行的话，弹窗会在点击「获取验证码」时被 CSP 直接拦掉：
+ * 控制台报 " violates the following Content Security Policy directive: script-src/style-src"，
+ * 页面上只能看到「安全验证加载失败，请重试」。
+ */
+const CAPTCHA_CDN = 'https://cdn.cap.cikian.cn'
+
 /** 静态资源（带内容哈希的 /_nuxt/*）无需重复计算 CSP，但也不贵，保持简单 */
 export default defineEventHandler((event) => {
   // 1) 基础头：与框架无关，所有响应都加
@@ -44,9 +53,11 @@ export default defineEventHandler((event) => {
   const csp = [
     "default-src 'self'",
     `img-src ${SAFE_IMG_SOURCES.join(' ')}`,
-    "style-src 'self' 'unsafe-inline'",
-    "script-src 'self' 'unsafe-inline'",
+    `style-src 'self' 'unsafe-inline' ${CAPTCHA_CDN}`,
+    `script-src 'self' 'unsafe-inline' ${CAPTCHA_CDN}`,
     "font-src 'self' data:",
+    // tac 的 POW/滑块实现会用 Blob 生成 Worker；connect-src 仍只允许同源（challenge/verify 走 BFF）
+    "worker-src 'self' blob:",
     "connect-src 'self'",
     "media-src 'self' https:",
     "frame-src 'self' https://www.youtube.com https://player.bilibili.com",

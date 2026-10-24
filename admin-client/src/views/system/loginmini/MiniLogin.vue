@@ -46,15 +46,16 @@
                           <a-input class="fix-auto-fill" type="password" :placeholder="t('sys.login.password')" v-model:value="formData.password" />
                         </a-form-item>
                       </div>
-                      <div class="aui-inputClear">
-                        <i class="icon icon-code"></i>
-                        <a-form-item>
-                          <a-input class="fix-auto-fill" type="text" :placeholder="t('sys.login.inputCode')" v-model:value="formData.inputCode" />
-                        </a-form-item>
-                        <div class="aui-code">
-                          <img v-if="randCodeData.requestCodeSuccess" :src="randCodeData.randCodeImage" @click="handleChangeCheckCode" />
-                          <img v-else style="margin-top: 2px; max-width: initial" :src="codeImg" @click="handleChangeCheckCode" />
+                      <!--人机验证：CikVerify 工作量证明（POW），通过后拿到一次性 ticket 随登录请求提交-->
+                      <div class="aui-inputClear aui-human-verify">
+                        <div class="aui-verify-status">
+                          <CheckCircleFilled v-if="captchaVerified" class="aui-verify-icon is-passed" />
+                          <SafetyCertificateOutlined v-else class="aui-verify-icon" />
+                          <span>{{ captchaVerified ? t('sys.login.humanVerificationPassed') : t('sys.login.humanVerificationTip') }}</span>
                         </div>
+                        <a class="aui-verify-action" @click="handleCaptchaClick">
+                          {{ captchaVerified ? t('sys.login.humanVerificationRetry') : t('sys.login.humanVerificationAction') }}
+                        </a>
                       </div>
                       <div class="aui-inputClear" v-if="showDepart">
                         <i class="icon icon-depart"></i>
@@ -174,9 +175,8 @@
   </div>
 </template>
 <script lang="ts" setup name="login-mini">
-  import { getCaptcha, getCodeInfo } from '/@/api/sys/user';
+  import { getCaptcha } from '/@/api/sys/user';
   import { computed, defineAsyncComponent, onMounted, reactive, ref, toRaw, unref, watch } from 'vue';
-  import codeImg from '/@/assets/images/checkcode.png';
   import { useUserStore } from '/@/store/modules/user';
   import { useMessage } from '/@/hooks/web/useMessage';
   import { useI18n } from '/@/hooks/web/useI18n';
@@ -192,7 +192,7 @@
   import { createLocalStorage } from '/@/utils/cache';
   import { useDesign } from "/@/hooks/web/useDesign";
   import { useAppInject } from "/@/hooks/web/useAppInject";
-  import { GithubFilled, WechatFilled, DingtalkCircleFilled } from '@ant-design/icons-vue';
+  import { GithubFilled, WechatFilled, DingtalkCircleFilled, CheckCircleFilled, SafetyCertificateOutlined } from '@ant-design/icons-vue';
   import '/@/utils/iconfont2';
   import CaptchaModal from '@/components/jeecg/captcha/CaptchaModal.vue';
   import { useModal } from "@/components/Modal";
@@ -200,6 +200,7 @@
   import { encryptAESCBC } from '/@/utils/cipher';
   import { defHttp } from "@/utils/http/axios";
   import { IconFont } from '/@/utils/iconfont2';
+  import { isCaptchaClosed, useCikianCaptcha } from '/@/hooks/web/useCikianCaptcha';
 
   const { prefixCls } = useDesign('mini-login');
   const { notification, createMessage } = useMessage();
@@ -208,11 +209,11 @@
   const $ls = createLocalStorage();
   const localeStore = useLocaleStore();
   const showLocale = localeStore.getShowPicker;
-  const randCodeData = reactive<any>({
-    randCodeImage: '',
-    requestCodeSuccess: false,
-    checkKey: null,
-  });
+  //CikVerify 人机验证（POW）一次性 ticket：120 秒有效、只能用一次，登录失败后必须重新验证
+  const { open: openCaptcha } = useCikianCaptcha();
+  const captchaTicket = ref<string>('');
+  const captchaLoading = ref<boolean>(false);
+  const captchaVerified = computed(() => !!unref(captchaTicket));
   // 记住用户名
   const rememberMe = ref<boolean>(false);
   const REMEMBER_USERNAME_KEY = 'LOGIN_REMEMBER_USERNAME';
@@ -221,7 +222,6 @@
   const type = ref<string>('login');
   //账号登录表单字段
   const formData = reactive<any>({
-    inputCode: '',
     username: 'admin',
     password: '123456',
     loginOrgCode: '',
@@ -276,12 +276,11 @@
       return deptName;
     };
   })
-  //监听验证码和输入框的修改
+  //监听手机验证码填写完成，触发部门查询（账号登录走 CikVerify，不再有部门预选）
   watch(
-      () => [formData.inputCode, phoneFormData.smscode],
+      () => phoneFormData.smscode,
       () => {
-        if ((formData.inputCode && formData.inputCode.length == 4)
-            || (phoneFormData.smscode && phoneFormData.smscode.length == 6)) {
+        if (phoneFormData.smscode && phoneFormData.smscode.length == 6) {
             checkAccount()
         }
       },
@@ -295,8 +294,7 @@
         formData.loginOrgCode = null;
         phoneFormData.loginOrgCode = null;
         departList.value = [];
-        if ((formData.inputCode && formData.inputCode.length == 4)
-            || (phoneFormData.smscode && phoneFormData.smscode.length == 6)) {
+        if (phoneFormData.smscode && phoneFormData.smscode.length == 6) {
           checkAccount()
         }
       }
@@ -304,24 +302,30 @@
 
   //初始化数据
   let deptTimer;
+  /**
+   * 查询登录账号所属部门（多部门时供选择）。
+   *
+   * 只有**手机验证码登录**会走这里：后端 /sys/loginGetUserDeparts 的账号分支
+   * 仍然强制校验旧的字符图形验证码（inputCode + checkKey），而登录页已经把它
+   * 换成 CikVerify，账号登录再调这个接口只会得到「验证码无效」。
+   * 账号登录不选部门时，后端按用户默认机构（sys_user.org_code）登录。
+   */
   function checkAccount() {
     deptTimer && clearTimeout(deptTimer);
     deptTimer = setTimeout(async () => {
-      let loginType = activeIndex.value === 'accountLogin' ? 'account' : 'phone';
+      const isPhoneLogin = activeIndex.value !== 'accountLogin';
+      if (!isPhoneLogin) {
+        return;
+      }
       // 验证条件提取
-      const isValidAccount = loginType === 'account' && formData.username && formData.password;
-      const isValidPhone = loginType == 'phone' && phoneFormData.mobile && phoneFormData.smscode;
-      let finalFormData = loginType == 'phone' ? {...phoneFormData} : {...formData};
-      if (!isValidAccount && !isValidPhone) {
+      const isValidPhone = phoneFormData.mobile && phoneFormData.smscode;
+      let finalFormData = {...phoneFormData};
+      if (!isValidPhone) {
         return;
       }
       //查询部门信息前，优先进行账户校验
       if (departList.value && departList.value.length == 0) {
-        let params = {...finalFormData, loginType: activeIndex.value === 'accountLogin' ? 'account' : 'phone'};
-        if (loginType == 'account') {
-          params['password'] = encryptAESCBC(formData.password);
-          params['checkKey'] = randCodeData.checkKey;
-        }
+        let params = {...finalFormData, loginType: 'phone'};
         const res = await defHttp.post({
           url: '/sys/loginGetUserDeparts',
           params: {...params}
@@ -351,16 +355,40 @@
   }
  //**********************查询部门逻辑end*************************************************
   /**
-   * 获取验证码
+   * 打开 CikVerify 人机验证弹窗并拿到一次性 ticket。
+   * 已有 ticket 时直接返回 true；用户主动关闭不算错误，只是中止登录。
    */
-  function handleChangeCheckCode() {
-    formData.inputCode = '';
-    // 代码逻辑说明: [QQYUN-10775]验证码可以复用 #7674------------
-    randCodeData.checkKey = new Date().getTime() + Math.random().toString(36).slice(-4); // 1629428467008;
-    getCodeInfo(randCodeData.checkKey).then((res) => {
-      randCodeData.randCodeImage = res;
-      randCodeData.requestCodeSuccess = true;
-    });
+  async function handleCaptcha(): Promise<boolean> {
+    if (unref(captchaTicket)) return true;
+    // 验证中重复点击不再弹第二个遮罩
+    if (unref(captchaLoading)) return false;
+    captchaLoading.value = true;
+    try {
+      const ticket = await openCaptcha();
+      if (!ticket) return false;
+      captchaTicket.value = ticket;
+      return true;
+    } catch (error) {
+      // closed 是用户主动关闭，不需要打扰；其余（CDN/CSP、超时、ticket 缺失）给出提示
+      if (!isCaptchaClosed(error)) {
+        notification.error({
+          message: t('sys.api.errorTip'),
+          description: t('sys.login.humanVerificationFailed'),
+          duration: 3,
+        });
+      }
+      return false;
+    } finally {
+      captchaLoading.value = false;
+    }
+  }
+
+  /** 状态行上的「去验证 / 重新验证」 */
+  function handleCaptchaClick() {
+    if (unref(captchaVerified)) {
+      captchaTicket.value = '';
+    }
+    handleCaptcha();
   }
 
   /**
@@ -391,6 +419,8 @@
       createMessage.warn(t('sys.login.passwordPlaceholder'));
       return;
     }
+    // 先过安全验证：没有 ticket 就弹 CikVerify，用户关闭则中止登录
+    if (!(await handleCaptcha())) return;
     try {
       loginLoading.value = true;
 
@@ -401,8 +431,8 @@
           password: encryptedPassword,
           username: formData.username,
           loginOrgCode: formData.loginOrgCode,
-          captcha: formData.inputCode,
-          checkKey: randCodeData.checkKey,
+          // 后端用 CikVerify SDK 的 CaptchaTicketService 一次性消费该 ticket
+          captchaTicket: unref(captchaTicket),
           mode: 'none', //不要默认的错误提示
         })
       );
@@ -425,7 +455,8 @@
         description: error.message || t('sys.login.networkExceptionMsg'),
         duration: 3,
       });
-      handleChangeCheckCode();
+      // ticket 已随这次请求被消费（或过期），重试前必须重新验证
+      captchaTicket.value = '';
     } finally {
       loginLoading.value = false;
     }
@@ -537,7 +568,8 @@
     Object.assign(phoneFormData, { mobile: "", smscode: "" });
     type.value = 'login';
     activeIndex.value = 'accountLogin';
-    handleChangeCheckCode();
+    // 从注册/忘记密码回来时旧 ticket 已失效或未使用，一律重新验证
+    captchaTicket.value = '';
   }
 
   /**
@@ -563,9 +595,7 @@
   }
 
   onMounted(() => {
-    //加载验证码
-    handleChangeCheckCode();
-    // 恢复已记住的用户名
+    // 恢复已记住的用户名（人机验证在点登录时按需弹出，不在页面加载时预请求）
     const saved = $ls.get(REMEMBER_USERNAME_KEY);
     if (saved) {
       formData.username = saved;
@@ -596,6 +626,41 @@
 
   .aui-get-code:hover {
     color: #1573e9;
+  }
+
+  /* 人机验证状态行（替代原字符图形验证码输入框 + 图片） */
+  .aui-human-verify {
+    display: flex;
+    align-items: center;
+    padding-top: 12px;
+    padding-bottom: 12px;
+  }
+
+  .aui-verify-status {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+    font-size: 14px;
+    color: #333333;
+  }
+
+  .aui-verify-icon {
+    color: #9a9a9a;
+    font-size: 15px;
+  }
+
+  .aui-verify-icon.is-passed {
+    color: #52c41a;
+  }
+
+  .aui-verify-action {
+    flex: none;
+    margin-left: 8px;
+    font-size: 14px;
+    color: #1573e9;
+    white-space: nowrap;
   }
 
   .code-shape {

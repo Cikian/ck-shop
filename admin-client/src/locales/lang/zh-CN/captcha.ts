@@ -1,0 +1,17 @@
+export default {
+  tipsSuccess: '验证成功，耗时%s秒',
+  tipsError: '验证失败，请重新尝试!',
+  tipsExpired: '验证码已失效，请重新验证',
+  tipsNetworkError: '网络异常，请稍后重试',
+  sliderTitle: '拖动滑块完成拼图',
+  concatTitle: '拖动滑块完成拼图',
+  rotateTitle: '拖动滑块完成拼图',
+  imageClickTitle: '请依次点击:',
+  imageClickConfirm: '确定',
+  powTitle: '安全验证',
+  powLoading: '正在验证中...',
+  disabledTitle: '验证码已关闭',
+  closeTitle: '关闭验证码',
+  refreshTitle: '刷新验证码',
+  overlayLabel: '安全验证',
+};

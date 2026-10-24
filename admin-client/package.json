@@ -28,6 +28,7 @@
     "@iconify/iconify": "^3.1.1",
     "@ant-design/colors": "^7.2.1",
     "@ant-design/icons-vue": "^7.0.1",
+    "@cikian/captcha-web": "1.0.0",
     "@vue/shared": "^3.5.39",
     "@vueuse/core": "^10.11.1",
     "@tinymce/tinymce-vue": "4.0.7",

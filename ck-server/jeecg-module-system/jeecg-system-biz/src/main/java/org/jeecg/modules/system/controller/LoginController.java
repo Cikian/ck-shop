@@ -1,6 +1,7 @@
 package org.jeecg.modules.system.controller;
 
 import cn.hutool.core.util.RandomUtil;
+import cn.cikian.captcha.client.ticket.CaptchaTicketService;
 import com.alibaba.fastjson.JSONObject;
 import com.aliyuncs.exceptions.ClientException;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
@@ -73,6 +74,15 @@ public class LoginController {
 	private BaseCommonService baseCommonService;
 	@Autowired
 	private JeecgBaseConfig jeecgBaseConfig;
+
+	/**
+	 * CikVerify 验证码 ticket 服务（SDK 自动装配，依赖 {@code ck.captcha.*} 配置）。
+	 *
+	 * <p>用于消费前端登录页做完人机验证（工作量证明 POW）后拿到的一次性 ticket。
+	 * 用 required=false 是为了在关闭验证码接入包时仍能启动，此时带 ticket 的登录一律拒绝（fail-closed）。</p>
+	 */
+	@Autowired(required = false)
+	private CaptchaTicketService captchaTicketService;
 	
 	private final String BASE_CHECK_CODES = "qwertyuiplkjhgfdsazxcvbnmQWERTYUPLKJHGFDSAZXCVBNM1234567890";
 	/**
@@ -96,11 +106,23 @@ public class LoginController {
 			return result.error500("该用户登录失败次数过多，请于10分钟后再次登录！");
 		}
 
-		// step.2 验证码check
-        String realKey = validateCaptcha(sysLoginModel, result);
-        if (realKey == null) {
-            return result;
-        }
+		// step.2 人机验证 check
+		// 前端登录页已接入 CikVerify（工作量证明 POW）：带 captchaTicket 时优先消费 ticket；
+		// 未带 ticket 时回退到原有的字符图形验证码，便于灰度上线、未更新的客户端不受影响。
+		String captchaTicket = sysLoginModel.getCaptchaTicket();
+		String realKey = null;
+		if (oConvertUtils.isNotEmpty(captchaTicket)) {
+			if (!consumeCaptchaTicket(captchaTicket, request)) {
+				result.error500("安全验证已失效，请重新验证");
+				result.setCode(HttpStatus.PRECONDITION_FAILED.value());
+				return result;
+			}
+		} else {
+			realKey = validateCaptcha(sysLoginModel, result);
+			if (realKey == null) {
+				return result;
+			}
+		}
 		
 		// step.3 校验用户是否存在且有效
 		LambdaQueryWrapper<SysUser> queryWrapper = new LambdaQueryWrapper<>();
@@ -126,7 +148,10 @@ public class LoginController {
 		userInfo(sysUser, result, request, CommonConstant.CLIENT_TYPE_PC);
 
 		// step.6  登录成功删除验证码
-		redisUtil.del(realKey);
+		// CikVerify ticket 已在 step.2 被 SDK 一次性消费（Redis 中已删除），这里只清图形验证码的 key
+		if (oConvertUtils.isNotEmpty(realKey)) {
+			redisUtil.del(realKey);
+		}
 		redisUtil.del(CommonConstant.LOGIN_FAIL + username);
 
 		// step.7 记录用户登录日志
@@ -955,6 +980,32 @@ public class LoginController {
 		return sysUserService.loginGetUserDeparts(jsonObject);
 	}
 	
+	/**
+	 * 消费 CikVerify 人机验证 ticket。
+	 *
+	 * <p>ticket 由前端经同源的 {@code /api/captcha/challenge} + {@code /api/captcha/verify} 获得，
+	 * 服务端用 SDK 的 {@code CaptchaTicketService#consume} 消费：
+	 * 一次性（Redis 原子认领）、默认 120 秒有效、绑定客户端 IP 与 User-Agent。
+	 * 为空 / 格式不对 / 已消费 / 过期 / IP 或 UA 不匹配，SDK 一律返回 false（fail-closed），
+	 * 这里统一按"未通过"处理，不区分失败原因（避免给攻击者提供探测信号）。</p>
+	 *
+	 * <p>注意：ticket 校验<b>不受</b> {@code jeecg.firewall.enableLoginCaptcha} 开关影响 ——
+	 * 前端已经弹了人机验证，后端就必须真的验一次，否则等于白弹窗。</p>
+	 */
+	private boolean consumeCaptchaTicket(String ticket, HttpServletRequest request) {
+		if (captchaTicketService == null) {
+			log.error("CikVerify 接入包未装配（检查 cn.cikian:captcha-client-spring-boot-starter 依赖与 ck.captcha.* 配置），拒绝本次登录");
+			return false;
+		}
+		try {
+			return captchaTicketService.consume(ticket, request);
+		} catch (Exception e) {
+			// Redis 故障、服务端异常等一律按验证失败处理（fail-closed），不绕过验证码
+			log.error("CikVerify ticket 消费异常，按验证失败处理", e);
+			return false;
+		}
+	}
+
 	/**
      * 校验验证码工具方法，校验失败直接返回Result，校验通过返回realKey
      */

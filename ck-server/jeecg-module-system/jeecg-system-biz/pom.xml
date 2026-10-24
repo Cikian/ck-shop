@@ -62,6 +62,16 @@
             <artifactId>jeecg-boot-module-airag</artifactId>
             <version>${jeecgboot.version}</version>
         </dependency>
+
+        <!-- CikVerify 验证码服务 Java SDK（线上正式发布版 1.0.0）。
+             登录接口 /sys/login 用它的 CaptchaTicketService 消费前端拿到的一次性 ticket；
+             必须经 Maven 仓库（CikianMaven）引入，禁止本地 jar / 本地源码 / system scope。
+             版本号由根 pom 的 ck.captcha.version 统一管理。 -->
+        <dependency>
+            <groupId>cn.cikian</groupId>
+            <artifactId>captcha-client-spring-boot-starter</artifactId>
+            <version>${ck.captcha.version}</version>
+        </dependency>
     </dependencies>
 
 </project>

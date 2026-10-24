@@ -40,6 +40,8 @@ export function getAppEnvConfig() {
     VITE_GLOB_HIDE_LAYOUT_TYPES,
     // 当前运行在什么平台
     VITE_GLOB_RUN_PLATFORM,
+    // 登录页人机验证（CikVerify）验证码类型
+    VITE_GLOB_CAPTCHA_TYPE,
 
     // 【JEECG作为乾坤子应用】
     VITE_GLOB_QIANKUN_MICRO_APP_NAME,
@@ -68,6 +70,7 @@ export function getAppEnvConfig() {
     VITE_GLOB_ONLINE_VIEW_URL,
     VITE_GLOB_HIDE_LAYOUT_TYPES,
     VITE_GLOB_RUN_PLATFORM,
+    VITE_GLOB_CAPTCHA_TYPE,
 
     // 【JEECG作为乾坤子应用】
     VITE_GLOB_QIANKUN_MICRO_APP_NAME,

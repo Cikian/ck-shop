@@ -14,6 +14,7 @@ export const useGlobSetting = (): Readonly<GlobConfig> => {
     VITE_GLOB_DOMAIN_URL,
     VITE_GLOB_ONLINE_VIEW_URL,
     VITE_GLOB_RUN_PLATFORM,
+    VITE_GLOB_CAPTCHA_TYPE,
 
     // 【JEECG作为乾坤子应用】
     VITE_GLOB_QIANKUN_MICRO_APP_NAME,
@@ -50,6 +51,8 @@ export const useGlobSetting = (): Readonly<GlobConfig> => {
     isQiankunMicro: VITE_GLOB_QIANKUN_MICRO_APP_NAME != null && VITE_GLOB_QIANKUN_MICRO_APP_NAME !== '',
     // 【JEECG作为乾坤子应用】乾坤子应用入口
     qiankunMicroAppEntry: VITE_GLOB_QIANKUN_MICRO_APP_ENTRY,
+    // 登录页人机验证（CikVerify）验证码类型，未配置时由 useCikianCaptcha 兜底 POW
+    captchaType: VITE_GLOB_CAPTCHA_TYPE,
   };
 
   // 【JEECG作为乾坤子应用】乾坤子应用下，需要定义一下

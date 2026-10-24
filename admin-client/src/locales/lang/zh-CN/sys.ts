@@ -104,6 +104,14 @@ export default {
 
     subTitleText: '{0}秒后返回登录页面',
 
+    // 人机验证（CikVerify 工作量证明 POW）
+    humanVerification: '人机验证',
+    humanVerificationTip: '点击完成安全验证',
+    humanVerificationPassed: '安全验证已通过',
+    humanVerificationAction: '去验证',
+    humanVerificationRetry: '重新验证',
+    humanVerificationFailed: '安全验证未通过，请稍后重试',
+
     //重置密码页面中文
     authentication:'验证身份',
     resetLoginPassword:'重置登录密码',

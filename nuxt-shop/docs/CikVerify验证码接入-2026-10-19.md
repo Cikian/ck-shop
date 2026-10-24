@@ -232,6 +232,17 @@ CK_SHOP_CAPTCHA_SECRET=<32 位以上随机串>
    - 修复：challenge / verify / send-code 三条链路统一转发浏览器原始 UA + 单个真实 IP。
 4. **本地/测试环境**
    - 联调用 `NUXT_PUBLIC_CAPTCHA_TYPE=POW`（自动完成，便于 e2e）；生产用 SLIDER。
+5. **CSP 把 tac 资源全拦了（2026-10-22 修复）**
+   - 现象：点「获取验证码」后页面提示「安全验证加载失败，请重试」，弹窗根本不出现；
+     控制台刷 CSP 报错：
+     `Loading the script 'https://cdn.cap.cikian.cn/assets/tac/js/tac.min.js' violates …
+     "script-src 'self' 'unsafe-inline'"`，stylesheet（tac.css）与 tac.js 兜底同样被拦。
+   - 根因：`server/middleware/security-headers.ts` 的 CSP 只放行 `'self'`，
+     而 SDK 默认 `assetBaseUrl=https://cdn.cap.cikian.cn/assets/tac`，tac.js / tac.css 属外链。
+   - 修复：`script-src` / `style-src` 放行 `https://cdn.cap.cikian.cn`，并补
+     `worker-src 'self' blob:`（tac 用 Blob 生成 Worker）。**改 CSP 后要重启 dev / 重新构建**。
+   - 排查捷径：先在 Network 看 `tac.min.js` 是否被 CSP 拦（页面里根本没有该 script 时必然是它），
+     再去怀疑后端；后端 challenge 直连 9951 与走 BFF 都是 200 的话，问题就只可能在前端资源加载。
 
 ---
 

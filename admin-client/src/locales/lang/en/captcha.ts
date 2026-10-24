@@ -1,0 +1,17 @@
+export default {
+  tipsSuccess: 'Verified in %s s',
+  tipsError: 'Verification failed, please try again.',
+  tipsExpired: 'The challenge has expired, please try again.',
+  tipsNetworkError: 'Network error, please try again later.',
+  sliderTitle: 'Drag the slider to fit the puzzle',
+  concatTitle: 'Drag the slider to restore the image',
+  rotateTitle: 'Drag the slider to rotate the image',
+  imageClickTitle: 'Click the characters in order:',
+  imageClickConfirm: 'Confirm',
+  powTitle: 'Security check',
+  powLoading: 'Verifying...',
+  disabledTitle: 'Verification is unavailable',
+  closeTitle: 'Close verification',
+  refreshTitle: 'Refresh challenge',
+  overlayLabel: 'Security verification',
+};

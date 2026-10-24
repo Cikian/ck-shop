@@ -8,25 +8,19 @@
       <InputPassword size="large" visibilityToggle v-model:value="formData.password" :placeholder="t('sys.login.password')" />
     </FormItem>
 
-    <!--验证码-->
-    <ARow class="enter-x">
-      <ACol :span="12">
-        <FormItem name="inputCode" class="enter-x">
-          <Input size="large" v-model:value="formData.inputCode" :placeholder="t('sys.login.inputCode')" style="min-width: 100px" />
-        </FormItem>
-      </ACol>
-      <ACol :span="8">
-        <FormItem :style="{ 'text-align': 'right', 'margin-left': '20px' }" class="enter-x">
-          <img
-            v-if="randCodeData.requestCodeSuccess"
-            style="margin-top: 2px; max-width: initial"
-            :src="randCodeData.randCodeImage"
-            @click="handleChangeCheckCode"
-          />
-          <img v-else style="margin-top: 2px; max-width: initial" src="../../../assets/images/checkcode.png" @click="handleChangeCheckCode" />
-        </FormItem>
-      </ACol>
-    </ARow>
+    <!--人机验证：CikVerify 工作量证明（POW），通过后拿到一次性 ticket 随登录请求提交-->
+    <FormItem class="enter-x">
+      <div class="flex items-center justify-between">
+        <Tag :color="captchaVerified ? 'success' : 'default'" class="!mr-0">
+          <CheckCircleFilled v-if="captchaVerified" />
+          <SafetyCertificateOutlined v-else />
+          {{ captchaVerified ? t('sys.login.humanVerificationPassed') : t('sys.login.humanVerificationTip') }}
+        </Tag>
+        <Button type="link" size="small" :loading="captchaLoading" @click="handleCaptchaClick">
+          {{ captchaVerified ? t('sys.login.humanVerificationRetry') : t('sys.login.humanVerificationAction') }}
+        </Button>
+      </div>
+    </FormItem>
 
     <ARow class="enter-x">
       <ACol :span="12">
@@ -86,10 +80,10 @@
   <ThirdModal ref="thirdModalRef"></ThirdModal>
 </template>
 <script lang="ts" setup>
-  import { reactive, ref, toRaw, unref, computed, onMounted } from 'vue';
+  import { reactive, ref, toRaw, unref, computed } from 'vue';
 
-  import { Checkbox, Form, Input, Row, Col, Button, Divider } from 'ant-design-vue';
-  import { GithubFilled, WechatFilled, DingtalkCircleFilled } from '@ant-design/icons-vue';
+  import { Checkbox, Form, Input, Row, Col, Button, Divider, Tag } from 'ant-design-vue';
+  import { GithubFilled, WechatFilled, DingtalkCircleFilled, SafetyCertificateOutlined, CheckCircleFilled } from '@ant-design/icons-vue';
   import { IconFont } from '/@/utils/iconfont2';
   import LoginFormTitle from './LoginFormTitle.vue';
   import ThirdModal from './ThirdModal.vue';
@@ -99,8 +93,8 @@
   import { useUserStore } from '/@/store/modules/user';
   import { LoginStateEnum, useLoginState, useFormRules, useFormValid } from './useLogin';
   import { useDesign } from '/@/hooks/web/useDesign';
-  import { getCodeInfo } from '/@/api/sys/user';
-  import {  encryptAESCBC } from '/@/utils/cipher';
+  import { isCaptchaClosed, useCikianCaptcha } from '/@/hooks/web/useCikianCaptcha';
+  import { encryptAESCBC } from '/@/utils/cipher';
 
   const ACol = Col;
   const ARow = Row;
@@ -110,6 +104,7 @@
   const { notification, createErrorModal } = useMessage();
   const { prefixCls } = useDesign('login');
   const userStore = useUserStore();
+  const { open: openCaptcha } = useCikianCaptcha();
 
   const { setLoginState, getLoginState } = useLoginState();
   const { getFormRules } = useFormRules();
@@ -118,16 +113,14 @@
   const thirdModalRef = ref();
   const loading = ref(false);
   const rememberMe = ref(false);
+  // CikVerify 一次性 ticket：120 秒有效、只能用一次，登录失败后必须重新验证
+  const captchaTicket = ref('');
+  const captchaLoading = ref(false);
+  const captchaVerified = computed(() => !!unref(captchaTicket));
 
   const formData = reactive({
     account: 'admin',
     password: '123456',
-    inputCode: '',
-  });
-  const randCodeData = reactive({
-    randCodeImage: '',
-    requestCodeSuccess: false,
-    checkKey: null,
   });
 
   const { validForm } = useFormValid(formRef);
@@ -136,9 +129,48 @@
 
   const getShow = computed(() => unref(getLoginState) === LoginStateEnum.LOGIN);
 
+  /**
+   * 打开 CikVerify 人机验证弹窗并拿到 ticket。
+   * 已有 ticket 时直接返回 true；用户主动关闭不算错误，只是中止登录。
+   */
+  async function handleCaptcha(): Promise<boolean> {
+    if (unref(captchaTicket)) return true;
+    // 验证中重复点击不再弹第二个遮罩
+    if (unref(captchaLoading)) return false;
+    captchaLoading.value = true;
+    try {
+      const ticket = await openCaptcha();
+      if (!ticket) return false;
+      captchaTicket.value = ticket;
+      return true;
+    } catch (error) {
+      // closed 是用户主动关闭，不需要打扰；其余（CDN/CSP、超时、ticket 缺失）给出提示
+      if (!isCaptchaClosed(error)) {
+        notification.error({
+          message: t('sys.api.errorTip'),
+          description: t('sys.login.humanVerificationFailed'),
+          duration: 3,
+        });
+      }
+      return false;
+    } finally {
+      captchaLoading.value = false;
+    }
+  }
+
+  /** 状态标签上的「去验证 / 重新验证」 */
+  function handleCaptchaClick() {
+    if (unref(captchaVerified)) {
+      captchaTicket.value = '';
+    }
+    handleCaptcha();
+  }
+
   async function handleLogin() {
     const data = await validForm();
     if (!data) return;
+    // 先过安全验证：没有 ticket 就弹 POW 验证码，用户关闭则中止登录
+    if (!(await handleCaptcha())) return;
     try {
       loading.value = true;
 
@@ -148,8 +180,8 @@
         toRaw({
           password: encryptedPassword,
           username: data.account,
-          captcha: data.inputCode,
-          checkKey: randCodeData.checkKey,
+          // 后端用 CikVerify SDK 的 CaptchaTicketService 一次性消费该 ticket
+          captchaTicket: unref(captchaTicket),
           mode: 'none', //不要默认的错误提示
         })
       );
@@ -167,17 +199,9 @@
         duration: 3,
       });
       loading.value = false;
-      handleChangeCheckCode();
+      // ticket 已随这次请求被消费（或过期），重试前必须重新验证
+      captchaTicket.value = '';
     }
-  }
-  function handleChangeCheckCode() {
-    formData.inputCode = '';
-    // 代码逻辑说明: [QQYUN-10775]验证码可以复用 #7674------------
-    randCodeData.checkKey = new Date().getTime() + Math.random().toString(36).slice(-4); // 1629428467008;
-    getCodeInfo(randCodeData.checkKey).then((res) => {
-      randCodeData.randCodeImage = res;
-      randCodeData.requestCodeSuccess = true;
-    });
   }
 
   /**
@@ -187,8 +211,4 @@
   function onThirdLogin(type) {
     thirdModalRef.value.onThirdLogin(type);
   }
-  //初始化验证码
-  onMounted(() => {
-    handleChangeCheckCode();
-  });
 </script>

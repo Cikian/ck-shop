@@ -4,6 +4,8 @@
 export interface LoginParams {
   username: string;
   password: string;
+  /** CikVerify 人机验证一次性 ticket（后端 CaptchaTicketService 消费；为空则回退旧图形验证码） */
+  captchaTicket?: string;
 }
 
 export interface ThirdLoginParams {

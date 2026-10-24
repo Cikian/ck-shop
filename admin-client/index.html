@@ -21,13 +21,16 @@
           因此**内联注入仍可执行**，这道 CSP 主要挡住"从外部域加载脚本"这类载荷
           （把 payload 托管在攻击者自己的域名是最常见手法）。
         · 允许 https://hm.baidu.com：现有统计脚本；若下线统计应同步删除该白名单。
+        · 允许 https://cdn.cap.cikian.cn：登录页人机验证（CikVerify POW）的官方 tac
+          资源（script/style），SDK 按手册走官方 CDN，不自托管、不复制本地文件。
+          若改成自托管，需同步把这里替换成自托管域名。
         · connect-src 放开 https:：管理端允许配置绝对 API 地址（VITE_GLOB_API_URL）。
         · 后续收紧方向：把本文件的两段内联脚本移到 /src 下的模块、去掉 unsafe-inline，
           再用 nonce/hash 白名单；届时才真正具备防内联注入能力。
     -->
     <meta
       http-equiv="Content-Security-Policy"
-      content="default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://hm.baidu.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; font-src 'self' data:; connect-src 'self' https:; frame-src 'self' https:; worker-src 'self' blob:; media-src 'self' https:; object-src 'none'; base-uri 'self'; form-action 'self'"
+      content="default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://hm.baidu.com https://cdn.cap.cikian.cn; style-src 'self' 'unsafe-inline' https://cdn.cap.cikian.cn; img-src 'self' data: blob: https:; font-src 'self' data:; connect-src 'self' https:; frame-src 'self' https:; worker-src 'self' blob:; media-src 'self' https:; object-src 'none'; base-uri 'self'; form-action 'self'"
     />
 
     <title><%= title %></title>

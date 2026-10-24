@@ -21,6 +21,15 @@ public class SysLoginModel {
     private String captcha;
 	@Schema(description = "验证码key")
     private String checkKey;
+	/**
+	 * CikVerify 人机验证（工作量证明 POW）一次性 ticket。
+	 *
+	 * <p>前端调 {@code /api/captcha/challenge} + {@code /api/captcha/verify} 拿到，
+	 * 服务端用 SDK 的 CaptchaTicketService#consume 消费：一次性、默认 120 秒、绑定 IP 与 UA。
+	 * 有值即走 CikVerify 校验，为空则回退到上面的字符图形验证码（captcha + checkKey）。</p>
+	 */
+	@Schema(description = "CikVerify 人机验证 ticket（可选，优先于图形验证码）")
+    private String captchaTicket;
 
     public String getUsername() {
         return username;
@@ -52,6 +61,14 @@ public class SysLoginModel {
 
 	public void setCheckKey(String checkKey) {
 		this.checkKey = checkKey;
+	}
+
+	public String getCaptchaTicket() {
+		return captchaTicket;
+	}
+
+	public void setCaptchaTicket(String captchaTicket) {
+		this.captchaTicket = captchaTicket;
 	}
 
     public String getLoginOrgCode() {

@@ -102,6 +102,14 @@ export default {
     smsCode: 'SMS code',
     mobile: 'Mobile',
 
+    // human verification (CikVerify proof-of-work)
+    humanVerification: 'Human verification',
+    humanVerificationTip: 'Click to complete the security check',
+    humanVerificationPassed: 'Security check passed',
+    humanVerificationAction: 'Verify',
+    humanVerificationRetry: 'Verify again',
+    humanVerificationFailed: 'Security verification failed, please try again later',
+
     //重置密码页面英文
     authentication:'authentication',
     resetLoginPassword:'reset login password',
