@@ -1,5 +1,5 @@
 <template>
-  <div class="min-h-screen bg-[var(--color-cream)] pt-navbar">
+  <div class="min-h-[calc(100vh-var(--nav-total-height))] bg-[var(--color-cream)] pt-navbar">
     <!--
       Google OAuth 回调落地页。
       这个页面**没有表单**：用户是被 Google 整页跳转过来的，正常情况下只会看到 1-2 秒的

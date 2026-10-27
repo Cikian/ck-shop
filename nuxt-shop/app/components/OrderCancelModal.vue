@@ -56,7 +56,7 @@
  * 「能不能取消」不由本组件判断：调用方只在列表/详情返回 canCancel === true 时
  * 才让用户打开它，后端也会再校验一次（只允许待支付订单被买家取消）。
  */
-import { readErrorMessage } from '~~/composables/useApiError'
+import { isUnauthorizedError, readErrorMessage } from '~~/composables/useApiError'
 
 const props = defineProps<{
   open: boolean
@@ -93,6 +93,9 @@ async function submit() {
     emit('update:open', false)
     emit('canceled')
   } catch (error) {
+    // 401/403 = 登录态已失效：交给全局会话守卫统一清理登录态、提示并跳登录页，
+    // 这里再弹一条"操作失败"只会让用户同时看到两条互相矛盾的提示。
+    if (isUnauthorizedError(error)) return
     toast.add({
       title: t('order.actionFailed'),
       description: readErrorMessage(error, t('order.actionFailed')),

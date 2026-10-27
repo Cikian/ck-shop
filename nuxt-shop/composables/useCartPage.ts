@@ -14,6 +14,7 @@
 //    await 之后的代码已脱离 setup 同步上下文 —— 因此这里**不再调用任何 composable**，
 //    生命周期（onMounted(reload)）留在页面注册。
 
+import { isUnauthorizedError } from '~~/composables/useApiError'
 import { extractCartErrorMessage, useCart } from '~~/composables/useCart'
 import { writeCheckoutSnapshot } from '~~/composables/useCheckoutSnapshot'
 import { useStorePrice, useStoreProductList } from '~~/composables/useProducts'
@@ -288,6 +289,9 @@ export const useCartPage = () => {
         toast.add({ title: t('cart.clearedToast'), color: 'success', icon: 'lucide:check' })
       }
     } catch (error) {
+      // 401/403 = 登录态已失效：交给全局会话守卫统一清理登录态、提示并跳登录页，
+      // 这里再弹一条"操作失败"只会让用户同时看到两条互相矛盾的提示。
+      if (isUnauthorizedError(error)) return
       notifyError(error)
     }
   }
@@ -299,6 +303,9 @@ export const useCartPage = () => {
     try {
       await action()
     } catch (error) {
+      // 401/403 = 登录态已失效：交给全局会话守卫统一清理登录态、提示并跳登录页，
+      // 这里再弹一条"操作失败"只会让用户同时看到两条互相矛盾的提示。
+      if (isUnauthorizedError(error)) return
       notifyError(error)
     } finally {
       pendingIds.value = pendingIds.value.filter(id => id !== itemId)

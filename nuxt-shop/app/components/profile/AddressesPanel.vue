@@ -6,13 +6,14 @@
   本组件只负责：表单字段、弹层开关、必填校验，以及把提交动作接到数据层。
 -->
 <template>
-  <div>
-    <div class="mt-4 flex justify-end">
-      <button type="button" class="ui-pill ui-pill-brand h-10 shrink-0 px-5 text-[13px]" @click="openCreate">
-        <UIcon name="lucide:plus" class="h-4 w-4" aria-hidden="true" />
-        {{ t('address.add') }}
-      </button>
-    </div>
+  <!-- flex flex-1 flex-col：让空态能在伸展后的内容卡里垂直居中（内容少时不留大片死白） -->
+  <div class="flex flex-1 flex-col">
+    <!--
+      「新增地址」不再放在面板顶部：它现在由页面把它渲染在**分区标题行右侧**
+      （见 pages/profile.vue 的表头动作槽），这样它和标题同一条基线，
+      不会在标题下面多出一条只有按钮的横带，也不会和空态里的按钮挤在一起。
+      面板只把 openCreate 暴露出去：defineExpose({ openCreate })。
+    -->
 
     <!-- 加载失败 / 加载中 / 有地址 / 空态：四态用 fade 过渡，骨架↔内容不再硬切 -->
     <Transition name="fade" mode="out-in">
@@ -32,8 +33,13 @@
         </span>
       </div>
 
-      <!-- 加载中：骨架屏 -->
-      <ul v-else-if="loading && !addresses.length" key="loading" class="mt-4 space-y-3" aria-busy="true" :aria-label="t('common.loading')">
+      <!--
+        加载中：骨架屏。
+        条件是「还没加载过」（!loaded），不是「loading 且没数据」——
+        SSR 时 loading 恒为 false，用后者会让服务端渲染空态、客户端渲染骨架，
+        造成 hydration mismatch。
+      -->
+      <ul v-else-if="!loaded" key="loading" class="mt-4 space-y-3" aria-busy="true" :aria-label="t('common.loading')">
         <li v-for="index in 3" :key="`addr-skeleton-${index}`" class="space-y-2.5 rounded-[var(--radius-card-sm)] bg-[var(--color-line-soft)]/50 p-4">
           <span class="block h-4 w-1/4 animate-pulse rounded bg-[var(--color-line-soft)]"></span>
           <span class="block h-3 w-2/3 animate-pulse rounded bg-[var(--color-line-soft)]"></span>
@@ -109,7 +115,7 @@
       </TransitionGroup>
 
       <!-- 真的没有地址 -->
-      <div v-else key="empty" class="flex flex-col items-center justify-center py-14 text-center">
+      <div v-else key="empty" class="flex flex-1 flex-col items-center justify-center py-14 text-center">
       <span class="flex h-20 w-20 items-center justify-center rounded-full bg-[var(--color-brand-50)] text-[var(--color-brand-400)]">
         <UIcon name="lucide:map-pin-off" class="h-9 w-9" aria-hidden="true" />
       </span>
@@ -297,7 +303,7 @@ import { useAddressBook } from '~~/composables/useAddressBook'
 const { t, locale } = useI18n()
 const toast = useToast()
 
-const { addresses, loading, error, mutating, load, fetchOne, save, setDefault, remove, notifyError } = useAddressBook()
+const { addresses, loading, loaded, error, mutating, load, fetchOne, save, setDefault, remove, notifyError } = useAddressBook()
 
 const formState = reactive({ open: false, id: '', pending: false })
 const deleteState = reactive({ open: false, pending: false, id: '' })
@@ -350,6 +356,13 @@ function openCreate() {
   formState.pending = false
   formState.open = true
 }
+
+/**
+ * 把「新增地址」暴露给页面：
+ * 入口按钮现在渲染在分区标题行右侧（pages/profile.vue），页面通过 ref 调这个方法。
+ * 数据与弹层状态仍然全部留在本组件里 —— 页面只负责"把按钮放在好看的位置"。
+ */
+defineExpose({ openCreate })
 
 /** 把一条地址填进表单（新增/编辑共用，字段口径只有这一处） */
 function fillForm(address: AddressVO) {

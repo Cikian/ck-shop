@@ -1,6 +1,6 @@
 <template>
-  <div class="min-h-screen bg-[var(--color-cream)] pt-navbar">
-    <div class="mx-auto max-w-4xl px-2 pb-16 sm:px-3 lg:px-4">
+  <div class="flex min-h-[calc(100vh-var(--nav-total-height))] flex-col bg-[var(--color-cream)] pt-navbar">
+    <div class="mx-auto flex w-full max-w-4xl flex-1 flex-col px-2 pb-16 sm:px-3 lg:px-4">
       <header class="mb-5 flex flex-wrap items-end justify-between gap-x-4 gap-y-2">
         <div>
           <h1 class="text-[26px] font-black leading-none text-[var(--color-ink)] sm:text-[32px]">
@@ -21,7 +21,7 @@
 
       <Transition name="fade" mode="out-in">
       <!-- 未登录 -->
-      <section v-if="unauthorized" key="unauthorized" class="ui-card px-6 py-16 text-center">
+      <section v-if="unauthorized" key="unauthorized" class="ui-card flex flex-1 flex-col items-center justify-center px-6 py-16 text-center">
         <span class="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-[var(--color-brand-50)]">
           <UIcon name="lucide:lock" class="h-8 w-8 text-[var(--color-brand-500)]" aria-hidden="true" />
         </span>
@@ -34,7 +34,7 @@
       </section>
 
       <!-- 加载失败 -->
-      <section v-else-if="loadError" key="error" class="ui-card px-6 py-16 text-center">
+      <section v-else-if="loadError" key="error" class="ui-card flex flex-1 flex-col items-center justify-center px-6 py-16 text-center">
         <span class="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-[var(--color-error)]/10">
           <UIcon name="lucide:wifi-off" class="h-8 w-8 text-[var(--color-error)]" aria-hidden="true" />
         </span>
@@ -55,7 +55,7 @@
       </section>
 
       <!-- 空态 -->
-      <section v-else-if="!addresses.length" key="empty" class="ui-card px-6 py-20 text-center">
+      <section v-else-if="!addresses.length" key="empty" class="ui-card flex flex-1 flex-col items-center justify-center px-6 py-20 text-center">
         <span class="mx-auto flex h-20 w-20 items-center justify-center rounded-full bg-[var(--color-brand-50)]">
           <UIcon name="lucide:map-pin-off" class="h-9 w-9 text-[var(--color-brand-400)]" aria-hidden="true" />
         </span>
@@ -301,6 +301,7 @@ definePageMeta({ middleware: 'auth' })
 
 import { isPositive, isUnauthorizedError, readErrorMessage } from '~~/composables/useApiError'
 import { useLoginLink } from '~~/composables/useLoginLink'
+import { useSessionExpiry } from '~~/composables/useSessionExpiry'
 
 /**
  * 收货地址簿。
@@ -342,6 +343,20 @@ const mutating = ref(false)
 const loadError = ref('')
 const unauthorized = ref(false)
 const addresses = ref<AddressVO[]>([])
+const { handleSessionExpired } = useSessionExpiry()
+
+/**
+ * 401 的收口。
+ *
+ * `unauthorized` 这个本地状态仍然要置上：SSR 直出时没有客户端跳转，
+ * 页面必须自己渲染「登录后查看」那一段（否则会显示成空地址簿）。
+ * 客户端则由 handleSessionExpired 统一清登录态、提示并跳登录页 ——
+ * 不这样做的话，用户会停在"右上角显示已登录、地址簿说未登录"的矛盾页面上。
+ */
+function onUnauthorized(source: string) {
+  unauthorized.value = true
+  handleSessionExpired({ source })
+}
 
 /** 快速重复操作时只应用最后一次请求的响应（例如连点"设为默认"） */
 let loadSeq = 0
@@ -384,7 +399,7 @@ async function loadAddresses() {
   } catch (error) {
     if (seq !== loadSeq) return
     if (isUnauthorizedError(error)) {
-      unauthorized.value = true
+      onUnauthorized('address-page')
       return
     }
     loadError.value = readErrorMessage(error, t('address.loadErrorDesc'))
@@ -498,7 +513,7 @@ async function submitForm() {
     await loadAddresses()
   } catch (error) {
     if (isUnauthorizedError(error)) {
-      unauthorized.value = true
+      onUnauthorized('address-page')
       return
     }
     notifyError(error)
@@ -520,7 +535,7 @@ async function setDefault(id: string) {
     await loadAddresses()
   } catch (error) {
     if (isUnauthorizedError(error)) {
-      unauthorized.value = true
+      onUnauthorized('address-page')
       return
     }
     notifyError(error)
@@ -547,7 +562,7 @@ async function confirmDelete() {
     await loadAddresses()
   } catch (error) {
     if (isUnauthorizedError(error)) {
-      unauthorized.value = true
+      onUnauthorized('address-page')
       return
     }
     notifyError(error)

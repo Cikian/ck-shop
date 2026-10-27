@@ -1,6 +1,6 @@
 <template>
-  <div class="min-h-screen bg-[var(--color-cream)] pt-navbar">
-    <div class="mx-auto max-w-7xl px-2 pb-16 sm:px-3 lg:px-4">
+  <div class="flex min-h-[calc(100vh-var(--nav-total-height))] flex-col bg-[var(--color-cream)] pt-navbar">
+    <div class="mx-auto flex w-full max-w-7xl flex-1 flex-col px-2 pb-16 sm:px-3 lg:px-4">
       <header class="mb-5">
         <h1 class="text-[26px] font-black leading-none text-[var(--color-ink)] sm:text-[32px]">
           {{ t('order.title') }}
@@ -9,7 +9,7 @@
       </header>
 
       <!-- 未登录 -->
-      <section v-if="unauthorized" class="ui-card px-6 py-16 text-center">
+      <section v-if="unauthorized" class="ui-card flex flex-1 flex-col items-center justify-center px-6 py-16 text-center">
         <span class="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-[var(--color-brand-50)]">
           <UIcon name="lucide:lock" class="h-8 w-8 text-[var(--color-brand-500)]" aria-hidden="true" />
         </span>
@@ -59,7 +59,7 @@
 
         <Transition name="fade" mode="out-in">
         <!-- 加载失败 -->
-        <div v-if="loadError" key="error" class="ui-card px-6 py-16 text-center">
+        <div v-if="loadError" key="error" class="ui-card flex flex-1 flex-col items-center justify-center px-6 py-16 text-center">
           <span class="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-[var(--color-error)]/10">
             <UIcon name="lucide:wifi-off" class="h-8 w-8 text-[var(--color-error)]" aria-hidden="true" />
           </span>
@@ -80,7 +80,7 @@
         </div>
 
         <!-- 空态 -->
-        <div v-else-if="!records.length" key="empty" class="ui-card px-6 py-20 text-center">
+        <div v-else-if="!records.length" key="empty" class="ui-card flex flex-1 flex-col items-center justify-center px-6 py-20 text-center">
           <span class="mx-auto flex h-20 w-20 items-center justify-center rounded-full bg-[var(--color-brand-50)]">
             <UIcon name="lucide:package-open" class="h-9 w-9 text-[var(--color-brand-400)]" aria-hidden="true" />
           </span>
@@ -403,6 +403,9 @@ async function confirmReceive() {
     receiveState.open = false
     await loadOrders()
   } catch (error) {
+    // 401/403 = 登录态已失效：交给全局会话守卫统一清理登录态、提示并跳登录页，
+    // 这里再弹一条"操作失败"只会让用户同时看到两条互相矛盾的提示。
+    if (isUnauthorizedError(error)) return
     toast.add({
       title: t('order.actionFailed'),
       description: readErrorMessage(error, t('order.loadErrorDesc')),

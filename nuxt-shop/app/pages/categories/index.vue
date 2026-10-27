@@ -1,5 +1,5 @@
 <template>
-  <div class="min-h-screen bg-[var(--color-cream)] pt-navbar">
+  <div class="min-h-[calc(100vh-var(--nav-total-height))] bg-[var(--color-cream)] pt-navbar">
     <div class="mx-auto max-w-7xl px-2 pb-16 sm:px-3 lg:px-4">
       <!-- 面包屑：首页 → 全部分类 -->
       <nav

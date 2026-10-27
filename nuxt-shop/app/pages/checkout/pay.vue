@@ -1,5 +1,5 @@
 <template>
-  <div class="min-h-screen bg-[var(--color-cream)] pt-navbar">
+  <div class="min-h-[calc(100vh-var(--nav-total-height))] bg-[var(--color-cream)] pt-navbar">
     <div class="mx-auto max-w-3xl px-2 pb-32 sm:px-3 lg:pb-16 lg:px-4">
       <header class="mb-5">
         <h1 class="text-[26px] font-black leading-none text-[var(--color-ink)] sm:text-[32px]">

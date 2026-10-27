@@ -255,6 +255,9 @@ export const useOrderDetail = () => {
       receiveState.open = false
       await loadDetail()
     } catch (error) {
+      // 401/403 = 登录态已失效：交给全局会话守卫统一清理登录态、提示并跳登录页，
+      // 这里再弹一条"操作失败"只会让用户同时看到两条互相矛盾的提示。
+      if (isUnauthorizedError(error)) return
       toast.add({
         title: t('order.actionFailed'),
         description: readErrorMessage(error, t('order.loadErrorDesc')),
@@ -284,6 +287,9 @@ export const useOrderDetail = () => {
       withdrawState.open = false
       await loadDetail()
     } catch (error) {
+      // 401/403 = 登录态已失效：交给全局会话守卫统一清理登录态、提示并跳登录页，
+      // 这里再弹一条"操作失败"只会让用户同时看到两条互相矛盾的提示。
+      if (isUnauthorizedError(error)) return
       toast.add({
         title: t('order.actionFailed'),
         description: readErrorMessage(error, t('order.loadErrorDesc')),
@@ -315,6 +321,9 @@ export const useOrderDetail = () => {
         detail.value = { ...detail.value, refunds: list }
       }
     } catch (error) {
+      // 401/403 = 登录态已失效：交给全局会话守卫统一清理登录态、提示并跳登录页，
+      // 这里再弹一条"退款单加载失败"只会让用户同时看到两条互相矛盾的提示。
+      if (isUnauthorizedError(error)) return
       toast.add({
         title: t('order.refundsTitle'),
         description: readErrorMessage(error, t('order.loadErrorDesc')),

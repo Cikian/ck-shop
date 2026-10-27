@@ -9,7 +9,8 @@
   它们只服务于订单列表，留在页面根节点会让人误以为与其它面板有关。
 -->
 <template>
-  <div>
+  <!-- flex flex-1 flex-col：让空态能在伸展后的内容卡里垂直居中（内容少时不留大片死白） -->
+  <div class="flex flex-1 flex-col">
     <!-- 错误 / 骨架 / 列表 / 空态：四态 fade 切换，骨架↔内容不再硬切 -->
     <Transition name="fade" mode="out-in">
       <!-- 加载失败：把后端/网络的原话展示出来，用户才知道该重试还是先别管 -->
@@ -28,8 +29,13 @@
         </span>
       </div>
 
-      <!-- 加载中：骨架屏，固定 3 行（不猜每页条数） -->
-      <ul v-else-if="ordersLoading && !orders.length" key="loading" class="mt-4 space-y-3" aria-busy="true" :aria-label="t('common.loading')">
+      <!--
+        加载中：骨架屏，固定 3 行（不猜每页条数）。
+        条件是「还没加载过」（!ordersLoaded），不是「loading 且没数据」：
+        SSR 时 loading 恒为 false，用后者会让服务端渲染空态、客户端 hydrate 时渲染骨架，
+        直接触发 hydration mismatch（控制台可见，并会闪一下）。
+      -->
+      <ul v-else-if="!ordersLoaded" key="loading" class="mt-4 space-y-3" aria-busy="true" :aria-label="t('common.loading')">
         <li v-for="index in 3" :key="`order-skeleton-${index}`" class="space-y-2.5 rounded-[var(--radius-card-sm)] bg-[var(--color-line-soft)]/50 p-4">
           <span class="block h-4 w-1/3 animate-pulse rounded bg-[var(--color-line-soft)]"></span>
           <span class="block h-3 w-2/3 animate-pulse rounded bg-[var(--color-line-soft)]"></span>
@@ -170,7 +176,7 @@
       </div>
 
       <!-- 真的没有订单 -->
-      <div v-else key="empty" class="flex flex-col items-center justify-center py-14 text-center">
+      <div v-else key="empty" class="flex flex-1 flex-col items-center justify-center py-14 text-center">
         <span class="flex h-20 w-20 items-center justify-center rounded-full bg-[var(--color-brand-50)] text-[var(--color-brand-400)]">
           <UIcon name="lucide:package-open" class="h-9 w-9" aria-hidden="true" />
         </span>
@@ -229,7 +235,7 @@
 
 <script setup lang="ts">
 import type { OrderItemVO, OrderListVO } from '~~/types/shop-order'
-import { isPositive, readErrorMessage } from '~~/composables/useApiError'
+import { isPositive, isUnauthorizedError, readErrorMessage } from '~~/composables/useApiError'
 import { formatDateTime } from '~~/composables/useDateTimeFormat'
 import { useOrderList } from '~~/composables/useOrderList'
 import { useStorePrice } from '~~/composables/useProducts'
@@ -241,6 +247,7 @@ const { format } = useStorePrice()
 const {
   orders,
   loading: ordersLoading,
+  loaded: ordersLoaded,
   error: ordersError,
   totalPages: orderTotalPages,
   currentPage: currentOrderPage,
@@ -295,6 +302,9 @@ async function confirmReceive() {
     receiveState.open = false
     await loadOrders()
   } catch (error) {
+    // 401/403 = 登录态已失效：交给全局会话守卫统一清理登录态、提示并跳登录页，
+    // 这里再弹一条"操作失败"只会让用户同时看到两条互相矛盾的提示。
+    if (isUnauthorizedError(error)) return
     toast.add({
       title: t('order.actionFailed'),
       description: readErrorMessage(error, t('order.loadErrorDesc')),

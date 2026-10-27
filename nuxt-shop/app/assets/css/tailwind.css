@@ -380,6 +380,29 @@ body {
 }
 
 /*
+ * 极窄屏（<400px）：让动作条的两个主按钮允许收缩，否则整页横向溢出。
+ *
+ * 根因：两个主按钮是 `flex-1`，但它们作为 flex 子项 `min-width` 仍是 auto
+ * = min-content；按钮里的文案带 truncate（white-space: nowrap），
+ * 所以 min-content = 图标 + 完整文案。法语 "Ajouter au panier" / "Acheter maintenant"
+ * 加起来把整行最小宽度顶到 384px（实测）：
+ *   · 320 宽：页面可用 288 → 文档 scrollWidth 388，溢出 68px；
+ *   · 360 宽：页面可用 328 → 溢出 28px。
+ * 溢出后移动浏览器会把整页缩小（innerWidth 变 388、clientWidth 仍 320/360），
+ * 表现就是"页面被缩小 / 右边被截断"。
+ *
+ * 为什么加断点而不是无条件 min-width:0：
+ *   ≥400px 时 384px + 页面左右各 16px 内边距仍然放得下（390 实测 0 溢出、文案不省略），
+ *   保持按钮按文案长度分配宽度的原视觉；只有 <400px 才收缩并用省略号收尾。
+ * 收藏按钮（.ui-pill-fav）有 w-[52px] + shrink-0，不在收缩范围内，这里一并排除。
+ */
+@media (max-width: 399px) {
+  .ui-action-dock .ui-pill:not(.ui-pill-fav) {
+    min-width: 0;
+  }
+}
+
+/*
  * 动作条的「帘子」：贴在浮层底下方、一直盖到视口底部，用来挡住从按钮下方漏出来的内容。
  *
  * 只在动作条**贴底固定**时有意义；一旦动作条进入「推荐区上方 → 随页面上滚」的释放状态，
@@ -769,305 +792,149 @@ body {
 }
 
 /* ==========================================================================
-   全屏加载遮罩（app/components/AppPageLoader.vue）
+   全屏加载遮罩（app/components/AppPageLoader.vue）—— 「螺旋搜索」
    --------------------------------------------------------------------------
-   用途：水合完成前明确告诉用户"正在准备"，而不是让人对着点不动的页面。
+   来源：用户指定的 Spiral Search（阿基米德螺旋 + 粒子拖尾，rAF 驱动）。
+   这里只保留**动画本体**：奶油底 + 珊瑚色螺旋 + 珊瑚粒子拖尾。
+   原脚本里的深色底、标题、公式块、View All 按钮等全部去掉。
 
-   性能约束（务必守住）：
-     · 所有动画只动 transform / opacity —— 走合成层，不触发布局与重绘；
-     · 不用 canvas、不跑 JS 循环、不做大面积 backdrop-filter / blur；
-     · 动画元素共 8 个，每个只做一件简单的事（旋转 / 放大淡出 / 位移）。
-   无障碍：prefers-reduced-motion 下全部动画关闭，只留静态构图。
+   配色（站内 token，不用原脚本的 #050505 / #f5f5f5）：
+     · 底：--color-cream
+     · 螺旋线：--color-brand-300，低透明度（只做"路径感"）
+     · 粒子：--color-brand-500，头部实、尾部渐隐（透明度由 JS 逐点算）
+
+   性能：粒子 44 个 + 路径 300 段；路径只在 detail 变化超过 0.004 时重建，
+         粒子逐帧更新（与参考实现一致，但少了 480 段路径的每帧字符串拼接）；
+         页面隐藏时暂停 rAF，组件卸载时取消。
+   无障碍：role="status" + aria-live + sr-only「加载中」；prefers-reduced-motion 下只画一帧静态螺旋。
    ========================================================================== */
 
 .page-loader {
   position: fixed;
-  inset: 0;
+  /*
+   * 尺寸取 3 倍视口、以**布局视口中心**为锚点，而不是"铺满一个视口"。
+   *
+   * 为什么：移动浏览器（Edge/Chrome Android）一旦检测到文档横向溢出，会把整页缩小 ——
+   * window.innerWidth 变大（如 627）而 documentElement.clientWidth 仍是 390。
+   * 这时 `width:100vw` 只有 390px，只盖住可见区域的 390/627 ≈ 62%，
+   * 用户看到的就是"加载动画没盖满屏幕，右边露出页面内容"（2026-10 首页 /fr 就是这个现象）。
+   * 布局已经修掉了那次溢出，但遮罩不能再依赖"页面永远不溢出"这个前提：
+   * 3 倍尺寸可以容忍最多 1.5 倍视口宽的溢出，仍完全覆盖可见区域。
+   *
+   * 用 vw/dvh 而不是 inset:0 的原有理由仍然成立（保留）：
+   * html 上有 scrollbar-gutter: stable，inset:0 只铺到内容区宽度，桌面端右边会漏 10px。
+   *
+   * 放大不会反过来制造横向滚动：position:fixed 的元素不参与文档的滚动溢出计算。
+   * 螺旋仍由 place-items:center 居中（居中点是布局视口中心，正常页面即视觉中心）。
+   */
+  top: 50%;
+  left: 50%;
+  width: 300vw;
+  height: 300vh;
+  height: 300dvh;
+  transform: translate(-50%, -50%);
   z-index: 300;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
+  display: grid;
+  place-items: center;
   overflow: hidden;
   background-color: var(--color-cream);
-  /* 自成一层：内部动画不影响页面其它区域的绘制 */
   contain: strict;
-  /* JS 万一挂了也不能永远挡住页面：14s 后自动淡出并放开点击 */
   animation: page-loader-safety 0.4s ease 14s forwards;
 }
 
 .page-loader--leaving {
   opacity: 0;
-  transform: scale(1.012);
-  pointer-events: none;
-  transition: opacity 0.32s var(--ease-standard), transform 0.32s var(--ease-standard);
-}
-
-/* 背景光晕（静态） */
-.page-loader__glow {
-  position: absolute;
-  width: 720px;
-  height: 720px;
-  border-radius: 50%;
-  background: radial-gradient(circle, rgba(255, 77, 109, 0.12) 0%, rgba(255, 77, 109, 0) 62%);
+  transition: opacity 0.32s var(--ease-standard);
   pointer-events: none;
 }
 
-/* 底部山脊：低透明度装饰，站内"户外"语义 */
-.page-loader__ridge {
-  position: absolute;
-  inset: auto 0 0 0;
-  height: 148px;
-  color: var(--color-brand-200);
-  opacity: 0.55;
-  pointer-events: none;
+/* 螺旋画布：正方形，随视口缩放 */
+.page-loader__spiral {
+  width: min(70vmin, 420px);
+  height: auto;
+  aspect-ratio: 1 / 1;
+  overflow: visible;
+  will-change: opacity;
+  animation: page-loader-fade-in 0.45s var(--ease-standard) both;
 }
 
-.page-loader__ridge svg {
-  width: 100%;
-  height: 100%;
-  display: block;
+/* 螺旋本体：一条低透明度的线，给粒子一个"轨迹底" */
+.page-loader__trail {
+  stroke: var(--color-brand-300);
+  stroke-width: 2;
+  opacity: 0.34;
+  fill: none;
 }
 
-/* 山脊后的"晨光"横扫：一条渐变带缓慢平移 */
-.page-loader__aurora {
-  position: absolute;
-  inset: auto 0 0 0;
-  height: 148px;
-  pointer-events: none;
-  background: linear-gradient(90deg, rgba(255, 213, 74, 0) 0%, rgba(255, 213, 74, 0.28) 45%, rgba(255, 213, 74, 0) 70%);
-  width: 60%;
+/* 粒子：颜色统一用品牌珊瑚，明暗由 JS 逐点写 opacity */
+/* ---------- 螺旋（纯 CSS 驱动，水合前就能动） ----------
+   粒子沿这条螺旋线匀速跑：path() 用的是 SVG viewBox 坐标（0..100），
+   与组件里 trail 的 d 完全同一条曲线（同一个公式、同一套采样点）。
+   参数：θ=3t，r=8+(1-cos t)(10+4s)，缩放 0.7，中心 (50,50)，采样 300 段。 */
+.page-loader__particle {
+  fill: var(--color-brand-500);
+  offset-path: path('M55.60 50.00L55.59 50.35L55.56 50.70L55.52 51.05L55.46 51.40L55.38 51.75L55.28 52.09L55.16 52.43L55.03 52.76L54.87 53.09L54.70 53.42L54.51 53.73L54.31 54.04L54.08 54.35L53.84 54.64L53.57 54.92L53.29 55.19L52.99 55.45L52.68 55.69L52.34 55.92L51.99 56.13L51.62 56.33L51.24 56.50L50.84 56.66L50.43 56.80L50.00 56.91L49.56 57.00L49.11 57.07L48.64 57.11L48.17 57.12L47.69 57.11L47.20 57.06L46.71 56.99L46.22 56.88L45.72 56.74L45.23 56.57L44.74 56.36L44.25 56.12L43.77 55.85L43.30 55.54L42.85 55.20L42.40 54.82L41.98 54.41L41.57 53.97L41.19 53.49L40.83 52.98L40.50 52.44L40.20 51.87L39.93 51.27L39.70 50.65L39.50 50.00L39.34 49.33L39.23 48.64L39.15 47.93L39.13 47.21L39.14 46.47L39.21 45.73L39.33 44.98L39.50 44.23L39.72 43.48L39.99 42.73L40.32 41.99L40.70 41.26L41.13 40.55L41.61 39.86L42.15 39.19L42.73 38.55L43.37 37.94L44.05 37.36L44.78 36.82L45.56 36.33L46.37 35.88L47.23 35.48L48.12 35.13L49.05 34.84L50.00 34.60L50.98 34.43L51.98 34.31L53.00 34.27L54.03 34.29L55.08 34.38L56.12 34.54L57.17 34.77L58.21 35.07L59.24 35.45L60.25 35.89L61.24 36.41L62.21 37.00L63.15 37.65L64.05 38.38L64.91 39.17L65.72 40.02L66.49 40.94L67.20 41.91L67.85 42.93L68.44 44.01L68.96 45.13L69.41 46.30L69.78 47.50L70.08 48.74L70.30 50.00L70.44 51.29L70.49 52.59L70.45 53.90L70.33 55.22L70.12 56.54L69.83 57.85L69.44 59.15L68.97 60.43L68.41 61.68L67.76 62.91L67.03 64.09L66.22 65.24L65.34 66.33L64.37 67.37L63.33 68.35L62.23 69.27L61.06 70.11L59.83 70.88L58.54 71.58L57.21 72.19L55.83 72.71L54.42 73.15L52.97 73.49L51.49 73.74L50.00 73.89L48.49 73.94L46.98 73.89L45.47 73.75L43.96 73.50L42.47 73.16L41.01 72.72L39.56 72.18L38.16 71.54L36.79 70.82L35.47 70.00L34.20 69.09L33.00 68.11L31.85 67.04L30.78 65.90L29.79 64.69L28.87 63.41L28.04 62.07L27.29 60.68L26.64 59.25L26.08 57.77L25.62 56.26L25.27 54.72L25.01 53.16L24.85 51.58L24.80 50.00L24.85 48.42L25.01 46.84L25.27 45.28L25.62 43.74L26.08 42.23L26.64 40.75L27.29 39.32L28.04 37.93L28.87 36.59L29.79 35.31L30.78 34.10L31.85 32.96L33.00 31.89L34.20 30.91L35.47 30.00L36.79 29.18L38.16 28.46L39.56 27.82L41.01 27.28L42.47 26.84L43.96 26.50L45.47 26.25L46.98 26.11L48.49 26.06L50.00 26.11L51.49 26.26L52.97 26.51L54.42 26.85L55.83 27.29L57.21 27.81L58.54 28.42L59.83 29.12L61.06 29.89L62.23 30.73L63.33 31.65L64.37 32.63L65.34 33.67L66.22 34.76L67.03 35.91L67.76 37.09L68.41 38.32L68.97 39.57L69.44 40.85L69.83 42.15L70.12 43.46L70.33 44.78L70.45 46.10L70.49 47.41L70.44 48.71L70.30 50.00L70.08 51.26L69.78 52.50L69.41 53.70L68.96 54.87L68.44 55.99L67.85 57.07L67.20 58.09L66.49 59.06L65.72 59.98L64.91 60.83L64.05 61.62L63.15 62.35L62.21 63.00L61.24 63.59L60.25 64.11L59.24 64.55L58.21 64.93L57.17 65.23L56.12 65.46L55.08 65.62L54.03 65.71L53.00 65.73L51.98 65.69L50.98 65.57L50.00 65.40L49.05 65.16L48.12 64.87L47.23 64.52L46.37 64.12L45.56 63.67L44.78 63.18L44.05 62.64L43.37 62.06L42.73 61.45L42.15 60.81L41.61 60.14L41.13 59.45L40.70 58.74L40.32 58.01L39.99 57.27L39.72 56.52L39.50 55.77L39.33 55.02L39.21 54.27L39.14 53.53L39.13 52.79L39.15 52.07L39.23 51.36L39.34 50.67L39.50 50.00L39.70 49.35L39.93 48.73L40.20 48.13L40.50 47.56L40.83 47.02L41.19 46.51L41.57 46.03L41.98 45.59L42.40 45.18L42.85 44.80L43.30 44.46L43.77 44.15L44.25 43.88L44.74 43.64L45.23 43.43L45.72 43.26L46.22 43.12L46.71 43.01L47.20 42.94L47.69 42.89L48.17 42.88L48.64 42.89L49.11 42.93L49.56 43.00L50.00 43.09L50.43 43.20L50.84 43.34L51.24 43.50L51.62 43.67L51.99 43.87L52.34 44.08L52.68 44.31L52.99 44.55L53.29 44.81L53.57 45.08L53.84 45.36L54.08 45.65L54.31 45.96L54.51 46.27L54.70 46.58L54.87 46.91L55.03 47.24L55.16 47.57L55.28 47.91L55.38 48.25L55.46 48.60L55.52 48.95L55.56 49.30L55.59 49.65L55.60 50.00');
+  offset-anchor: center;
+  offset-rotate: 0deg;
+  will-change: offset-distance;
+  animation: page-loader-travel 3s linear infinite;
+}
+
+/* 整条螺旋的"呼吸"：近似原脚本 4.5s 一次的 detailScale 脉动 */
+.page-loader__group {
+  transform-box: view-box;
+  transform-origin: 50% 50%;
   will-change: transform;
-  animation: page-loader-drift 7s cubic-bezier(0.45, 0, 0.55, 1) infinite;
+  animation: page-loader-breathe 4.5s ease-in-out infinite;
 }
 
-/* ---------- 标记区 ---------- */
-.page-loader__mark {
-  position: relative;
-  display: grid;
-  place-items: center;
-  width: 208px;
-  height: 208px;
-  margin-bottom: 22px;
+@keyframes page-loader-travel {
+  from { offset-distance: 0%; }
+  to   { offset-distance: 100%; }
 }
 
-/* 轨道参考线（静态圆环，给构图以结构） */
-.page-loader__track {
-  position: absolute;
-  border-radius: 50%;
-  border: 1px solid var(--color-line);
+@keyframes page-loader-breathe {
+  0%, 100% { transform: scale(0.96); }
+  50%      { transform: scale(1.045); }
 }
 
-.page-loader__track--a { width: 124px; height: 124px; }
-.page-loader__track--b { width: 168px; height: 168px; border-color: var(--color-line-soft); }
-
-/* 扩散涟漪：两圈错峰放大淡出 */
-.page-loader__ring {
-  position: absolute;
-  width: 108px;
-  height: 108px;
-  border-radius: 50%;
-  border: 2px solid var(--color-brand-300);
-  opacity: 0;
-  will-change: transform, opacity;
-  animation: page-loader-ripple 2.6s cubic-bezier(0.2, 0.6, 0.3, 1) infinite;
-}
-
-.page-loader__ring--b {
-  border-color: var(--color-accent-300);
-  animation-delay: 1.3s;
-}
-
-/* 轨道：整圈旋转，光点挂在轨道顶端 */
-.page-loader__orbit {
-  position: absolute;
-  width: 124px;
-  height: 124px;
-  border-radius: 50%;
-  will-change: transform;
-  animation: page-loader-spin 2.6s linear infinite;
-}
-
-.page-loader__orbit--b {
-  width: 168px;
-  height: 168px;
-  animation-duration: 3.8s;
-  animation-direction: reverse;
-}
-
-/* 光点 + 拖尾（拖尾是伪元素的渐变，同样只做旋转位移） */
-.page-loader__dot {
-  position: absolute;
-  top: -5px;
-  left: 50%;
-  width: 10px;
-  height: 10px;
-  margin-left: -5px;
-  border-radius: 50%;
-  background-color: var(--color-brand-500);
-  box-shadow: 0 0 12px 2px rgba(255, 77, 109, 0.35);
-}
-
-.page-loader__dot::after {
-  content: '';
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  width: 44px;
-  height: 3px;
-  border-radius: 999px;
-  transform: translate(-100%, -50%);
-  background: linear-gradient(90deg, rgba(255, 77, 109, 0) 0%, rgba(255, 77, 109, 0.55) 100%);
-}
-
-.page-loader__dot--accent {
-  width: 8px;
-  height: 8px;
-  margin-left: -4px;
-  background-color: var(--color-accent-500);
-  box-shadow: 0 0 10px 2px rgba(245, 194, 31, 0.35);
-}
-
-.page-loader__dot--accent::after {
-  width: 34px;
-  height: 2px;
-  background: linear-gradient(90deg, rgba(245, 194, 31, 0) 0%, rgba(245, 194, 31, 0.6) 100%);
-}
-
-/* 核心：品牌圆 + 山形标记，缓慢浮沉 */
-.page-loader__core {
-  position: relative;
-  display: grid;
-  place-items: center;
-  width: 76px;
-  height: 76px;
-  border-radius: 50%;
-  background: linear-gradient(150deg, var(--color-brand-400) 0%, var(--color-brand-600) 100%);
-  color: #fff;
-  box-shadow: 0 16px 34px -12px rgba(255, 77, 109, 0.6);
-  will-change: transform;
-  animation: page-loader-float 2.8s ease-in-out infinite;
-}
-
-/* 核心外圈高光：conic 渐变慢转，制造"有光在走"的活力感 */
-.page-loader__core::before {
-  content: '';
-  position: absolute;
-  inset: -6px;
-  border-radius: 50%;
-  background: conic-gradient(from 0deg, rgba(255, 255, 255, 0) 0deg, rgba(255, 255, 255, 0.85) 60deg, rgba(255, 255, 255, 0) 140deg);
-  mask: radial-gradient(farthest-side, transparent calc(100% - 3px), #000 calc(100% - 2px));
-  -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 3px), #000 calc(100% - 2px));
-  will-change: transform;
-  animation: page-loader-spin 3.2s linear infinite;
-}
-
-.page-loader__core svg {
-  width: 34px;
-  height: 34px;
-}
-
-/* ---------- 文案 ---------- */
-.page-loader__brand {
-  margin: 0;
-  font-size: 15px;
-  font-weight: 900;
-  letter-spacing: 0.08em;
-  color: var(--color-ink);
-  will-change: transform, opacity;
-  animation: page-loader-rise 0.6s var(--ease-standard) both;
-}
-
-.page-loader__hint {
-  margin-top: 6px;
-  font-size: 13px;
-  font-weight: 600;
-  letter-spacing: 0.02em;
-  color: var(--color-muted);
-  will-change: transform, opacity;
-  animation: page-loader-rise 0.6s var(--ease-standard) 0.08s both;
-}
-
-/* ---------- 扫光进度条 ---------- */
-.page-loader__bar {
-  position: relative;
-  margin-top: 18px;
-  width: 180px;
-  height: 4px;
-  overflow: hidden;
-  border-radius: 999px;
-  background-color: var(--color-line);
-}
-
-.page-loader__bar-fill {
-  position: absolute;
-  inset: 0 auto 0 0;
-  width: 38%;
-  border-radius: 999px;
-  background: linear-gradient(90deg, var(--color-brand-400), var(--color-accent-400));
-  will-change: transform;
-  animation: page-loader-sweep 1.25s cubic-bezier(0.4, 0, 0.2, 1) infinite;
-}
-
-@keyframes page-loader-spin {
-  to { transform: rotate(360deg); }
-}
-
-@keyframes page-loader-ripple {
-  0%   { transform: scale(0.74); opacity: 0.6; }
-  70%  { transform: scale(1.5); opacity: 0; }
-  100% { transform: scale(1.5); opacity: 0; }
-}
-
-@keyframes page-loader-float {
-  0%, 100% { transform: translateY(-4px); }
-  50%      { transform: translateY(4px); }
-}
-
-@keyframes page-loader-sweep {
-  0%   { transform: translateX(-110%); }
-  100% { transform: translateX(265%); }
-}
-
-@keyframes page-loader-drift {
-  0%   { transform: translateX(-60%); }
-  100% { transform: translateX(170%); }
-}
-
-@keyframes page-loader-rise {
-  from { opacity: 0; transform: translateY(6px); }
-  to   { opacity: 1; transform: translateY(0); }
+@keyframes page-loader-fade-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
 }
 
 @keyframes page-loader-safety {
   to { opacity: 0; pointer-events: none; visibility: hidden; }
 }
 
-/* 减少动效：静态构图 + 进度条满格，不再有旋转/涟漪/扫光/晨光 */
+@media (max-width: 600px) {
+  .page-loader__spiral {
+    width: min(76vmin, 320px);
+  }
+}
+
+/* 减少动效：只留静态螺旋线，粒子隐藏（否则 36 个点会叠在内圈起点上） */
 @media (prefers-reduced-motion: reduce) {
-  .page-loader,
-  .page-loader__ring,
-  .page-loader__orbit,
-  .page-loader__core,
-  .page-loader__core::before,
-  .page-loader__bar-fill,
-  .page-loader__aurora,
-  .page-loader__brand,
-  .page-loader__hint {
+  /*
+   * ⚠️ 这里**故意不包含** `.page-loader` 本身。
+   * 它身上唯一的动画是 `page-loader-safety`（14s 后淡出 + visibility:hidden +
+   * pointer-events:none），那是"JS 崩了 / 水合一直没完成也不能永远挡住页面"的容错兜底，
+   * 不是装饰性动效。以前把 `.page-loader` 也写进 `animation: none !important`，
+   * 结果在"减少动效"系统设置下这条兜底被一并干掉 —— 一旦 JS 挂了，整页会被遮罩永久盖住。
+   * 实测（CDP + prefers-reduced-motion:reduce）：改前 14.6s 后仍是
+   * visibility:visible / pointer-events:auto；改后正常淡出。
+   */
+  .page-loader__spiral,
+  .page-loader__group,
+  .page-loader__particle {
     animation: none !important;
   }
 
-  .page-loader__ring {
-    opacity: 0.3;
-    transform: scale(1.24);
+  .page-loader__particle {
+    display: none;
   }
 
-  .page-loader__bar-fill {
-    width: 100%;
-    background: linear-gradient(90deg, var(--color-brand-300), var(--color-brand-500));
-  }
-
-  .page-loader__aurora {
-    opacity: 0.4;
+  .page-loader__trail {
+    opacity: 0.5;
   }
 }

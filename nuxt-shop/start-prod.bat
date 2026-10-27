@@ -1,7 +1,7 @@
 @echo off
 setlocal
 cd /d "%~dp0"
-if "%PORT%"=="" set PORT=3001
+if "%PORT%"=="" set PORT=5001
 
 REM Shop front-end PRODUCTION server. CikPier tunnel nuxt.frp.cikian.cn points here.
 REM Port must stay 3001. Local dev stays on 3000 via npm run dev.

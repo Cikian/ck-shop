@@ -44,7 +44,7 @@
         :aria-label="revealed ? t('auth.hidePassword') : t('auth.showPassword')"
         :aria-pressed="revealed"
         :title="revealed ? t('auth.hidePassword') : t('auth.showPassword')"
-        @click="revealed = !revealed"
+        @click="toggleRevealed"
       >
         <UIcon :name="revealed ? 'lucide:eye-off' : 'lucide:eye'" class="h-4 w-4" aria-hidden="true" />
       </button>
@@ -88,6 +88,8 @@
  */
 const props = withDefaults(defineProps<{
   label: string
+  /** 原生 name 属性（浏览器密码管理器 / 表单语义需要） */
+  name?: string
   placeholder?: string
   autocomplete?: string
   required?: boolean
@@ -98,7 +100,16 @@ const props = withDefaults(defineProps<{
   showStrength?: boolean
   /** 强度档位：0=空 1=弱 2=中 3=强 */
   strength?: number
+  /**
+   * 明文显示状态。
+   *
+   * 登录/注册页需要把这个状态传给左侧插画（密码可见时角色会捂眼睛），
+   * 所以支持 v-model:revealed；忘记密码等页面不传时，组件内部自己维护，
+   * 行为与改造前完全一致。
+   */
+  revealed?: boolean
 }>(), {
+  name: 'password',
   placeholder: '',
   autocomplete: 'current-password',
   required: true,
@@ -106,16 +117,30 @@ const props = withDefaults(defineProps<{
   error: '',
   showStrength: false,
   strength: 0,
+  revealed: undefined,
 })
 
-const emit = defineEmits<{ blur: [] }>()
+const emit = defineEmits<{
+  blur: []
+  'update:revealed': [value: boolean]
+}>()
 
 const model = defineModel<string>({ required: true })
 
 const { t } = useI18n()
 
-// 默认不显示明文：显式初始值比依赖 type 推导更清楚
-const revealed = ref(false)
+// 本地状态是唯一真源：父组件传了 revealed 时同步进来（v-model:revealed），
+// 没传时也能独立切换 —— 忘记密码等旧调用方不需要改。
+const revealed = ref(props.revealed ?? false)
+
+watch(() => props.revealed, (value) => {
+  if (value !== undefined) revealed.value = value
+})
+
+const toggleRevealed = () => {
+  revealed.value = !revealed.value
+  emit('update:revealed', revealed.value)
+}
 
 const inputId = `pwd-${useId()}`
 const errorId = `${inputId}-error`

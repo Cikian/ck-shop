@@ -1,5 +1,5 @@
 <template>
-  <div class="min-h-screen bg-[var(--color-cream)] pt-navbar">
+  <div class="min-h-[calc(100vh-var(--nav-total-height))] bg-[var(--color-cream)] pt-navbar">
     <div class="mx-auto max-w-7xl px-2 pb-16 sm:px-3 lg:px-4">
       <!-- ===================== 搜索摘要栏 =====================
            首页承担「逛」的职责（有分类卡片），所以本页只做「搜索结果页」：

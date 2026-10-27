@@ -1,5 +1,5 @@
 <template>
-  <div class="min-h-screen bg-[var(--color-cream)] pt-navbar">
+  <div class="min-h-[calc(100vh-var(--nav-total-height))] bg-[var(--color-cream)] pt-navbar">
     <!-- 忘记密码页：邮箱 + 邮箱验证码 + 新密码 + 确认新密码（契约 2.6 / 4.2） -->
     <section class="relative flex justify-center px-4 pb-20 pt-6 sm:px-6 sm:pt-10">
       <div class="pointer-events-none absolute inset-0 overflow-hidden" aria-hidden="true">
@@ -62,6 +62,7 @@
 
               <AuthPasswordField
                 v-model="form.newPassword"
+                name="newPassword"
                 :label="t('auth.newPassword')"
                 :placeholder="t('auth.passwordPlaceholder')"
                 autocomplete="new-password"
@@ -74,6 +75,7 @@
 
               <AuthPasswordField
                 v-model="form.confirmPassword"
+                name="confirmPassword"
                 :label="t('auth.confirmPassword')"
                 :placeholder="t('auth.confirmPasswordPlaceholder')"
                 autocomplete="new-password"

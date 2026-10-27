@@ -1,12 +1,16 @@
 // composables/useProfileFields.ts
 //
-// 个人中心的**展示派生字段**：侧栏资料卡与「个人信息」面板共用同一套派生逻辑。
+// 个人中心的**展示派生字段**：资料卡（hero）与账户资料面板共用同一套派生逻辑。
 //
 // 为什么抽出来：这些 computed 原先都在 pages/profile.vue 里，而它们同时被两处使用
-//   · 左侧资料卡：头像首字母、昵称、注册时间、联系方式；
-//   · 「个人信息」面板：把同样的字段列成 dl 明细（infoRows）。
-// 面板拆成组件后，两处都要用 —— 与其复制一份派生逻辑（字段口径会漂移），
-// 不如都从这里取。数据源是 useAuth() 的 userInfo（全局 useState）。
+//   · 资料卡：头像首字母、昵称、注册时间、联系方式；
+//   · 账户资料面板 / 顶栏：同样的字段。
+// 与其复制一份派生逻辑（字段口径会漂移），不如都从这里取。
+// 数据源是 useAuth() 的 userInfo（全局 useState）。
+//
+// ⚠️ 这里**刻意不再派生 username**（`u_xxxxxxxx`）：
+//   店铺端的用户名是注册时系统生成的内部标识，用户既不能用它登录、也改不了它；
+//   把它摆在个人中心只会让人误以为那是个"账号名"。全站不再展示它。
 
 import { useAuth } from '~~/composables/useAuth'
 import { formatDate } from '~~/composables/useDateTimeFormat'
@@ -19,10 +23,20 @@ export interface ProfileDisplayRow {
 }
 
 export const useProfileFields = () => {
-  const { locale } = useI18n()
+  const { t, locale } = useI18n()
   const { userInfo } = useAuth()
 
-  const displayName = computed(() => userInfo.value?.realname || userInfo.value?.username || '')
+  /**
+   * 昵称：优先用户自己设的 realname；没设过时退回邮箱前缀（比显示"用户"更可辨认），
+   * 都没有才用一句通用称呼。**绝不回退到 username**。
+   */
+  const displayName = computed(() => {
+    const realname = (userInfo.value?.realname || '').trim()
+    if (realname) return realname
+    const email = String(userInfo.value?.email || '')
+    const prefix = email.includes('@') ? email.slice(0, email.indexOf('@')) : ''
+    return prefix || t('profile.unnamedUser')
+  })
 
   /** 头像兜底：没有头像图时用姓名首字母（中文取第一个字） */
   const avatarInitial = computed(() => {
@@ -54,21 +68,5 @@ export const useProfileFields = () => {
     return formatDate(raw, locale.value)
   })
 
-  /** 个人信息面板：只放真实有值的字段，空字段整行不渲染 */
-  const infoRows = computed<ProfileDisplayRow[]>(() => {
-    const rows: ProfileDisplayRow[] = []
-    if (userInfo.value?.realname) {
-      rows.push({ label: 'profile.realname', value: String(userInfo.value.realname), icon: 'lucide:user-round' })
-    }
-    if (userInfo.value?.username) {
-      rows.push({ label: 'profile.username', value: String(userInfo.value.username), icon: 'lucide:at-sign' })
-    }
-    rows.push(...contactRows.value)
-    if (memberSinceText.value) {
-      rows.push({ label: 'profile.memberSince', value: memberSinceText.value, icon: 'lucide:calendar' })
-    }
-    return rows
-  })
-
-  return { displayName, avatarInitial, contactRows, memberSinceText, infoRows }
+  return { displayName, avatarInitial, contactRows, memberSinceText }
 }

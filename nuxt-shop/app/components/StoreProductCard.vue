@@ -108,6 +108,7 @@ import {
   resolveTagTone,
 } from '~~/types/shop-product'
 import { useStorePrice } from '~~/composables/useProducts'
+import { isUnauthorizedError } from '~~/composables/useApiError'
 import { extractCartErrorMessage, useCart } from '~~/composables/useCart'
 import { useAuth } from '~~/composables/useAuth'
 
@@ -221,6 +222,9 @@ async function handleQuickAdd() {
     await addItem({ productId: props.product.id, skuId: '', quantity: 1, source: 'list' })
     toast.add({ title: t('product.addedToCart'), color: 'success', icon: 'lucide:check' })
   } catch (error) {
+    // 401/403 = 登录态已失效：交给全局会话守卫统一清理登录态、提示并跳登录页，
+    // 这里再弹一条"加购失败"只会让用户同时看到两条互相矛盾的提示。
+    if (isUnauthorizedError(error)) return
     toast.add({
       title: t('cart.actionFailed'),
       description: extractCartErrorMessage(error, t('cart.loadErrorDesc')),

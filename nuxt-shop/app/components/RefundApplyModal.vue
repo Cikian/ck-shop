@@ -115,7 +115,7 @@
  *      每次点击都新生成的话幂等就失效了。
  *   3) **items 不传 = 整单全退**。所以全部数量为 0 时不下发 items 字段。
  */
-import { readErrorMessage } from '~~/composables/useApiError'
+import { isUnauthorizedError, readErrorMessage } from '~~/composables/useApiError'
 import { createIdempotencyKey } from '~~/composables/useIdempotencyKey'
 
 /** 退款可选行（直接使用后端 StoreOrderItemVO 的字段名，页面不必再转换一次） */
@@ -234,6 +234,9 @@ async function submit() {
     emit('update:open', false)
     emit('applied')
   } catch (error) {
+    // 401/403 = 登录态已失效：交给全局会话守卫统一清理登录态、提示并跳登录页，
+    // 这里再弹一条"操作失败"只会让用户同时看到两条互相矛盾的提示。
+    if (isUnauthorizedError(error)) return
     toast.add({
       title: t('order.actionFailed'),
       description: readErrorMessage(error, t('order.actionFailed')),

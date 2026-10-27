@@ -183,6 +183,13 @@ export default defineNuxtConfig({
   app: {
     pageTransition: { name: 'page', mode: 'out-in' },
     layoutTransition: { name: 'fade' },
+    head: {
+      link: [
+        { rel: 'icon', type: 'image/svg+xml', href: '/favicon.svg' },
+        { rel: 'icon', type: 'image/png', sizes: '32x32', href: '/favicon-32.png' },
+        { rel: 'apple-touch-icon', sizes: '180x180', href: '/apple-touch-icon.png' },
+      ],
+    },
   },
 
   experimental: {
@@ -258,8 +265,8 @@ export default defineNuxtConfig({
   // 'localhost:3000' 会产出错误的 canonical / sitemap / OG 链接。
   site: {
     url: resolveSiteUrl(),
-    name: process.env.STORE_SITE_NAME || 'Cikian Shop',
-    description: process.env.STORE_SITE_DESCRIPTION || 'Cikian Shop 多店铺商城',
+    name: process.env.STORE_SITE_NAME || 'Lautira',
+    description: process.env.STORE_SITE_DESCRIPTION || 'Lautira 多店铺商城',
     // 与 i18n.defaultLocale 同源，避免两处各写一份默认语言
     defaultLocale: STORE_DEFAULT_LANG,
   },

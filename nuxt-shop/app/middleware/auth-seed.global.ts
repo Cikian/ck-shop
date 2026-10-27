@@ -24,7 +24,7 @@
 
 import type { AuthSession } from '#server/api/auth/session.get'
 import { CART_COUNT_SEEDED_AT_KEY, CART_COUNT_STATE_KEY, CART_UNAUTHORIZED_STATE_KEY } from '~~/composables/useCart'
-import { AUTH_SEEDED_AT_KEY, useAuth } from '~~/composables/useAuth'
+import { useAuth } from '~~/composables/useAuth'
 import type { StoreCartCount } from '~~/types/shop-cart'
 import { normalizeCartCount } from '~~/types/shop-cart'
 
@@ -32,7 +32,7 @@ export default defineNuxtRouteMiddleware(async () => {
   // 客户端不做任何事：那里的登录态由 init-auth.client.ts + 各页面自己的刷新负责
   if (!import.meta.server) return
 
-  const { authChecked, userInfo } = useAuth()
+  const { authChecked, userInfo, markVerified, clearSession } = useAuth()
 
   // 已经播种过（同一次 SSR 里不会发生第二次，但保留幂等，
   // 也方便将来在别的中间件里主动调用）
@@ -42,7 +42,6 @@ export default defineNuxtRouteMiddleware(async () => {
   const count = useState<StoreCartCount>(CART_COUNT_STATE_KEY, () => ({ totalItems: 0, totalQuantity: 0 }))
   const unauthorized = useState<boolean>(CART_UNAUTHORIZED_STATE_KEY, () => false)
   // 播种时间戳：客户端插件/Header 据此跳过冷启动的重复请求（清单 S20）
-  const authSeededAt = useState<number>(AUTH_SEEDED_AT_KEY, () => 0)
   const cartSeededAt = useState<number>(CART_COUNT_SEEDED_AT_KEY, () => 0)
 
   try {
@@ -58,8 +57,9 @@ export default defineNuxtRouteMiddleware(async () => {
       if (!userInfo.value) {
         userInfo.value = sessionUser as unknown as NonNullable<typeof userInfo.value>
       }
-      authChecked.value = true
-      authSeededAt.value = Date.now()
+      // markVerified 同时写 authChecked 与「最近校验时间」：
+      // 客户端拿到这份 payload 后，AUTH_SEED_FRESH_MS 内复用结论，超时则重新校验。
+      markVerified()
 
       // 角标失败不影响页面（与 useCart.refreshCount 的"失败静默"口径一致）
       try {
@@ -72,9 +72,11 @@ export default defineNuxtRouteMiddleware(async () => {
       return
     }
 
-    // 明确未登录：也标记 authChecked，避免受保护页的 auth.ts 再问一次服务端
-    authChecked.value = true
-    authSeededAt.value = Date.now()
+    // 明确未登录：同样标记「刚刚校验过」，避免受保护页的 auth.ts 再问一次服务端；
+    // 同时让客户端在 AUTH_SEED_FRESH_MS 内不必重复校验。
+    // 用 clearSession 而不是只 markVerified：服务端既然判定未登录，
+    // 就不能把任何缓存里的 userInfo 留在 payload 里（否则水合后右上角又是"已登录"）。
+    clearSession()
     cartSeededAt.value = Date.now()
     unauthorized.value = true
   } catch {

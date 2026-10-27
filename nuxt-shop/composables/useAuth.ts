@@ -11,6 +11,12 @@
 // 它不会因为 cookie 过期而消失，所以**不能**用它判断"是否还登录着"。
 // 真正的判定入口是 refreshSession()，它去问服务端（见 server/api/auth/session.get.ts）。
 //
+// 但"问一次"不等于"一直有效"：token 会在两次询问之间过期。所以除了主动校验，
+// 还有两条兜底（缺一条就会出现「token 失效了，右上角却仍显示已登录」）：
+//   · app/middleware/auth.ts —— 受保护页导航时按 AUTH_SEED_FRESH_MS 的新鲜度重新校验；
+//   · app/plugins/api-session-guard.client.ts —— 任何接口返回 401 时统一清态并引导重新登录
+//     （具体动作在 composables/useSessionExpiry.ts）。
+//
 // 契约来自 docs/店铺端账号体系改造-接口契约.md 第 3、4 节。
 // 店铺端**没有用户名登录**：旧的 login({ username, password, captcha, checkKey })
 // 已在本次改造中删除（全仓库唯一调用点 app/pages/login.vue 已重做）。
@@ -52,13 +58,24 @@ interface AuthResult {
 export const resolveAuthErrorMessage = (error: any): string => readErrorMessage(error, '')
 
 /**
- * SSR 播种登录态的时间戳（毫秒）。
+ * 最近一次「服务端权威校验」的时间戳（毫秒）。
  *
- * 用途（清单 S20）：SSR 已经查过一次 /api/auth/session 并把结果种进 useState，
- * 客户端插件没必要在冷启动的同一秒里再问一次。播种后 AUTH_SEED_FRESH_MS 内视为可信。
+ * 三个写入点，全部通过 markVerified() 与 authChecked 一起写：
+ *   · SSR 播种（app/middleware/auth-seed.global.ts）；
+ *   · 客户端 refreshSession()（app/plugins/init-auth.client.ts 冷启动跑一次）；
+ *   · 登录 / 注册成功（acceptAuthResult）。
+ *
+ * 为什么光有 authChecked 不够（**这是「token 失效了却还能进个人中心」的根因**）：
+ * authChecked 只表示「查过一次」，不表示「查出来的结果现在还作数」。
+ * 服务端的 token 会在 BFF 不知情的时候失效（TTL 到点、管理员踢人、别处登录挤掉），
+ * 而 localStorage 里的 user-info 是缓存，不会跟着消失。如果受保护页的导航守卫
+ * 看到 authChecked 就直接复用上次结论，那么「先登录、过一阵 token 过期、再点进个人中心」
+ * 就一路放行 —— 页面显示已登录，接口却全 401。
+ *
+ * 所以：守卫只在「校验足够新鲜」时复用结论，过期了就重新问服务端（见 app/middleware/auth.ts）。
  */
-export const AUTH_SEEDED_AT_KEY = 'auth-seeded-at'
-/** 播种结果的"新鲜期"：超过这个时间客户端仍会重新校验一次 */
+export const AUTH_VERIFIED_AT_KEY = 'auth-verified-at'
+/** 权威校验结果的可信期：超过这个时间，导航守卫会重新问一次服务端 */
 export const AUTH_SEED_FRESH_MS = 60_000
 
 export const useAuth = () => {
@@ -95,6 +112,44 @@ export const useAuth = () => {
     }
   }
 
+  /** 最近一次服务端权威校验的时间戳（毫秒），0 = 从没校验过 */
+  const authVerifiedAt = useState<number>(AUTH_VERIFIED_AT_KEY, () => 0)
+
+  /**
+   * 标记「刚刚做过一次服务端权威校验」。
+   *
+   * authChecked 与时间戳必须成对更新，所以只从这里写 —— 分开写迟早会出现
+   * 「authChecked=true 但 authVerifiedAt=0」，让导航守卫永远认为结果不新鲜。
+   */
+  const markVerified = () => {
+    authChecked.value = true
+    authVerifiedAt.value = Date.now()
+  }
+
+  /**
+   * 上一次权威校验的结论现在还作数吗？
+   *
+   * 受保护页的导航守卫用它决定「复用上次结果」还是「重新问服务端」：
+   * 这是既要「不重复请求」（清单 S20）又要「token 失效能被发现」的唯一平衡点。
+   */
+  const isSessionCheckFresh = (): boolean =>
+    authChecked.value && authVerifiedAt.value > 0 && Date.now() - authVerifiedAt.value < AUTH_SEED_FRESH_MS
+
+  /**
+   * 清空**前端**登录态（userInfo + localStorage 缓存），并把「已校验」标记为刚刚。
+   *
+   * 注意这里**不碰 httpOnly cookie** —— 前端 JS 本来就读不到也删不掉它。
+   * cookie 的作废走两条路：BFF 的 /api/auth/session 发现 401 时会清，
+   * 全局会话守卫（composables/useSessionExpiry.ts）也会调一次 /api/auth/logout 去清。
+   *
+   * 为什么必须同时写 localStorage：不清它的话，下一次刷新页面 restoreUser()
+   * 又会把这份死缓存读回来，右上角继续显示"已登录"。
+   */
+  const clearSession = () => {
+    persistUser(null)
+    markVerified()
+  }
+
   // ★ 登录态的唯一权威判定：问服务端（服务端才看得到 httpOnly cookie 里的 token）。
   //
   // 存在的意义：localStorage 里的 user-info 只是缓存，cookie 过期后它依然在，
@@ -121,7 +176,7 @@ export const useAuth = () => {
     } finally {
       // 放在 finally：无论成功失败都算"校验过了"。
       // 否则网络异常时 authChecked 永远为 false，中间件会一直卡在等待校验的状态。
-      authChecked.value = true
+      markVerified()
     }
   }
 
@@ -137,7 +192,7 @@ export const useAuth = () => {
       persistUser(data.userInfo)
     }
     // 登录接口本身就是一次服务端认证，此刻登录态已被服务端确认，不用再打一次 /api/auth/session。
-    authChecked.value = true
+    markVerified()
     return data as AuthResult
   }
 
@@ -285,9 +340,23 @@ export const useAuth = () => {
 
   const logout = async () => {
     await $fetch('/api/auth/logout', { method: 'POST' })
-    persistUser(null)
-    // 已明确登出，同样算校验完成：中间件不该因为 authChecked 还是 false 而再去问服务端。
-    authChecked.value = true
+    clearSession()
+  }
+
+  /**
+   * 用后端返回的最新资料**局部刷新**共享的 userInfo（并同步 localStorage 缓存）。
+   *
+   * 为什么需要它：改昵称 / 换头像之后，页面顶栏头像、资料卡、下拉菜单都要立刻更新，
+   * 而不是等下一次 /api/auth/session 才变 —— 用户刚点完"保存"，界面却还是旧值，
+   * 看起来就像没保存成功。
+   *
+   * ⚠️ 只接受"服务端已经确认落库"的字段：调用方传进来的应该是
+   * `POST /api/auth/profile/update`、`/api/auth/avatar*` 的**响应体**，
+   * 不能传用户刚输入、还没提交成功的值（那正是旧版"假保存"的坑）。
+   */
+  const updateUserInfo = (patch: Partial<UserInfo>) => {
+    if (!userInfo.value) return
+    persistUser({ ...userInfo.value, ...patch })
   }
 
   const isLoggedIn = computed(() => !!userInfo.value)
@@ -300,6 +369,13 @@ export const useAuth = () => {
     logout,
     restoreUser,
     refreshSession,
+    // 登录态「新鲜度」与本地清态（导航守卫、全局会话守卫共用）
+    authVerifiedAt,
+    markVerified,
+    isSessionCheckFresh,
+    clearSession,
+    // 资料更新后局部刷新共享用户信息（个人中心改昵称/换头像用）
+    updateUserInfo,
     // 本次新增
     sendEmailCode,
     register,

@@ -45,13 +45,14 @@ function retry() {
 <template>
   <div class="flex min-h-dvh flex-col items-center justify-center bg-[var(--color-cream)] px-4 py-16">
     <div class="ui-card w-full max-w-md px-6 py-10 text-center sm:px-10">
-      <div class="mx-auto flex items-center justify-center gap-2">
-        <span class="brand-gradient flex h-10 w-10 items-center justify-center rounded-[12px] text-white">
-          <UIcon name="lucide:zap" class="h-5 w-5" aria-hidden="true" />
-        </span>
-        <span class="text-[17px] font-black tracking-tight text-[var(--color-ink)]">
-          {{ t('shop.brandName', 'Cikian Shop') }}
-        </span>
+      <div class="mx-auto flex items-center justify-center">
+        <img
+          src="/logo/lautira-lockup.svg"
+          :alt="t('shop.brandName')"
+          width="1006"
+          height="312"
+          class="h-10 w-auto"
+        >
       </div>
 
       <p class="price mt-8 text-[56px] leading-none" aria-hidden="true">

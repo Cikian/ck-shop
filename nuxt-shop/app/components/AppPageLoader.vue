@@ -1,26 +1,28 @@
 <!--
   app/components/AppPageLoader.vue
 
-  全屏加载遮罩（2026-10-23 第五轮反馈）。
+  全屏加载遮罩：「螺旋搜索」（Spiral Search / 阿基米德螺旋 + 粒子拖尾）。
 
-  为什么需要它：
-    页面是 SSR 出来的静态 HTML，**水合完成前没有任何事件监听** —— 这段时间里所有按钮
-    （图集缩略图、加购、切换语言…）都点不动，用户会以为"页面卡死了"。
-    与其让用户对着一个"看起来能用、其实点不动"的页面，不如明确地盖一层"正在准备"。
+  来源：用户指定的参考脚本。这里**只保留动画本体**，去掉原脚本里与本站无关的内容
+  （深色底、标题、Archimedean Spiral 标签、公式代码块、View All 按钮），
+  配色换成站内 token：奶油底 + 珊瑚色螺旋线 + 珊瑚粒子拖尾。
 
-  设计（ui-ux-pro-max 的 loading 指引 + 本站 token）：
-    · 结构：品牌核心圆（山形标记）+ 两圈扩散涟漪 + 两条不同速度的轨道光点 + 扫光进度条 + 文案微光；
-    · 动效全部只动 `transform` / `opacity`（合成层完成，不触发布局与重绘），
-      6 个动画元素各自独立，CPU 占用极低；不用 canvas / 不跑 JS 循环 / 不做大面积 blur；
-    · 节奏：核心 2.8s 呼吸浮沉、涟漪 2.4s 错峰、轨道 2.4s / 3.6s 反向、进度条 1.2s 扫光；
-    · 无障碍：role="status" + aria-live，视觉隐藏的「加载中」文案；`prefers-reduced-motion`
-      下所有动画关闭，只留静态标记（进度条改为轻微透明度呼吸）。
+  数学（与参考一致）：
+    θ(t) = 3t
+    r(t) = 8 + (1 - cos t)(10 + 4s)      ← s = detailScale，原脚本 4.5s 一次脉动
+    x(t) = 50 + cos θ · r(t) · 0.70
+    y(t) = 50 + sin θ · r(t) · 0.70
 
-  时序：
-    · SSR 首帧就渲染（CSS 随文档到达即开始动，不依赖 JS）；
-    · 水合完成（onNuxtReady）→ 淡出 320ms → 从 DOM 移除；
-    · 客户端路由切换：只在导航超过 220ms 时出现（快速跳转不闪屏）；
-    · 兜底：即使 JS 崩了，CSS 也会在 14s 后自动淡出并放开点击（`page-loader-safety`）。
+  与参考实现最大的不同：**不跑 requestAnimationFrame**。
+    参考脚本每帧重算 480 段路径 + 50 个粒子；这里把曲线固化成一条 path，
+    粒子用 CSS `offset-path` + `offset-distance` 沿它匀速跑（每个粒子负延时错开），
+    "呼吸"用 `transform: scale` 近似 detailScale 脉动。
+    好处：① 加载遮罩存在的意义就是覆盖"水合之前"那段 JS 还没跑起来的时间，
+    纯 CSS 动画在水合前就能动，而 rAF 版本在那段时间里是静止的；
+    ② 零 rAF、零字符串拼接，主线程完全不参与。
+
+  无障碍：role="status" + aria-live + sr-only「加载中」；prefers-reduced-motion 下全部静止。
+  时序：SSR 首帧渲染 → 水合完成淡出 → 移除；慢导航（>220ms）才出现；JS 崩了 14s 自动放开。
 -->
 <template>
   <div
@@ -31,48 +33,29 @@
     aria-live="polite"
     aria-busy="true"
   >
-    <!-- 背景光晕：静态渐变，不参与动画 -->
-    <span class="page-loader__glow" aria-hidden="true"></span>
+    <svg
+      class="page-loader__spiral"
+      viewBox="0 0 100 100"
+      fill="none"
+      aria-hidden="true"
+    >
+      <g class="page-loader__group">
+        <!-- 轨迹底：一条低透明度的螺旋线 -->
+        <path class="page-loader__trail" :d="spiralPath" stroke-linecap="round" stroke-linejoin="round" />
 
-    <!-- 底部山脊 + 晨光横扫：户外语义的装饰层 -->
-    <span class="page-loader__ridge" aria-hidden="true">
-      <svg viewBox="0 0 1440 148" preserveAspectRatio="none" fill="none" stroke="currentColor" stroke-width="1.5">
-        <path d="M0 118 120 74l70 26 96-52 78 44 92-62 84 52 96-38 88 46 96-58 84 52 92-30 96 34 110-44 110 38" opacity="0.9" />
-        <path d="M0 138 110 104l84 22 92-40 88 32 96-46 82 38 94-28 88 34 96-44 86 38 94-24 92 26 108-32 100 26" opacity="0.55" />
-      </svg>
-    </span>
-    <span class="page-loader__aurora" aria-hidden="true"></span>
-
-    <!-- 标记区 -->
-    <div class="page-loader__mark" aria-hidden="true">
-      <span class="page-loader__track page-loader__track--a"></span>
-      <span class="page-loader__track page-loader__track--b"></span>
-
-      <span class="page-loader__ring page-loader__ring--a"></span>
-      <span class="page-loader__ring page-loader__ring--b"></span>
-
-      <span class="page-loader__orbit page-loader__orbit--a">
-        <span class="page-loader__dot"></span>
-      </span>
-      <span class="page-loader__orbit page-loader__orbit--b">
-        <span class="page-loader__dot page-loader__dot--accent"></span>
-      </span>
-
-      <span class="page-loader__core">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M3 18h18" />
-          <path d="M7 18 12 7l5 11" />
-          <path d="M9.5 14h5" />
-        </svg>
-      </span>
-    </div>
-
-    <!-- 文案 -->
-    <p v-if="storeName" class="page-loader__brand">{{ storeName }}</p>
-    <p class="page-loader__hint">{{ t('common.pageLoading') }}</p>
-
-    <!-- 扫光进度条 -->
-    <span class="page-loader__bar" aria-hidden="true"><span class="page-loader__bar-fill"></span></span>
+        <!-- 粒子：沿同一条曲线匀速跑，越靠后越小越淡（对应参考的 trailSpan 拖尾） -->
+        <circle
+          v-for="particle in particles"
+          :key="particle.index"
+          class="page-loader__particle"
+          cx="50"
+          cy="50"
+          :r="particle.r"
+          :opacity="particle.opacity"
+          :style="{ animationDelay: particle.delay }"
+        />
+      </g>
+    </svg>
 
     <span class="sr-only">{{ t('common.loading') }}</span>
   </div>
@@ -81,12 +64,56 @@
 <script setup lang="ts">
 const { t } = useI18n()
 const nuxtApp = useNuxtApp()
-/** 品牌名来自全站共享的 store-info（SSR 已取好），为空就不显示这一行 */
-const { storeName } = useStoreInfo()
 
-/** 首帧即显示：SSR 输出里就带着遮罩，CSS 到达就开始动 */
+/* ---------------- 螺旋参数（与参考脚本一致） ---------------- */
+const TURNS = 3
+const BASE_R = 8
+const RADIUS_AMP = 10
+const PULSE_AMP = 4
+const SCALE = 0.7
+const STEPS = 300
+const PARTICLE_COUNT = 36
+const TRAIL_SPAN = 0.16
+const CYCLE_MS = 3000
+/** 让粒子别从螺旋内圈起步（首帧就在曲线中段，观感更自然） */
+const PHASE_MS = 1200
+
+function spiralPoint(progress: number) {
+  const t = progress * Math.PI * 2
+  const angle = t * TURNS
+  // detailScale 固定为 1：形状不再逐帧变形，改由 CSS 的 scale 呼吸近似
+  const radius = BASE_R + (1 - Math.cos(t)) * (RADIUS_AMP + PULSE_AMP)
+  return {
+    x: 50 + Math.cos(angle) * radius * SCALE,
+    y: 50 + Math.sin(angle) * radius * SCALE,
+  }
+}
+
+/** SSR 期算好（确定性，服务端/客户端结果一致），首帧就有完整螺旋 */
+const spiralPath = (() => {
+  let d = ''
+  for (let i = 0; i <= STEPS; i++) {
+    const point = spiralPoint(i / STEPS)
+    d += `${i === 0 ? 'M' : 'L'}${point.x.toFixed(2)} ${point.y.toFixed(2)}`
+  }
+  return d
+})()
+
+/** 每个粒子的静态外观 + 负延时（负延时 = 已经在曲线上跑了一段） */
+const particles = Array.from({ length: PARTICLE_COUNT }, (_, index) => {
+  const tailOffset = index / (PARTICLE_COUNT - 1)
+  const fade = Math.pow(1 - tailOffset, 0.56)
+  const lagMs = tailOffset * TRAIL_SPAN * CYCLE_MS
+  return {
+    index,
+    r: (0.7 + Math.pow(fade, 1.25) * 2.3).toFixed(2),
+    opacity: (0.04 + fade * 0.96).toFixed(3),
+    delay: `${-(CYCLE_MS - lagMs + PHASE_MS).toFixed(0)}ms`,
+  }
+})
+
+/* ---------------- 显示 / 隐藏（时序与之前一致） ---------------- */
 const visible = ref(true)
-/** 正在淡出：先过渡，再从 DOM 移除（避免过渡期间残留可点击层） */
 const leaving = ref(false)
 
 let removeTimer: ReturnType<typeof setTimeout> | null = null
@@ -95,7 +122,7 @@ let navShowTimer: ReturnType<typeof setTimeout> | null = null
 function hide() {
   if (leaving.value) return
   leaving.value = true
-  removeTimer = setTimeout(() => { visible.value = false }, 340)
+  removeTimer = setTimeout(() => { visible.value = false }, 320)
 }
 
 function show() {
@@ -105,19 +132,12 @@ function show() {
 }
 
 onMounted(() => {
-  /*
-   * 首屏：等 Nuxt 完成水合再收。
-   * 用 onNuxtReady 而不是 onMounted —— onMounted 只说明"这个组件挂上了"，
-   * 此时页面里其它组件的事件监听还没装好，收起遮罩等于把用户交回一个点不动的页面。
-   */
+  // 首屏：等 Nuxt 完成水合再收（onMounted 时其它组件的事件监听还没装好）
   onNuxtReady(() => {
     requestAnimationFrame(() => hide())
   })
 
-  /*
-   * 客户端路由切换：只在"导航超过 220ms"时出现。
-   * 阈值是为了避免快速跳转时遮罩闪一下（loading 指引：near-instant 的等待不要给闪烁反馈）。
-   */
+  // 客户端路由切换：只在"导航超过 220ms"时出现，避免快跳闪屏
   const offStart = nuxtApp.hook('page:loading:start', () => {
     navShowTimer = setTimeout(() => show(), 220)
   })

@@ -28,6 +28,16 @@ export const useOrderList = () => {
   const pageNo = useState<number>('profile-orders-page', () => 1)
   const loading = useState<boolean>('profile-orders-loading', () => false)
   const error = useState<string>('profile-orders-error', () => '')
+  /**
+   * 是否已经**跑过一次**加载（成功或失败都算）。
+   *
+   * 用途：区分"还没加载过"与"加载完了确实是空列表"。
+   * 少了它，面板只能写 `loading && !orders.length` 当骨架条件 ——
+   * 而 SSR 时 loading 恒 false、orders 恒空，服务端会渲染「暂无订单」空态，
+   * 客户端 hydrate 那一刻 loading 已经是 true（会渲染骨架），两边一不一致就是
+   * `Hydration completed but contains mismatches`（真实出现过，控制台可见）。
+   */
+  const loaded = useState<boolean>('profile-orders-loaded', () => false)
 
   /**
    * SSR 也要能带上 httpOnly cookie 取订单。
@@ -70,7 +80,10 @@ export const useOrderList = () => {
       error.value = readErrorMessage(err, t('order.loadErrorDesc'))
     } finally {
       // 旧请求不能把 loading 关掉：更新的请求可能还在路上
-      if (isLatest()) loading.value = false
+      if (isLatest()) {
+        loading.value = false
+        loaded.value = true
+      }
     }
   }
 
@@ -81,5 +94,5 @@ export const useOrderList = () => {
     void load()
   }
 
-  return { orders, total, pageNo, loading, error, totalPages, currentPage, load, goToPage }
+  return { orders, total, pageNo, loading, loaded, error, totalPages, currentPage, load, goToPage }
 }

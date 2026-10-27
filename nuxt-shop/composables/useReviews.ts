@@ -23,7 +23,7 @@ import type {
 } from '~~/types/shop-review'
 import { normalizeReviewPage, normalizeReviewSubmitResult, normalizeReviewableItems } from '~~/types/shop-review'
 import { useAuth } from '~~/composables/useAuth'
-import { readErrorMessage } from '~~/composables/useApiError'
+import { isUnauthorizedError, readErrorMessage } from '~~/composables/useApiError'
 import { useLatestRequest } from '~~/composables/useLatestRequest'
 
 /** 详情页每页评价条数（10 条一屏，避免首屏 DOM 过重） */
@@ -170,6 +170,9 @@ export function useProductReviews(productId: MaybeRefOrGetter<string | undefined
       }
     } catch (err) {
       if (!isLatest()) return
+      // 401/403 = 登录态已失效：交给全局会话守卫统一清理登录态、提示并跳登录页，
+      // 这里再写一条"评价加载失败"只会让用户同时看到两条互相矛盾的提示。
+      if (isUnauthorizedError(err)) return
       error.value = extractReviewErrorMessage(err, '')
       if (!append) {
         summary.value = null
@@ -235,6 +238,9 @@ export function useOrderReviews(orderNo: MaybeRefOrGetter<string | undefined>) {
       })
       items.value = normalizeReviewableItems(raw)
     } catch (err) {
+      // 401/403 = 登录态已失效：交给全局会话守卫统一清理登录态、提示并跳登录页，
+      // 这里再写一条"可评价明细加载失败"只会让用户同时看到两条互相矛盾的提示。
+      if (isUnauthorizedError(err)) return
       error.value = extractReviewErrorMessage(err, '')
       items.value = []
     } finally {

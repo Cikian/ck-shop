@@ -22,7 +22,7 @@ import type { StoreFavoriteStatus } from '~~/types/shop-favorite'
 import type { StoreProductPage } from '~~/types/shop-product'
 import { normalizeFavoriteStatus } from '~~/types/shop-favorite'
 import { useAuth } from '~~/composables/useAuth'
-import { readErrorMessage } from '~~/composables/useApiError'
+import { isUnauthorizedError, readErrorMessage } from '~~/composables/useApiError'
 import { useLatestRequest } from '~~/composables/useLatestRequest'
 
 /**
@@ -159,6 +159,9 @@ export function useFavoriteList(pageSize: number = STORE_FAVORITE_PAGE_SIZE) {
       pageNo.value = page.current
     } catch (err) {
       if (!isLatest()) return
+      // 401/403 = 登录态已失效：交给全局会话守卫统一清理登录态、提示并跳登录页，
+      // 这里再写一条"收藏加载失败"只会让用户同时看到两条互相矛盾的提示。
+      if (isUnauthorizedError(err)) return
       error.value = extractFavoriteErrorMessage(err, '')
       items.value = []
       total.value = 0

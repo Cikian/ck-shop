@@ -32,11 +32,14 @@
     -->
     <div class="mx-auto max-w-7xl px-2 py-12 sm:px-3 lg:px-4">
       <div class="max-w-xl">
-        <div class="flex items-center gap-2">
-          <span class="brand-gradient flex h-8 w-8 items-center justify-center rounded-[10px] text-white">
-            <UIcon name="lucide:zap" class="h-4 w-4" aria-hidden="true" />
-          </span>
-          <span class="text-[15px] font-black tracking-tight">{{ brandName }}</span>
+        <div class="flex items-center">
+          <img
+            src="/logo/lautira-lockup-white.svg"
+            :alt="brandName"
+            width="1006"
+            height="312"
+            class="h-8 w-auto"
+          >
         </div>
         <p class="mt-3 max-w-xs text-[13px] leading-relaxed text-white/55">
           {{ t('home.description') }}

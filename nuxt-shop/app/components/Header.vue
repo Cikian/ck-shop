@@ -9,20 +9,16 @@
   <header ref="headerRef" class="fixed inset-x-0 top-0 z-50 bg-white shadow-[0_1px_0_rgba(31,26,28,0.06)]">
     <!-- Row 1 -->
     <div class="mx-auto flex h-16 max-w-7xl items-center gap-3 px-2 sm:px-3 lg:px-4">
-      <!-- Logo -->
-      <NuxtLinkLocale to="/" class="flex min-w-0 shrink items-center gap-2" :aria-label="brandName">
-        <span
-          class="brand-gradient flex h-9 w-9 shrink-0 items-center justify-center rounded-[12px] text-white shadow-[0_4px_12px_-2px_rgba(255,77,109,0.5)]"
+      <!-- Logo：品牌 SVG lockup（图形标 + 字标），不再用图标 + 文本拼 -->
+      <NuxtLinkLocale to="/" class="flex min-w-0 shrink items-center" :aria-label="brandName">
+        <img
+          src="/logo/lautira-lockup.svg"
+          :alt="brandName"
+          width="1006"
+          height="312"
+          class="h-9 w-auto sm:h-11"
+          fetchpriority="high"
         >
-          <UIcon name="lucide:zap" class="h-5 w-5" aria-hidden="true" />
-        </span>
-        <!--
-          移动端也保留字标（清单 S24）：以前是 hidden sm:inline，390px 下只剩一个闪电图标，
-          用户看不出这是哪个店。这里小一号 + 允许截断，窄屏也不会挤掉右侧的购物车/汉堡。
-        -->
-        <span class="max-w-[36vw] truncate text-[14px] font-black tracking-tight text-[var(--color-ink)] sm:max-w-none sm:text-[17px]">
-          {{ brandName }}
-        </span>
       </NuxtLinkLocale>
 
       <!-- Desktop search -->

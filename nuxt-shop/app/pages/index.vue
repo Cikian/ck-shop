@@ -1,5 +1,5 @@
 <template>
-  <div class="min-h-screen bg-[var(--color-cream)] pt-navbar">
+  <div class="min-h-[calc(100vh-var(--nav-total-height))] bg-[var(--color-cream)] pt-navbar">
     <div class="mx-auto max-w-7xl px-2 pb-4 sm:px-3 lg:px-4">
       <!--
         ===================== 首屏（设计稿第 3 行）=====================
@@ -27,7 +27,18 @@
         </button>
       </div>
 
-      <div class="grid gap-5 lg:grid-cols-[236px_minmax(0,1fr)]">
+      <!--
+        `grid-cols-1` 不是多余的：<1024px 时若只写 `lg:grid-cols-*`，移动端就没有显式
+        grid-template-columns，只剩一条隐式 auto 轨道。auto 轨道的下限是子项的
+        min-content —— 而右列里的分类药丸条（overflow-x-auto 横向滚动）min-content
+        在法语下是 622px（分类名比中文长），于是整列被撑到 614px，
+        document.scrollWidth 627 > clientWidth 390，整页横向溢出 237px。
+        移动浏览器检测到溢出会把整页缩小（innerWidth 变 627、clientWidth 仍 390），
+        看起来就像「轮播图超宽」，同时 width:100vw 的加载遮罩只盖住 390/627 ≈ 62%。
+        grid-cols-1 = repeat(1, minmax(0,1fr))，min 是 0 不是 auto，
+        列宽因此只由容器决定，药丸条退化成"在列内自己横滑"。
+      -->
+      <div class="grid grid-cols-1 gap-5 lg:grid-cols-[236px_minmax(0,1fr)]">
         <HomeCategoryMenu
           class="hidden lg:flex"
           :categories="categories"

@@ -1,6 +1,6 @@
 <template>
-  <div class="min-h-screen bg-[var(--color-cream)] pt-navbar">
-    <div class="mx-auto max-w-7xl px-2 pb-32 sm:px-3 lg:pb-16 lg:px-4">
+  <div class="flex min-h-[calc(100vh-var(--nav-total-height))] flex-col bg-[var(--color-cream)] pt-navbar">
+    <div class="mx-auto flex w-full max-w-7xl flex-1 flex-col px-2 pb-32 sm:px-3 lg:pb-16 lg:px-4">
       <!-- 标题行 -->
       <header class="mb-5 flex flex-wrap items-end justify-between gap-x-4 gap-y-2">
         <div>
@@ -22,7 +22,7 @@
 
       <Transition name="fade" mode="out-in">
       <!-- 未登录 -->
-      <section v-if="unauthorized" key="unauthorized" class="ui-card px-6 py-16 text-center">
+      <section v-if="unauthorized" key="unauthorized" class="ui-card flex flex-1 flex-col items-center justify-center px-6 py-16 text-center">
         <span class="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-[var(--color-brand-50)]">
           <UIcon name="lucide:lock" class="h-8 w-8 text-[var(--color-brand-500)]" aria-hidden="true" />
         </span>
@@ -35,7 +35,7 @@
       </section>
 
       <!-- 加载失败 -->
-      <section v-else-if="loadError" key="error" class="ui-card px-6 py-16 text-center">
+      <section v-else-if="loadError" key="error" class="ui-card flex flex-1 flex-col items-center justify-center px-6 py-16 text-center">
         <span class="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-[var(--color-error)]/10">
           <UIcon name="lucide:wifi-off" class="h-8 w-8 text-[var(--color-error)]" aria-hidden="true" />
         </span>
@@ -48,7 +48,7 @@
       </section>
 
       <!-- 没有待结算商品（直接从地址栏打开 /checkout，或购物车勾选已被清空） -->
-      <section v-else-if="ready && !snapshotItems.length" key="empty" class="ui-card px-6 py-20 text-center">
+      <section v-else-if="ready && !snapshotItems.length" key="empty" class="ui-card flex flex-1 flex-col items-center justify-center px-6 py-20 text-center">
         <span class="mx-auto flex h-20 w-20 items-center justify-center rounded-full bg-[var(--color-brand-50)]">
           <UIcon name="lucide:shopping-cart" class="h-9 w-9 text-[var(--color-brand-400)]" aria-hidden="true" />
         </span>

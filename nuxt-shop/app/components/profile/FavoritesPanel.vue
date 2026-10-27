@@ -13,6 +13,8 @@
   面板只负责渲染 + 行内操作，不做重复请求。
 -->
 <template>
+  <!-- flex flex-1 flex-col：让空态能在伸展后的内容卡里垂直居中（内容少时不留大片死白） -->
+  <div class="flex flex-1 flex-col">
   <p v-if="favoritesLoaded && favoriteTotal > 0" class="mt-1.5 text-[13px] text-[var(--color-muted)]">
     {{ t('shop.profileFavoritesTotal', { count: favoriteTotal }) }}
   </p>
@@ -81,7 +83,7 @@
     </TransitionGroup>
 
     <!-- 真的没有收藏 -->
-    <div v-else key="empty" class="flex flex-col items-center justify-center py-14 text-center">
+    <div v-else key="empty" class="flex flex-1 flex-col items-center justify-center py-14 text-center">
       <span class="flex h-20 w-20 items-center justify-center rounded-full bg-[var(--color-brand-50)] text-[var(--color-brand-400)]">
         <UIcon name="lucide:heart-off" class="h-9 w-9" aria-hidden="true" />
       </span>
@@ -94,9 +96,11 @@
       </NuxtLinkLocale>
     </div>
   </Transition>
+  </div>
 </template>
 
 <script setup lang="ts">
+import { isUnauthorizedError } from '~~/composables/useApiError'
 import { extractFavoriteErrorMessage, useFavoriteList } from '~~/composables/useFavorites'
 import { useStorePrice } from '~~/composables/useProducts'
 import { resolveCoverUrl, resolvePriceView } from '~~/types/shop-product'
@@ -135,6 +139,9 @@ async function handleRemoveFavorite(productId: string) {
     await removeFavorite(productId)
     toast.add({ title: t('product.removedFromWishlist'), color: 'success', icon: 'lucide:heart-off' })
   } catch (error) {
+    // 401/403 = 登录态已失效：交给全局会话守卫统一清理登录态、提示并跳登录页，
+    // 这里再弹一条"操作失败"只会让用户同时看到两条互相矛盾的提示。
+    if (isUnauthorizedError(error)) return
     toast.add({
       title: t('product.wishlistFailed'),
       description: extractFavoriteErrorMessage(error, t('shop.profileFavoritesLoadError')),
