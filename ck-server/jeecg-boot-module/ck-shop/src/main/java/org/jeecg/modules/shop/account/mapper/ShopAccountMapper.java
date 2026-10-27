@@ -115,6 +115,29 @@ public interface ShopAccountMapper extends BaseMapper<ShopAccountUser> {
                          @Param("salt") String salt,
                          @Param("pwdSet") Integer pwdSet);
 
+    /**
+     * 保存个人资料（昵称 + 手机号）。
+     *
+     * <p>只写这两列：邮箱是登录标识、username 不可改、密码另走 {@code updateCredential}。
+     * 显式列名让"这个接口能改什么"在 SQL 层面一目了然。</p>
+     *
+     * <p>{@code phone} 传 null 表示清空（写 NULL，而不是空串）——
+     * {@code uniq_sys_user_phone} 是唯一索引，多个账号写空串会互相冲突。</p>
+     *
+     * @return 受影响行数（0 表示用户不存在或已注销）
+     */
+    int updateProfile(@Param("userId") String userId,
+                      @Param("realname") String realname,
+                      @Param("phone") String phone);
+
+    /**
+     * 更新头像（null 表示恢复默认：无头像）。
+     *
+     * @return 受影响行数（0 表示用户不存在或已注销）
+     */
+    int updateAvatar(@Param("userId") String userId,
+                     @Param("avatar") String avatar);
+
     // ==================================================================
     // 角色
     // ==================================================================

@@ -8,11 +8,14 @@ import org.jeecg.modules.shop.account.entity.dto.LoginPasswordDTO;
 import org.jeecg.modules.shop.account.entity.dto.RegisterDTO;
 import org.jeecg.modules.shop.account.entity.dto.ResetPasswordDTO;
 import org.jeecg.modules.shop.account.entity.dto.SendEmailCodeDTO;
+import org.jeecg.modules.shop.account.entity.dto.UpdateAvatarDTO;
+import org.jeecg.modules.shop.account.entity.dto.UpdateProfileDTO;
 import org.jeecg.modules.shop.account.entity.vo.GoogleAuthUrlVO;
 import org.jeecg.modules.shop.account.entity.vo.LoginResultVO;
 import org.jeecg.modules.shop.account.entity.vo.PasswordOpVO;
 import org.jeecg.modules.shop.account.entity.vo.SendEmailCodeVO;
 import org.jeecg.modules.shop.account.entity.vo.ShopProfileVO;
+import org.springframework.web.multipart.MultipartFile;
 
 /**
  * <p>
@@ -106,4 +109,31 @@ public interface IShopAccountService {
      * @return 新的 token（有效期与登录时一致）
      */
     String refreshToken(String userId);
+
+    // ==================================================================
+    // 2.9 个人中心：保存资料 / 换头像（均需登录）
+    // ==================================================================
+
+    /**
+     * 保存个人资料（昵称 + 手机号）。
+     *
+     * <p>{@code userId} 由 Controller 从登录态取出，**绝不接受请求体传入**（水平越权防护）。
+     *
+     * @return 保存后的最新资料（前端直接用它刷新共享的 userInfo，不必再拉一次 /profile）
+     */
+    ShopProfileVO updateProfile(UpdateProfileDTO dto, String userId);
+
+    /**
+     * 选择预设头像 / 恢复默认头像。
+     *
+     * <p>只接受服务端白名单里的站内路径或空串，不接受任意 URL。
+     */
+    ShopProfileVO updateAvatar(UpdateAvatarDTO dto, String userId);
+
+    /**
+     * 上传自定义头像：校验图片类型与体积 → 存入 OSS → 写 sys_user.avatar。
+     *
+     * <p>URL 由**服务端**生成后入库，前端拿不到"自己指定 URL"的能力。
+     */
+    ShopProfileVO uploadAvatar(MultipartFile file, String userId);
 }

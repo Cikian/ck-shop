@@ -13,6 +13,8 @@ import org.jeecg.modules.shop.account.entity.dto.LoginPasswordDTO;
 import org.jeecg.modules.shop.account.entity.dto.RegisterDTO;
 import org.jeecg.modules.shop.account.entity.dto.ResetPasswordDTO;
 import org.jeecg.modules.shop.account.entity.dto.SendEmailCodeDTO;
+import org.jeecg.modules.shop.account.entity.dto.UpdateAvatarDTO;
+import org.jeecg.modules.shop.account.entity.dto.UpdateProfileDTO;
 import org.jeecg.modules.shop.account.entity.vo.GoogleAuthUrlVO;
 import org.jeecg.modules.shop.account.entity.vo.LoginResultVO;
 import org.jeecg.modules.shop.account.entity.vo.PasswordOpVO;
@@ -27,6 +29,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.multipart.MultipartFile;
 
 /**
  * <p>
@@ -169,6 +172,39 @@ public class ShopAccountController {
     public Result<ShopProfileVO> profile() {
         LoginUser user = requireLoginUser();
         return Result.OK(shopAccountService.profile(user.getId()));
+    }
+
+    // ==================================================================
+    // 2.9 个人中心：保存资料 / 换头像（需登录，**不在** Shiro 白名单）
+    // ==================================================================
+
+    /** 保存昵称 / 手机号。用户 ID 只从登录态取（水平越权防护）。 */
+    @Operation(summary = "店铺端-保存个人资料")
+    @PostMapping(value = "/profile/update")
+    public Result<ShopProfileVO> updateProfile(@RequestBody UpdateProfileDTO dto) {
+        LoginUser user = requireLoginUser();
+        return Result.OK("保存成功", shopAccountService.updateProfile(dto, user.getId()));
+    }
+
+    /** 选择预设头像 / 恢复默认（空串）。 */
+    @Operation(summary = "店铺端-选择预设头像")
+    @PostMapping(value = "/profile/avatar")
+    public Result<ShopProfileVO> updateAvatar(@RequestBody UpdateAvatarDTO dto) {
+        LoginUser user = requireLoginUser();
+        return Result.OK("头像已更新", shopAccountService.updateAvatar(dto, user.getId()));
+    }
+
+    /**
+     * 上传自定义头像（multipart/form-data，字段名 {@code file}）。
+     *
+     * <p>BFF 侧已用 sharp 裁成 512×512 的 webp，这里再按文件头魔数与 2MB 上限复核一次 ——
+     * 接口是可直接调用的，不能假设调用方一定是我们自己的前端。</p>
+     */
+    @Operation(summary = "店铺端-上传自定义头像")
+    @PostMapping(value = "/profile/avatar/upload")
+    public Result<ShopProfileVO> uploadAvatar(@RequestParam("file") MultipartFile file) {
+        LoginUser user = requireLoginUser();
+        return Result.OK("头像已更新", shopAccountService.uploadAvatar(file, user.getId()));
     }
 
     /**

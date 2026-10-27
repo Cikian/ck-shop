@@ -3,6 +3,7 @@ package org.jeecg.modules.shop.account.service.impl;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.extern.slf4j.Slf4j;
 import cn.cikian.captcha.client.ticket.CaptchaTicketService;
+import cn.cikian.oss.service.OssServiceContext;
 import org.apache.commons.lang3.StringUtils;
 import org.jeecg.common.constant.CommonConstant;
 import org.jeecg.common.exception.JeecgBootException;
@@ -21,6 +22,8 @@ import org.jeecg.modules.shop.account.entity.dto.LoginPasswordDTO;
 import org.jeecg.modules.shop.account.entity.dto.RegisterDTO;
 import org.jeecg.modules.shop.account.entity.dto.ResetPasswordDTO;
 import org.jeecg.modules.shop.account.entity.dto.SendEmailCodeDTO;
+import org.jeecg.modules.shop.account.entity.dto.UpdateAvatarDTO;
+import org.jeecg.modules.shop.account.entity.dto.UpdateProfileDTO;
 import org.jeecg.modules.shop.account.entity.vo.GoogleAuthUrlVO;
 import org.jeecg.modules.shop.account.entity.vo.LoginResultVO;
 import org.jeecg.modules.shop.account.entity.vo.LoginUserVO;
@@ -35,11 +38,18 @@ import org.jeecg.modules.shop.account.service.ShopLoginLogRecorder;
 import org.jeecg.modules.shop.common.ShopRateLimiter;
 import org.jeecg.modules.shop.store.StoreResolver;
 import org.jeecg.modules.shop.store.entity.ShopStore;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.multipart.MultipartFile;
 
+import java.io.IOException;
+import java.io.InputStream;
+import java.net.URL;
 import java.text.SimpleDateFormat;
 import java.util.Date;
+import java.util.Locale;
 import java.util.concurrent.ThreadLocalRandom;
 
 /**
@@ -111,6 +121,19 @@ public class ShopAccountServiceImpl implements IShopAccountService {
     /** Redis 固定窗口限流：按 IP 限制发信/登录/注册/验证码尝试，防脚本刷 */
     private final ShopRateLimiter rateLimiter;
 
+    /**
+     * 站内对象存储（cik-oss，由 ck.oss.* 装配）。
+     *
+     * <p>头像必须落在**我们自己的**存储里：让用户直接填一个外部图片 URL 的话，
+     * 那张图随时可能被第三方替换（换成违规内容）或下线（前台裂图），
+     * 而且每次渲染都会向外部域名发请求（追踪像素）。</p>
+     */
+    private final OssServiceContext ossServiceContext;
+
+    /** OSS 对象目录前缀（与 {@code ck.oss.object-dir-prefix} 一致） */
+    @Value("${ck.oss.object-dir-prefix:}")
+    private String ossDirPrefix;
+
     public ShopAccountServiceImpl(ShopAccountMapper shopAccountMapper,
                                   ShopEmailCodeService emailCodeService,
                                   ShopGoogleOAuthService googleOAuthService,
@@ -119,7 +142,8 @@ public class ShopAccountServiceImpl implements IShopAccountService {
                                   RedisUtil redisUtil,
                                   CaptchaTicketService captchaTicketService,
                                   ShopAccountSupport accountSupport,
-                                  ShopRateLimiter rateLimiter) {
+                                  ShopRateLimiter rateLimiter,
+                                  OssServiceContext ossServiceContext) {
         this.shopAccountMapper = shopAccountMapper;
         this.emailCodeService = emailCodeService;
         this.googleOAuthService = googleOAuthService;
@@ -129,6 +153,7 @@ public class ShopAccountServiceImpl implements IShopAccountService {
         this.captchaTicketService = captchaTicketService;
         this.accountSupport = accountSupport;
         this.rateLimiter = rateLimiter;
+        this.ossServiceContext = ossServiceContext;
     }
 
     // ==================================================================
@@ -590,6 +615,279 @@ public class ShopAccountServiceImpl implements IShopAccountService {
                 .setHasPassword(hasRealPassword(sysUser))
                 .setRegisterStoreCode(sysUser.getRegisterStoreCode())
                 .setCreateTime(formatDate(sysUser.getCreateTime()));
+    }
+
+    // ==================================================================
+    // 2.9 个人中心：保存资料 / 换头像
+    // ==================================================================
+
+    /**
+     * 保存个人资料（昵称 + 手机号）。
+     *
+     * <p><b>为什么这个接口是"真写库"而不是只改前端状态</b>：旧版个人中心的"保存修改"
+     * 只把内容塞进 localStorage 里那份用于显示的缓存，服务器完全不知道 ——
+     * 换设备/清缓存就变回原值，用户会认为"保存没生效"。既然要做个人中心，
+     * 就必须有一个真正落库的入口。</p>
+     *
+     * <p>手机号在 {@code sys_user} 上是唯一索引：撞索引时转成明确的业务提示，
+     * 不能把 {@code DuplicateKeyException} 抛到全局异常处理器变成一句"系统异常"。</p>
+     */
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public ShopProfileVO updateProfile(UpdateProfileDTO dto, String userId) {
+        ShopAccountUser sysUser = requireActiveShopCustomer(userId);
+        if (dto == null) {
+            throw new JeecgBootException("请求参数不能为空");
+        }
+        String realname = normalizeRealname(dto.getRealname());
+        String phone = normalizePhone(dto.getPhone());
+        try {
+            int updated = shopAccountMapper.updateProfile(sysUser.getId(), realname, phone);
+            if (updated <= 0) {
+                throw new JeecgBootException("资料保存失败，请稍后重试");
+            }
+        } catch (DuplicateKeyException e) {
+            // uniq_sys_user_phone
+            throw new JeecgBootException("该手机号已被其他账号使用");
+        }
+        log.info("店铺端资料已更新，userId={}，realname={}，phone已设置={}",
+                sysUser.getId(), realname, phone != null);
+        return profile(sysUser.getId());
+    }
+
+    /**
+     * 选择预设头像 / 恢复默认头像。
+     *
+     * <p>只接受白名单里的站内路径或空串：</p>
+     * <ul>
+     *   <li>空串 = 恢复默认（库里写 NULL，前端回落到昵称首字母占位）；</li>
+     *   <li>命中 {@link ShopAccountConstant#PRESET_AVATARS} 才允许 —— 这条路走不通任意 URL，</li>
+     * </ul>
+     */
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public ShopProfileVO updateAvatar(UpdateAvatarDTO dto, String userId) {
+        ShopAccountUser sysUser = requireActiveShopCustomer(userId);
+        String avatar = dto == null ? "" : StringUtils.trimToEmpty(dto.getAvatar());
+        if (StringUtils.isNotEmpty(avatar) && !ShopAccountConstant.PRESET_AVATARS.contains(avatar)) {
+            throw new JeecgBootException("头像来源不合法，请重新选择");
+        }
+        int updated = shopAccountMapper.updateAvatar(sysUser.getId(),
+                StringUtils.isEmpty(avatar) ? null : avatar);
+        if (updated <= 0) {
+            throw new JeecgBootException("头像保存失败，请稍后重试");
+        }
+        // 从"自己上传的图"切到预设头像 / 恢复默认时，把那张上传的图一并清掉，
+        // 否则 OSS 里会不断留下没人引用的孤儿对象（用户每次换一次就漏一张）。
+        deleteOldUploadedAvatar(sysUser.getAvatar());
+        log.info("店铺端头像已更新（{}），userId={}",
+                StringUtils.isEmpty(avatar) ? "恢复默认" : avatar, sysUser.getId());
+        return profile(sysUser.getId());
+    }
+
+    /**
+     * 上传自定义头像：类型/体积校验 → 落 OSS → 写库。
+     *
+     * <p>三重校验的理由：前端（BFF）已经用 sharp 裁成 512×512 webp，
+     * 但接口是公开可调的，不能假设调用方一定是我们的前端 ——
+     * 这里按**文件头魔数**判断真实类型（不信 Content-Type），并硬性限制 2MB。</p>
+     *
+     * <p>URL 由服务端生成后直接写库，用户拿不到"自己指定头像地址"的能力。</p>
+     */
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public ShopProfileVO uploadAvatar(MultipartFile file, String userId) {
+        ShopAccountUser sysUser = requireActiveShopCustomer(userId);
+        if (file == null || file.isEmpty()) {
+            throw new JeecgBootException("请选择要上传的头像图片");
+        }
+        if (file.getSize() > ShopAccountConstant.AVATAR_MAX_BYTES) {
+            throw new JeecgBootException("图片体积过大，请控制在 2MB 以内");
+        }
+
+        byte[] data;
+        try (InputStream in = file.getInputStream()) {
+            data = in.readNBytes((int) ShopAccountConstant.AVATAR_MAX_BYTES + 1);
+        } catch (IOException e) {
+            log.warn("头像文件读取失败，userId={}", sysUser.getId(), e);
+            throw new JeecgBootException("图片读取失败，请重试");
+        }
+        if (data.length > ShopAccountConstant.AVATAR_MAX_BYTES) {
+            throw new JeecgBootException("图片体积过大，请控制在 2MB 以内");
+        }
+
+        String ext = detectImageExtension(data);
+        if (ext == null) {
+            throw new JeecgBootException("只支持 JPG / PNG / WEBP 格式的图片");
+        }
+
+        String key = buildAvatarObjectKey(sysUser.getId(), ext);
+        URL url;
+        try {
+            url = ossServiceContext.putObject(key, data);
+        } catch (Exception e) {
+            log.error("头像上传 OSS 失败，userId={}，key={}", sysUser.getId(), key, e);
+            throw new JeecgBootException("头像上传失败，请稍后重试");
+        }
+        if (url == null || StringUtils.isBlank(url.toString())) {
+            throw new JeecgBootException("头像上传失败，请稍后重试");
+        }
+        String avatar = url.toString();
+        // sys_user.avatar 是 varchar(255)：超长会被 MySQL 截断/报错，入 before 先拦
+        if (avatar.length() > 255) {
+            log.error("头像 URL 过长，拒绝写库，userId={}，url={}", sysUser.getId(), avatar);
+            throw new JeecgBootException("头像上传失败，请稍后重试");
+        }
+
+        int updated = shopAccountMapper.updateAvatar(sysUser.getId(), avatar);
+        if (updated <= 0) {
+            throw new JeecgBootException("头像保存失败，请稍后重试");
+        }
+
+        // 换新头像后清理旧的上传文件（best-effort：失败只记日志，不影响本次保存）
+        deleteOldUploadedAvatar(sysUser.getAvatar());
+        log.info("店铺端自定义头像已更新，userId={}，url={}", sysUser.getId(), avatar);
+        return profile(sysUser.getId());
+    }
+
+    /**
+     * 写操作统一的登录态校验：账号必须存在、未注销、未冻结，且具备 shop_customer 角色。
+     *
+     * <p>比只校验登录态更严一格：{@code sys_user} 是管理端共用的表，
+     * 店铺端的写接口不该成为"管理端账号也能改自己资料"的旁路。</p>
+     */
+    private ShopAccountUser requireActiveShopCustomer(String userId) {
+        if (StringUtils.isBlank(userId)) {
+            throw new JeecgBootException("请先登录");
+        }
+        ShopAccountUser sysUser = shopAccountMapper.selectByIdActive(userId);
+        if (sysUser == null) {
+            throw new JeecgBootException("当前登录用户不存在，请重新登录");
+        }
+        if (CommonConstant.USER_FREEZE.equals(sysUser.getStatus())) {
+            throw new JeecgBootException("该用户已冻结，请联系客服");
+        }
+        if (shopAccountMapper.countUserRoleByRoleCode(sysUser.getId(),
+                ShopAccountConstant.ROLE_SHOP_CUSTOMER) == 0) {
+            log.warn("非店铺端账号尝试修改店铺端资料，userId={}，roles={}",
+                    sysUser.getId(), shopAccountMapper.selectRoleCodesByUserId(sysUser.getId()));
+            throw new JeecgBootException("该账号不是店铺端账号，无法在此修改资料");
+        }
+        return sysUser;
+    }
+
+    /** 昵称：去空白、去控制字符、限制长度；不允许为空（空昵称会让资料卡显示成"用户"） */
+    private String normalizeRealname(String raw) {
+        if (raw == null) {
+            throw new JeecgBootException("请填写昵称");
+        }
+        // 去掉控制字符与尖括号：前者会破坏排版，后者是 HTML 注入的常见载荷
+        String value = raw.replaceAll("[\\p{Cntrl}]", "")
+                .replace("<", "")
+                .replace(">", "")
+                .trim()
+                .replaceAll("\\s{2,}", " ");
+        if (value.isEmpty()) {
+            throw new JeecgBootException("请填写昵称");
+        }
+        if (value.codePointCount(0, value.length()) > ShopAccountConstant.REALNAME_MAX_LENGTH) {
+            throw new JeecgBootException("昵称最多 " + ShopAccountConstant.REALNAME_MAX_LENGTH + " 个字符");
+        }
+        return value;
+    }
+
+    /**
+     * 手机号：空 -> null（清空）；否则只保留数字与开头的 +，长度 6-20。
+     *
+     * <p>刻意**不做**"必须是中国大陆 11 位手机号"的校验：本项目是多语言站点，
+     * 买家可能是海外号码；用 E.164 的宽松形状校验比强行套 +86 规则更合适。</p>
+     */
+    private String normalizePhone(String raw) {
+        String value = raw == null ? "" : raw.trim();
+        if (value.isEmpty()) {
+            return null;
+        }
+        // 允许用户输入带空格/短横线/括号的号码，入库前统一去掉分隔符
+        value = value.replaceAll("[\\s\\-()]", "");
+        if (value.length() > ShopAccountConstant.PHONE_MAX_LENGTH) {
+            throw new JeecgBootException("手机号长度不能超过 " + ShopAccountConstant.PHONE_MAX_LENGTH + " 位");
+        }
+        if (!value.matches("^\\+?[0-9]{6,20}$")) {
+            throw new JeecgBootException("手机号格式不正确");
+        }
+        return value;
+    }
+
+    /**
+     * 按文件头魔数识别图片类型（**不看** Content-Type 与扩展名，两者都可伪造）。
+     *
+     * @return 扩展名（png / jpg / webp）；无法识别返回 null
+     */
+    private String detectImageExtension(byte[] data) {
+        if (data == null || data.length < 12) {
+            return null;
+        }
+        // PNG: 89 50 4E 47 0D 0A 1A 0A
+        if ((data[0] & 0xFF) == 0x89 && data[1] == 0x50 && data[2] == 0x4E && data[3] == 0x47) {
+            return "png";
+        }
+        // JPEG: FF D8 FF
+        if ((data[0] & 0xFF) == 0xFF && (data[1] & 0xFF) == 0xD8 && (data[2] & 0xFF) == 0xFF) {
+            return "jpg";
+        }
+        // WEBP: "RIFF" .... "WEBP"
+        if (data[0] == 'R' && data[1] == 'I' && data[2] == 'F' && data[3] == 'F'
+                && data[8] == 'W' && data[9] == 'E' && data[10] == 'B' && data[11] == 'P') {
+            return "webp";
+        }
+        return null;
+    }
+
+    /**
+     * 生成 OSS 对象 key：{@code <dir-prefix>/shop/avatar/<userId>-<时间戳>.<ext>}。
+     *
+     * <p>文件名带 userId 与时间戳：</p>
+     * <ul>
+     *   <li>userId 让运维能一眼定位"这张图属于谁"；</li>
+     *   <li>时间戳保证同名上传不会互相覆盖（否则两个人都传 avatar.webp 就串了）；</li>
+     *   <li>**不含用户可控的原始文件名**，避免路径穿越（{@code ../}）。</li>
+     * </ul>
+     */
+    private String buildAvatarObjectKey(String userId, String ext) {
+        String prefix = StringUtils.trimToEmpty(ossDirPrefix);
+        StringBuilder key = new StringBuilder();
+        if (!prefix.isEmpty()) {
+            key.append(prefix).append('/');
+        }
+        key.append(ShopAccountConstant.AVATAR_OBJECT_DIR).append('/')
+                .append(userId).append('-').append(System.currentTimeMillis())
+                .append('.').append(ext);
+        return key.toString();
+    }
+
+    /**
+     * 删除被替换掉的上传头像（best-effort）。
+     *
+     * <p>只在"旧值确实指向本系统头像目录"时才删：
+     * Google 头像（{@code lh3.googleusercontent.com}）与预设头像（{@code /avatars/...}）
+     * 都不能删，前者是外站资源、后者是仓库里的静态文件。</p>
+     */
+    private void deleteOldUploadedAvatar(String oldAvatar) {
+        if (StringUtils.isBlank(oldAvatar) || !oldAvatar.startsWith("http")) {
+            return;
+        }
+        try {
+            String path = new URL(oldAvatar).getPath();
+            String prefix = StringUtils.trimToEmpty(ossDirPrefix);
+            String expect = (prefix.isEmpty() ? "" : prefix + "/") + ShopAccountConstant.AVATAR_OBJECT_DIR + "/";
+            String objectKey = path.startsWith("/") ? path.substring(1) : path;
+            if (!objectKey.startsWith(expect)) {
+                return;
+            }
+            ossServiceContext.deleteObject(objectKey);
+        } catch (Exception e) {
+            log.warn("删除旧头像失败（忽略），url={}", oldAvatar, e);
+        }
     }
 
     /**

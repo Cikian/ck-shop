@@ -104,6 +104,30 @@
         WHERE id = #{userId}
     </update>
 
+    <!--
+      保存个人资料：只写 realname / phone 两列。
+      phone 传 null 时写 NULL（不是空串）—— uniq_sys_user_phone 是唯一索引，
+      多个账号写空串会互相冲突。
+      带 del_flag = 0 条件：已注销的账号不允许再被改写（与 selectByIdActive 同口径）。
+    -->
+    <update id="updateProfile">
+        UPDATE sys_user
+        SET realname    = #{realname},
+            phone       = #{phone},
+            update_time = NOW()
+        WHERE id = #{userId}
+          AND del_flag = 0
+    </update>
+
+    <!-- 头像：null = 恢复默认（前端回落到首字母/图标占位） -->
+    <update id="updateAvatar">
+        UPDATE sys_user
+        SET avatar      = #{avatar},
+            update_time = NOW()
+        WHERE id = #{userId}
+          AND del_flag = 0
+    </update>
+
     <!-- ============================ 角色 ============================ -->
 
     <select id="countUserRoleByRoleCode" resultType="int">

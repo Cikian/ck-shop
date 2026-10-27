@@ -178,4 +178,43 @@ public final class ShopAccountConstant {
 
     /** pwd_set 语义：系统随机占位（用户没有真实密码） */
     public static final int PWD_SET_NO = 0;
+
+    // ==================================================================
+    // 个人中心：资料与头像
+    // ==================================================================
+
+    /** 昵称长度上限（sys_user.realname 是 varchar(100)，但对 C 端限制到 30 更合理） */
+    public static final int REALNAME_MAX_LENGTH = 30;
+
+    /** 手机号长度上限（sys_user.phone 是 varchar(45)，这里按 E.164 + 分隔符留足余量） */
+    public static final int PHONE_MAX_LENGTH = 20;
+
+    /** 头像原图大小上限：2MB（BFF 已裁成 512×512 webp，正常只有几十 KB） */
+    public static final long AVATAR_MAX_BYTES = 2L * 1024 * 1024;
+
+    /**
+     * 头像在 OSS 中的目录（最终 key = ck.oss.object-dir-prefix + "/" + 本值 + "/" + 文件名）。
+     *
+     * <p>单独开一个目录而不是混在商品图里：便于按前缀清理/统计，也避免
+     * "商品图目录被当成头像目录"这种误操作。</p>
+     */
+    public static final String AVATAR_OBJECT_DIR = "shop/avatar";
+
+    /**
+     * 预设头像白名单（站内路径，与 {@code nuxt-shop/public/avatars/} 下的文件一一对应）。
+     *
+     * <p>白名单必须在服务端：前端提交的 {@code avatar} 只能命中这里，
+     * 否则"选择头像"接口就成了一个可以往库里写任意 URL 的入口
+     * （存储型追踪像素 / 外部资源引用）。</p>
+     */
+    public static final java.util.List<String> PRESET_AVATARS = java.util.List.of(
+            "/avatars/preset-1.webp",
+            "/avatars/preset-2.webp",
+            "/avatars/preset-3.webp",
+            "/avatars/preset-4.webp",
+            "/avatars/preset-5.webp",
+            "/avatars/preset-6.webp",
+            "/avatars/preset-7.webp",
+            "/avatars/preset-8.webp"
+    );
 }
