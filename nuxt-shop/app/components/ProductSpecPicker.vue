@@ -1,11 +1,10 @@
 <template>
   <div class="space-y-5">
-    <!-- 操作提示：同规格直接切换、点已选值取消；这里用品牌浅底把它和规格区分开 -->
-    <p class="flex items-start gap-2 rounded-[12px] bg-[var(--color-brand-50)] px-3 py-2 text-xs text-[var(--color-brand-700)]">
-      <UIcon name="lucide:info" class="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />
-      {{ t('products.spec.tapToClear') }}
-    </p>
-
+    <!--
+      顶部「同规格直接切换 / 点击已选值取消」的操作提示条已按设计稿移除（详情页里太啰嗦）：
+      "同组内点另一个值 = 直接切换"、"点已选中的值 = 取消"这两条语义保持不变，
+      见下方 select()；只是不再占用一行品牌浅底提示。
+    -->
     <fieldset
       v-for="spec in specs"
       :key="spec.id"

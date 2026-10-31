@@ -3,15 +3,15 @@
 // 商品详情页「右侧信息栏吸顶 + 底部动作条对齐 + 图集高度」的浏览器测量逻辑。
 //
 // 口径来源：docs/商品页布局与底部动作条-设计说明.md 2.2 / 2.3 / 八 / 九
-//   barTop  = innerHeight - 32 - barH            // 动作条（浮层底）顶边，桌面离底 32px
+//   barTop  = innerHeight - 56 - barH            // 动作条（浮层底）顶边，桌面离底 56px
 //   limit   = barTop - 16                        // 面板底边最多到这里
 //   natural = 面板未吸顶时的自然位置（文档坐标 = scrollY 0 时的视口坐标，见 panelStaticTop）
 //   panelH  = 面板内容高度
 //   top     = natural + panelH <= limit ? natural : limit - panelH
 //
 // 第 2 轮新增：
-//   · `--gallery-main-height`：图集主图高度 = 视口高 - 32 - 图集内容顶部（等价 100dvh-header-56），
-//     保证主图底边与桌面动作条底边同在 viewport-32px；首帧由 Gallery 的 CSS 回退兜底；
+//   · `--gallery-main-height`：图集主图高度 = 视口高 - 56 - 图集内容顶部（等价 100dvh-header-80），
+//     保证主图底边与桌面动作条底边同在 viewport-56px；首帧由 Gallery 的 CSS 回退兜底；
 //   · 动作条释放：`data-sticky-zone` 结束（= 推荐区顶部）后，动作条随页面向上滚动，不再固定；
 //     回滚到 zone 内自动恢复固定。第 5 轮起**完全交给 CSS sticky**（见 StickyActionBar 文件头），
 //     JS 不再逐帧写 transform —— 那样在真机惯性滚动下会慢半拍，表现为"抖一下 / 漂移"。
@@ -59,11 +59,22 @@ const DESKTOP_MEDIA = '(min-width: 1024px)'
 /** 面板与 header 之间的呼吸间距（面板底边与动作条顶边之间也用它） */
 const GAP = 16
 /**
- * 桌面动作条离底部距离：主图底边也落在 viewport-32px（设计说明 9.1）。
- * ⚠️ 必须与 StickyActionBar 的 `lg:bottom-8`（32px）一致，否则主图底边与浮层底错位。
+ * 桌面动作条离底部距离：主图底边也落在 viewport-56px（设计说明 9.1）。
+ * ⚠️ 必须与 StickyActionBar 的 `lg:bottom-14`（56px）一致，否则主图底边与浮层底错位。
  * （移动端的对应值是"安全区 + 8px"，由组件 CSS 决定，动作条释放公式不依赖这个常量。）
  */
-const BAR_BOTTOM_OFFSET = 32
+const BAR_BOTTOM_OFFSET = 56
+/**
+ * 主图「加高量」（px）：2026-10 第 8 轮需求——锚点条下移后，主图与锚点条之间的留白显得过大，
+ * 因此把主图从正方形改成**微微的竖长方形**（高 = 基准边长 + 32，约 1:1.04），
+ * 底边从 viewport−56 下移到 viewport−24（**仍需与视口底留 24px 距离**，不能贴到屏幕最底）。
+ *
+ * 为什么只加高、不加宽：宽度会撞左列宽度上限（见 Gallery.vue 的 width 注释），
+ * 所以 `--gallery-main-height`（含加高）与 `--gallery-main-width`（原正方形边长）必须分开写。
+ * 加高量与左列锚点条的 `lg:mt-8` 是一对：图底多占 32px，锚点条就少让 32px，
+ * 于是锚点条的绝对位置不变（chip 顶边仍在 viewport+32，首屏依旧看不到）。
+ */
+const GALLERY_MAIN_EXTRA = 32
 /**
  * 动作条释放后与 zone（两栏 grid = 商品主信息区）底部之间保留的视觉间距。
  * （第 5 轮：释放改由 CSS sticky 完成，"留白"由 zone 尾部自然产生，本常量不再参与计算。)
@@ -122,13 +133,16 @@ let stopScrollTask: (() => void) | null = null
   }
 
   /**
-   * 图集主图高度：让主图底边落在 viewport-32px（= 桌面动作条浮层底的底边）。
-   * 用「视口高 - 32 - 图集内容顶部（文档坐标）」而不是减 header：页面 pt-navbar 用的是设计 token，
+   * 图集主图的**基准边长**（= 上一版正方形的边长，也是现在的**宽度**）。
+   * 用「视口高 - 56 - 图集内容顶部（文档坐标）」而不是减 header：页面 pt-navbar 用的是设计 token，
    * 与实测 header 可能有 1~2px 差，直接量图集自身顶部才能保证 ±2px 的底边对齐。
+   *
+   * 注意：主图**高度** = 本值 + GALLERY_MAIN_EXTRA（竖长方形），因此主图底边落在
+   * viewport − (56 − 32) = viewport − 24，不再与动作条浮层底同线（第 8 轮起有意为之）。
    */
   function galleryMainHeight(): number {
     const viewportH = window.innerHeight
-    const fallback = Math.max(320, viewportH - headerHeight() - 56)
+    const fallback = Math.max(320, viewportH - headerHeight() - 80)
     const gallery = options.galleryRef?.value
     if (!gallery) return fallback
     const rect = gallery.getBoundingClientRect()
@@ -230,7 +244,7 @@ let stopScrollTask: (() => void) | null = null
     setBodyBottomSpace(null)
     const panel = options.panelRef.value
     const panelH = panel ? panel.getBoundingClientRect().height : 0
-    // 可用高度以「浮层底顶边」为下限（桌面离底 32px；barH 量的就是浮层底本身）
+    // 可用高度以「浮层底顶边」为下限（桌面离底 56px；barH 量的就是浮层底本身）
     const barTop = window.innerHeight - BAR_BOTTOM_OFFSET - barH
     // 面板底边最多到动作条顶边上方 GAP
     const panelBottomLimit = barTop - GAP
@@ -251,8 +265,13 @@ let stopScrollTask: (() => void) | null = null
     panelStyle.value = { top: `${Math.round(top)}px` }
     // 右列底部预留动作条占用高度：否则超长面板滚到 zone 尾时，最后一段会被 fixed 动作条盖住
     asideStyle.value = { paddingBottom: `${Math.round(barH + BAR_BOTTOM_OFFSET + 24)}px` }
-    // 图集高度：主图底边与动作条浮层底底边同线（viewport-32）
-    pageStyle.value = { '--gallery-main-height': `${galleryMainHeight()}px` }
+    // 图集高度：主图底边与动作条浮层底底边同线（viewport-56）
+    // 图集主图：宽度 = 基准边长，高度 = 基准边长 + 32（竖长方形，底边落在 viewport−24）
+    const galleryBase = galleryMainHeight()
+    pageStyle.value = {
+      '--gallery-main-height': `${galleryBase + GALLERY_MAIN_EXTRA}px`,
+      '--gallery-main-width': `${galleryBase}px`,
+    }
 
     // 动作条水平/纵向位置都由 StickyActionBar 自身的 CSS（sticky + 栅格）决定，这里只同步帘子状态
     applyMaskState()

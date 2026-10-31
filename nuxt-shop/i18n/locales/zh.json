@@ -54,8 +54,6 @@
       "remaining": "剩余 {count} 件"
     },
     "spec": {
-      "title": "选择规格",
-      "tapToClear": "同一规格可直接点击切换，点击已选规格可取消",
       "optional": "可选",
       "unavailable": "该规格暂不可选",
       "choose": "请选择完整规格",
@@ -86,8 +84,6 @@
     "addedToCart": "已加入购物车",
     "selectSpecFirst": "请先选择完整规格",
     "adding": "加入中…",
-    "cartHint": "支持加入购物车，规格与库存实时校验",
-    "viewCart": "查看购物车",
     "buying": "处理中…",
     "buyNowFailed": "无法进入结算页，请检查浏览器是否禁用了本地存储后重试",
     "wishlisted": "已收藏",

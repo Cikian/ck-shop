@@ -11,8 +11,9 @@
 
   第 2 轮布局（设计说明 八）：
     · 桌面 ≥1024px：缩略图竖排在左（宽 56px），主图在右；
-      主图高度 = 100dvh - header - 56px（等价「底边落在 viewport-32px」），
-      尺寸来自页面 useStickyAside 写入的 --gallery-main-height（首帧用 CSS calc 回退）。
+      主图 = 微微的竖长方形：宽度取基准边长（100dvh − header − 80px），高度再多 32px，
+      底边落在 viewport−24（与视口底仍留距离）；尺寸来自 useStickyAside 写入的
+      --gallery-main-width / --gallery-main-height（首帧用 CSS calc 回退）。
       主图保持正方形（宽=高），底边与底部动作条底边同线；缩略图首屏完整可见，
       图多到放不下时只在缩略图竖条内部滚动，不截断主图。
     · 移动端 <1024px：保持「主图（1:1）+ 下方缩略图行」。
@@ -160,6 +161,14 @@ type Layer = 0 | 1
 const layerSrc = ref<[string, string]>(['', ''])
 const layerFailed = ref<[boolean, boolean]>([false, false])
 const activeLayer = ref<Layer>(0)
+/**
+ * 已经成功加载过的图片 URL。
+ *
+ * 为什么需要它：交叉淡入靠 <img> 的 load 事件翻层，而**给 <img> 赋同样的 src 不会触发 load**。
+ * 来回点缩略图（A→B→A）时，目标图往往正好停在"背面层"里 → 赋值相等 → 没有 load → activeLayer
+ * 永不翻转 → 大图停在上一次的结果（用户报的"点了没反应"）。命中这个集合就直接翻，不等事件。
+ */
+const loadedSrc = new Set<string>()
 
 const hasVisibleImage = computed(() => {
   const src = layerSrc.value[activeLayer.value]
@@ -175,15 +184,36 @@ watch(() => props.mainImage, (next) => {
   }
   if (layerSrc.value[activeLayer.value] === next) return
   const back: Layer = activeLayer.value === 0 ? 1 : 0
+  /** 背面层是不是**已经就是**这张图（此时写 layerSrc 不改变 DOM，浏览器不会再发 load 事件） */
+  const backHoldsSameSrc = layerSrc.value[back] === next
   if (layerFailed.value[back]) layerFailed.value[back] = false
   layerSrc.value[back] = next
   // 首次加载（两层都空）没有"原图"可保留，直接让背面层成为可见层，避免空白等待
-  if (!layerSrc.value[activeLayer.value]) activeLayer.value = back
+  if (!layerSrc.value[activeLayer.value]) {
+    activeLayer.value = back
+    return
+  }
+  // 已加载过（在缓存里）→ 立刻翻。这一步修掉了 A→B→A 来回点时"只换高亮、不换图"的 bug。
+  if (loadedSrc.has(next)) {
+    activeLayer.value = back
+    return
+  }
+  // 背面层早就是这张，却既没加载成功、也不会再发 load（例如上次请求失败）：
+  // 先把 src 清空卸载掉 <img>，下一 tick 再写回，强制重新发起一次请求。
+  if (backHoldsSameSrc) {
+    layerSrc.value[back] = ''
+    void nextTick(() => {
+      // 期间用户可能又点了别的图：只在"这一层还空着、且它仍是当前主图"时写回
+      if (!layerSrc.value[back] && props.mainImage === next) layerSrc.value[back] = next
+    })
+  }
 }, { immediate: true })
 
 function onLayerLoad(layer: Layer) {
+  const src = layerSrc.value[layer]
+  if (src) loadedSrc.add(src)
   // 只认"当前主图"的加载完成：快速连点时旧图的 load 事件必须被丢弃
-  if (layerSrc.value[layer] !== props.mainImage) return
+  if (src !== props.mainImage) return
   if (layer !== activeLayer.value && !layerFailed.value[layer]) activeLayer.value = layer
 }
 
@@ -221,34 +251,38 @@ function badgeToneClass(code: string | null | undefined): string {
 
 <style scoped>
 /*
-  桌面图集尺寸：
-    · 主图正方形（宽=高），高度由页面 useStickyAside 写入 --gallery-main-height（px）；
-    · 首帧（水合前 / JS 未就绪）用 CSS calc 回退：100dvh - 导航总高 - 56px
-      （56 = 图集顶部间距 24 + 动作条离底 32），保证底边仍落在 viewport-32px
-      （与 StickyActionBar 的 lg:bottom-8、useStickyAside 的 BAR_BOTTOM_OFFSET 三处一致）；
+  桌面图集尺寸（2026-10 第 8 轮：主图从正方形改为**微微的竖长方形**）：
+    · 宽度 = 基准边长（--gallery-main-width），高度 = 基准边长 + 32px（--gallery-main-height）；
+    · 基准边长由 useStickyAside 实测写入（= 视口高 − 56 − 图集内容顶部）；
+      加高后主图底边落在 viewport−24，**与视口底仍留 24px 距离**（不再与动作条浮层底同线）；
+    · 为什么宽度不复用 height 变量：两个值不再相等（高度多 32px），混用会让主图重新变正方形；
+    · 首帧（水合前 / JS 未就绪）CSS calc 回退：
+        宽度 = 100dvh − 导航总高 − 80px（80 = 图集顶部间距 24 + 动作条离底 56，= 基准边长）
+        高度 = 基准边长 + 32 = 100dvh − 导航总高 − 48px
     · 缩略图竖条与主图同高：图多时在竖条内部滚动，绝不截断主图。
 */
 @media (min-width: 1024px) {
   .gallery-main {
-    height: var(--gallery-main-height, calc(100dvh - var(--nav-total-height) - 56px));
+    height: var(--gallery-main-height, calc(100dvh - var(--nav-total-height) - 48px));
     /*
-     * 宽度取 min(视口高度算出的边长, 左列可用宽度)：
+     * 宽度取 min(基准边长, 左列可用宽度)：
      * 之前写死成正方形边长 + flex: 0 0 auto 时，在「桌面宽度较窄但窗口很高」的场景下
      * （例如 1400×965），主图 805px + 缩略图 64px 会超过左列宽度，直接压到右侧信息栏上
      * ——用户实测截图里的"左右内容重叠"就是这个。
      * 主图右侧还有 56px 缩略图 + 8px 间距 = 4rem，所以有缩略图时要把它扣掉。
      */
-    width: min(var(--gallery-main-height, calc(100dvh - var(--nav-total-height) - 56px)), 100%);
+    width: min(var(--gallery-main-width, calc(100dvh - var(--nav-total-height) - 80px)), 100%);
     max-width: 100%;
     flex: 0 0 auto;
   }
 
   .gallery-main.has-thumbs {
-    width: min(var(--gallery-main-height, calc(100dvh - var(--nav-total-height) - 56px)), calc(100% - 4rem));
+    width: min(var(--gallery-main-width, calc(100dvh - var(--nav-total-height) - 80px)), calc(100% - 4rem));
   }
 
   .gallery-thumbs {
-    height: var(--gallery-main-height, calc(100dvh - var(--nav-total-height) - 56px));
+    /* 缩略图竖条与主图同高（含加高的 32px），图多时在竖条内部滚动 */
+    height: var(--gallery-main-height, calc(100dvh - var(--nav-total-height) - 48px));
   }
 }
 </style>

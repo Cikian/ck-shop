@@ -54,8 +54,6 @@
       "remaining": "{count} left"
     },
     "spec": {
-      "title": "Choose Options",
-      "tapToClear": "Tap another option in the same group to switch, or tap the selected one to clear",
       "optional": "Optional",
       "unavailable": "This option is unavailable",
       "choose": "Please select all options",
@@ -86,8 +84,6 @@
     "addedToCart": "Added to cart",
     "selectSpecFirst": "Please choose all options first",
     "adding": "Adding…",
-    "cartHint": "Real-time stock and option checks on add to cart",
-    "viewCart": "View cart",
     "buying": "Processing…",
     "buyNowFailed": "Could not start checkout. Please check whether your browser blocks local storage and try again.",
     "wishlisted": "Saved",

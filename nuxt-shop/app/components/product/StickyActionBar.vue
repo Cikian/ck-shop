@@ -13,13 +13,13 @@
     为什么不用 `fixed + translateY`（第 4 轮的做法）：那需要 JS 每帧跟着 scroll 改 transform，
     真机惯性滚动时永远慢半拍，表现为「抖一下 / 轻微漂移」。sticky 由浏览器合成层负责，
     零 JS、零延迟，桌面/移动端行为完全一致。
-    纵向偏移由内层绝对定位的 `bottom-*` 提供（移动端 = 安全区 + 8px，桌面 = 32px），
+    纵向偏移由内层绝对定位的 `bottom-*` 提供（移动端 = 安全区 + 8px，桌面 = 56px），
     根节点 `h-0` 所以不占文档流高度、不影响页面高度。
 
   浮层底（第 3 轮，需求方给定 CSS）：
     `.ui-action-dock` = border-radius 28px / background #fff6f2 / 双向 30px 柔和投影。
     它同时修掉了"透明的收藏按钮透出下方内容"（原先 `.ui-pill-ghost` 把 background 强制成 transparent）。
-    ⚠️ 桌面 32px 必须与 useStickyAside 的 BAR_BOTTOM_OFFSET 一致（主图底边与这里同线）。
+    ⚠️ 桌面 56px 必须与 useStickyAside 的 BAR_BOTTOM_OFFSET 一致（主图底边与这里同线）。
 
   帘子（第 4 轮）：浮层底与视口底之间那段空隙必须不透明，否则右栏内容会从按钮下方漏出来。
     · 绝对定位、从浮层底盖到视口底，颜色 = 页面底色（看起来"什么都没有"）；
@@ -36,8 +36,8 @@
 -->
 <template>
   <div data-sticky-actions class="pointer-events-none sticky bottom-0 z-40 h-0">
-    <!-- 纵向偏移：把动作条整体抬离视口底（移动端让出安全区 + 8px；桌面 32px） -->
-    <div class="absolute inset-x-0 bottom-[calc(env(safe-area-inset-bottom,0px)+8px)] lg:bottom-8">
+    <!-- 纵向偏移：把动作条整体抬离视口底（移动端让出安全区 + 8px；桌面 56px = bottom-14） -->
+    <div class="absolute inset-x-0 bottom-[calc(env(safe-area-inset-bottom,0px)+8px)] lg:bottom-14">
       <div class="lg:grid lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
         <!-- 第 1 列占位：让动作条精确落在右侧 40% 信息栏上（与页面商品页栅格一致） -->
         <div class="hidden lg:block" aria-hidden="true"></div>
@@ -47,7 +47,7 @@
           <div
             data-sticky-actions-mask
             aria-hidden="true"
-            class="ui-action-mask pointer-events-auto absolute top-full left-[-1rem] right-[-1rem] h-[calc(env(safe-area-inset-bottom,0px)+8px)] lg:left-0 lg:right-0 lg:h-8"
+            class="ui-action-mask pointer-events-auto absolute top-full left-[-1rem] right-[-1rem] h-[calc(env(safe-area-inset-bottom,0px)+8px)] lg:left-0 lg:right-0 lg:h-14"
           ></div>
           <div
             data-sticky-actions-row

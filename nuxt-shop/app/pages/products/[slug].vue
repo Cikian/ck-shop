@@ -102,14 +102,11 @@
             :style="asideStyle"
           >
           <div ref="panelRef" data-product-panel class="lg:sticky" :style="panelStyle">
-            <!-- 分类 + 商品编码 -->
+            <!-- 分类（商品编码已按设计稿移除，不再展示） -->
             <div class="flex flex-wrap items-center gap-x-4 gap-y-1 text-[13px]">
               <span v-if="product.categoryName" class="inline-flex items-center gap-1 font-bold text-[var(--color-brand-600)]">
                 <UIcon name="lucide:bookmark" class="h-3.5 w-3.5" aria-hidden="true" />
                 {{ product.categoryName }}
-              </span>
-              <span v-if="product.spuCode" class="text-[var(--color-muted)]">
-                {{ t('product.spuCode') }}: {{ product.spuCode }}
               </span>
             </div>
 
@@ -183,17 +180,17 @@
               </span>
             </div>
 
-            <!-- 规格选择器（核心交互：不存在 / 不可售组合置灰） -->
+            <!-- 规格选择器（核心交互：不存在 / 不可售组合置灰）
+                 区块标题与「同规格直接切换」提示已按设计稿移除：
+                 规格组自身的 legend（如「规格 *」）已经表明这是规格区，
+                 标题层再写一次「选择规格」只是重复。 -->
             <div v-if="hasSpecs" class="mt-7">
-              <h2 class="text-sm font-bold text-[var(--color-ink)]">{{ t('products.spec.title') }}</h2>
-              <div class="mt-3">
-                <ProductSpecPicker
-                  :specs="specs"
-                  :combinations="combinations"
-                  :selected="selected"
-                  @update:selected="onSelectionChange"
-                />
-              </div>
+              <ProductSpecPicker
+                :specs="specs"
+                :combinations="combinations"
+                :selected="selected"
+                @update:selected="onSelectionChange"
+              />
 
               <!-- 组合状态提示 -->
               <p
@@ -210,22 +207,26 @@
               </p>
             </div>
 
-            <!-- 面板底部：数量 / 合计 / 提示 / 服务标签（三个动作按钮已移到固定动作条） -->
+            <!-- 面板底部：数量 / 合计（服务标签与加购提示已按设计稿移除；三个动作按钮在固定动作条） -->
             <ProductPurchaseBar
               :quantity="quantity"
               :max-quantity="maxQuantity"
               :total-price="totalPrice"
               :buyable="buyable"
-              :has-fast-tag="hasFastTag"
-              :has-top-tag="hasTopTag"
-              :free-shipping="!!product.freeShipping"
               @change-quantity="changeQuantity"
             />
           </div>
         </aside>
 
-          <!-- ===== 左列 row2：锚点导航 + 三区块（锚点只在左列内吸顶） ===== -->
-          <div data-product-sections class="mt-2 min-w-0 lg:col-start-1 lg:row-start-2 lg:mt-0 lg:pr-8">
+          <!-- ===== 左列 row2：锚点导航 + 三区块（锚点只在左列内吸顶） =====
+               lg:mt-8（32px）是「首屏不出现锚点条」的刻意留白，不要随手改成 0：
+                 主图底边固定在 viewport−24（第 8 轮把主图加高 32px 变成竖长方形，见 useStickyAside
+                 的 GALLERY_MAIN_EXTRA），锚点条自带 pt-6（24px）→ 条顶 = viewport−24+32 = viewport+8，
+                 chip 白药丸顶边 = viewport+32，首屏 0px 可见。
+                 留白 ≥ 0 就够把条子推到折叠线下，这里取 32px 是为了和主图的加高量抵消：
+                 图底多占 32px、锚点条少让 32px → chip 的绝对位置与上一版完全一致。
+                 别改在锚点条自己的 pt 上：pt 属于 sticky 元素，吸顶后会把 chip 顶到 header 下方 32px。 -->
+          <div data-product-sections class="mt-2 min-w-0 lg:col-start-1 lg:row-start-2 lg:mt-8 lg:pr-8">
             <ProductDetailSections
               :description="product.description"
               :detail-blocks="product.detailBlocks"
@@ -326,8 +327,8 @@ import { useAuth } from '~~/composables/useAuth'
  * 布局契约（docs/商品页布局与底部动作条-设计说明.md，含「八、第 2 轮调整」）：
  *   · 桌面 ≥1024px：左列 60%（图集 + 锚点 + 规格参数/评价/详情，随页面滚动）
  *                  + 右列 40% 商品信息面板（吸顶）；
- *   · 图集：竖排缩略图在左、主图在右；主图高度 = 100dvh - header - 56px，
- *     底边与动作条浮层底底边同在 viewport-32px（高度由 useStickyAside 测量，首帧 CSS 回退）；
+ *   · 图集：竖排缩略图在左、主图在右；主图高度 = 100dvh - header - 80px，
+ *     底边与动作条浮层底底边同在 viewport-56px（高度由 useStickyAside 测量，首帧 CSS 回退）；
  *   · 右列吸顶由 useStickyAside 动态计算 top（内容不高→header 下；超长→滚到全部露出再吸底），
  *     右列任何祖先都没有 overflow：**全程只有浏览器级滚动条**；
  *   · 底部动作条：桌面固定右下、宽度=右列；移动 fixed 通栏 + 安全区；
@@ -403,8 +404,6 @@ const {
   canBuyNow,
   buyNowLabel,
   imageBadges,
-  hasFastTag,
-  hasTopTag,
 } = useProductDetail()
 
 // ===== 用户评价（真实数据，见 composables/useReviews.ts）=====

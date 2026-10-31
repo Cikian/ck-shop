@@ -237,14 +237,6 @@ export const useProductDetail = () => {
       .slice(0, limit)
   })
 
-
-  /** 服务标签：FAST / TOP 来自真实 tag code，包邮来自 detail.freeShipping */
-  const tagCodes = computed(
-    () => new Set((product.value?.tags || []).map(tag => (tag.code || '').toUpperCase())),
-  )
-  const hasFastTag = computed(() => tagCodes.value.has('FAST'))
-  const hasTopTag = computed(() => tagCodes.value.has('TOP'))
-
   // 「为你推荐」列表**不在这里**：它要按详情里的 categoryId 过滤，
   // 放在页面里 watch product 的 id/categoryId 再请求更直接
   // （见 pages/products/[slug].vue；推荐位在页面底部，不需要进 SSR）。
@@ -292,8 +284,5 @@ export const useProductDetail = () => {
     canBuyNow,
     buyNowLabel,
     imageBadges,
-    tagCodes,
-    hasFastTag,
-    hasTopTag,
   }
 }

@@ -795,18 +795,22 @@ body {
    全屏加载遮罩（app/components/AppPageLoader.vue）—— 「螺旋搜索」
    --------------------------------------------------------------------------
    来源：用户指定的 Spiral Search（阿基米德螺旋 + 粒子拖尾，rAF 驱动）。
-   这里只保留**动画本体**：奶油底 + 珊瑚色螺旋 + 珊瑚粒子拖尾。
+   这里只保留**动画本体**：奶油底 + 沿螺旋跑动的珊瑚色彗星（粒子拖尾）。
    原脚本里的深色底、标题、公式块、View All 按钮等全部去掉。
 
    配色（站内 token，不用原脚本的 #050505 / #f5f5f5）：
      · 底：--color-cream
-     · 螺旋线：--color-brand-300，低透明度（只做"路径感"）
      · 粒子：--color-brand-500，头部实、尾部渐隐（透明度由 JS 逐点算）
 
-   性能：粒子 44 个 + 路径 300 段；路径只在 detail 变化超过 0.004 时重建，
-         粒子逐帧更新（与参考实现一致，但少了 480 段路径的每帧字符串拼接）；
-         页面隐藏时暂停 rAF，组件卸载时取消。
+   2026-10-29：按用户要求**去掉那条淡色螺旋轨迹线**（原来是 --color-brand-300 的 path，
+   三条淡环叠在彗星后面）。遮罩里只留"沿螺旋跑动的彗星"，呼吸、时序、无障碍降级都不变。
+   轨迹线仍留在 DOM 里但正常状态 display:none —— 只在 prefers-reduced-motion 下露出来，
+   因为那时粒子被隐藏，没有它页面就是一片空白奶油色。
+
+   性能：36 个粒子 + 一条 300 段的 path，全部走 CSS（offset-path + transform），
+         零 rAF、零逐帧 JS 写入，遮罩只占一个合成层。
    无障碍：role="status" + aria-live + sr-only「加载中」；prefers-reduced-motion 下只画一帧静态螺旋。
+           不支持 offset-path 的浏览器同样退回静态螺旋线（见文件末尾 @supports not）。
    ========================================================================== */
 
 .page-loader {
@@ -858,8 +862,10 @@ body {
   animation: page-loader-fade-in 0.45s var(--ease-standard) both;
 }
 
-/* 螺旋本体：一条低透明度的线，给粒子一个"轨迹底" */
+/* 螺旋轨迹线：正常**不画** —— 遮罩里只留沿螺旋跑动的彗星（粒子拖尾）。
+   这条线只在 prefers-reduced-motion 下露出来当静态提示（见文件末尾）。 */
 .page-loader__trail {
+  display: none;
   stroke: var(--color-brand-300);
   stroke-width: 2;
   opacity: 0.34;
@@ -913,6 +919,19 @@ body {
   }
 }
 
+/* 兜底：完全不支持 offset-path 的浏览器里彗星跑不起来（36 个点会堆在中心成一坨），
+   这时退回静态螺旋线 —— 轨迹线正常状态是 display:none，只有这里和 reduced-motion 会打开它。 */
+@supports not (offset-path: path('M0 0')) {
+  .page-loader__trail {
+    display: block;
+    opacity: 0.5;
+  }
+
+  .page-loader__particle {
+    display: none;
+  }
+}
+
 /* 减少动效：只留静态螺旋线，粒子隐藏（否则 36 个点会叠在内圈起点上） */
 @media (prefers-reduced-motion: reduce) {
   /*
@@ -934,7 +953,9 @@ body {
     display: none;
   }
 
+  /* 粒子藏起来之后，用静态螺旋线顶上（正常状态下它是 display:none） */
   .page-loader__trail {
+    display: block;
     opacity: 0.5;
   }
 }

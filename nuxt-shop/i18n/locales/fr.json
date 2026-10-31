@@ -54,8 +54,6 @@
       "remaining": "{count} restant(s)"
     },
     "spec": {
-      "title": "Choisir les options",
-      "tapToClear": "Touchez une autre option du même groupe pour changer, ou l'option sélectionnée pour l'annuler",
       "optional": "Facultatif",
       "unavailable": "Cette option n'est pas disponible",
       "choose": "Veuillez sélectionner toutes les options",
@@ -86,8 +84,6 @@
     "addedToCart": "Ajouté au panier",
     "selectSpecFirst": "Veuillez choisir toutes les options",
     "adding": "Ajout…",
-    "cartHint": "Vérification en temps réel du stock et des options",
-    "viewCart": "Voir le panier",
     "buying": "Traitement…",
     "buyNowFailed": "Impossible de démarrer la commande. Vérifiez si votre navigateur bloque le stockage local, puis réessayez.",
     "wishlisted": "Enregistré",

@@ -5,7 +5,12 @@
 
   来源：用户指定的参考脚本。这里**只保留动画本体**，去掉原脚本里与本站无关的内容
   （深色底、标题、Archimedean Spiral 标签、公式代码块、View All 按钮），
-  配色换成站内 token：奶油底 + 珊瑚色螺旋线 + 珊瑚粒子拖尾。
+  配色换成站内 token：奶油底 + 沿螺旋跑动的珊瑚色彗星（粒子拖尾）。
+
+  2026-10-29（用户反馈）：**去掉彗星后面那条淡色螺旋轨迹线**，只留移动的彗星本身。
+  轨迹线的 path 还在模板里（粒子的视觉基准、也是 prefers-reduced-motion 下的静态提示），
+  但样式里正常状态是 `display: none`（见 tailwind.css `.page-loader__trail`），
+  所以画面上只有彗星 + 它的渐隐拖尾。呼吸、时序、无障碍降级均未改动。
 
   数学（与参考一致）：
     θ(t) = 3t
@@ -40,7 +45,7 @@
       aria-hidden="true"
     >
       <g class="page-loader__group">
-        <!-- 轨迹底：一条低透明度的螺旋线 -->
+        <!-- 轨迹线：正常状态由 CSS 隐藏（display:none），只在 prefers-reduced-motion 下露出来 -->
         <path class="page-loader__trail" :d="spiralPath" stroke-linecap="round" stroke-linejoin="round" />
 
         <!-- 粒子：沿同一条曲线匀速跑，越靠后越小越淡（对应参考的 trailSpan 拖尾） -->
