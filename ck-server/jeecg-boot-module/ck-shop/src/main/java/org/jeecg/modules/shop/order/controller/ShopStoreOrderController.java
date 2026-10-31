@@ -19,6 +19,7 @@ import org.jeecg.modules.shop.order.entity.vo.StoreOrderListVO;
 import org.jeecg.modules.shop.order.service.IShopOrderService;
 import org.jeecg.modules.shop.order.service.IShopRefundService;
 import org.jeecg.modules.shop.order.service.OrderContext;
+import org.jeecg.modules.shop.region.RegionLangResolver;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -86,7 +87,7 @@ public class ShopStoreOrderController {
     @GetMapping(value = "/detail")
     public Result<StoreOrderDetailVO> detail(String orderNo, HttpServletRequest req) {
         OrderContext context = contextResolver.build(req, false);
-        return Result.OK(orderService.storeDetail(context, orderNo));
+        return Result.OK(orderService.storeDetail(context, orderNo, RegionLangResolver.resolveLocale(req)));
     }
 
     @Operation(summary = "店铺端-取消订单(仅待支付)")

@@ -315,11 +315,22 @@ const props = withDefaults(defineProps<{
   payments: OrderPaymentVO[]
   refunds: OrderRefundVO[]
   events: OrderEventVO[]
+  /**
+   * 收货地址整串（屏幕展示口径）。
+   *
+   * 由页面的 useOrderDetail().receiverAddressText 传入，**本组件不自己拼**：
+   * 拼接规则（国际顺序、逗号分隔、相邻同名去重、含国家段）统一由后端下发，
+   * 前端唯一允许的"拼"是 composable 里那段历史兜底。
+   * 之前这里直接引用了一个既不是 props、也不是本组件 computed 的 `receiverAddressText`，
+   * 结果这一行永远渲染成 '--'（连省市区都没有），所以必须由 props 明确接进来。
+   */
+  receiverAddressText?: string
   /** 待评价明细（composables/useReviews.ts 的 items）：为空 = 整单没有可评价项 */
   reviewItems?: StoreReviewableItem[]
   /** 待评价明细拉取失败（页面传入；只用于如实提示，不影响商品行本身的展示） */
   reviewLoadFailed?: boolean
 }>(), {
+  receiverAddressText: '',
   reviewItems: () => [],
   reviewLoadFailed: false,
 })

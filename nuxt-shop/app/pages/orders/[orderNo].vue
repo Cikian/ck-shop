@@ -128,6 +128,7 @@
           :payments="payments"
           :refunds="refunds"
           :events="events"
+          :receiver-address-text="receiverAddressText"
           :review-items="reviewItems"
           :review-load-failed="reviewLoadFailed"
           @withdraw="askWithdraw"
@@ -264,6 +265,8 @@ const {
   events,
   expired,
   countdownText,
+  /** 收货地址整串：后端下发优先（receiverFullAddressLocalized → receiverFullAddress），旧拼法兜底 */
+  receiverAddressText,
   loginLink,
   payLink,
   loadDetail,

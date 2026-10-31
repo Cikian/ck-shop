@@ -1,0 +1,354 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="org.jeecg.modules.shop.region.mapper.ShopRegionMapper">
+
+    <!--
+      ============================================================================
+      国家/地区级联查询（只读参考数据，禁止在此写任何 DML）
+      ============================================================================
+
+      三条贯穿全文件的约定：
+
+      1. **名称回退链固定为 译文 → name（拉丁） → native（当地文字）**。
+         顺序不许反过来：缺失时给拉丁名，用户至少能读；给当地文字（如 กรุงเทพฯ）
+         等于没给。历史坑：法语译文缺失时退回 native，法国用户会看到一堆泰文。
+
+      2. **nameLocal 一律取 native**，只在 native 为空时退 name ——
+         它服务于"搜索当地文字"，空着等于搜索失效。
+
+      3. **language 为 null 表示"不查译文"**（访客是 en）。此时连 join 都不加，
+         而不是 join 完再用 COALESCE 兜住：少一次 300 万行表的相关联，
+         也保证 en 用户看到的是纯 name，不会出现"有的城市有译名有的没有"。
+
+      性能约束（实测数据见文档，改动前先复跑）：
+        · cities 走 idx_cities_country_type_pop (country_code, type, population)
+        · translations 走 PRIMARY KEY(place_type, place_id, language) 与
+          idx_tr_prefix (place_type, language, translation)
+
+      ⚠ 踩过的坑（写任何城市相关 SQL 之前先看这条）：
+        **cities.state_code 存的是 states.iso2（短码），不是 states.iso3166_2（含国家前缀）。**
+        例：曼谷在 states 里 iso2='10'、iso3166_2='TH-10'，而 cities.state_code='10'。
+        所以拿前端回传的 provinceCode（'TH-10'）直接去比 cities.state_code，一条都查不到。
+        本文件的做法：先把 provinceCode 解析成 states.id（selectStateIdByCode，
+        同时认 iso3166_2 与 "S"+id 回退形式），再用 cities.state_id 过滤。
+        实测 state_code 与 states.iso2 不一致的行为 0，两者等价，但仍请用 state_id 过滤（能走索引）。
+    -->
+
+    <!-- 国家：250 行，一次 LEFT JOIN 拿到译名；排序按契约用拉丁名，译名排序交给前端 -->
+    <select id="selectCountries" resultType="org.jeecg.modules.shop.region.entity.vo.RegionCountryVO">
+        SELECT co.iso2                                                     AS code,
+        <choose>
+            <when test="language != null">COALESCE(t.translation, co.name, co.native)</when>
+            <otherwise>COALESCE(co.name, co.native)</otherwise>
+        </choose>                                                          AS name,
+               COALESCE(co.native, co.name)                                AS nameLocal,
+               co.phonecode                                                AS phoneCode,
+               co.currency                                                 AS currency,
+               co.postal_code_format                                       AS postalCodeFormat,
+               co.postal_code_regex                                        AS postalCodeRegex
+        FROM countries co
+        <if test="language != null">
+            LEFT JOIN translations t
+                   ON t.place_type = 'country' AND t.place_id = co.id AND t.language = #{language}
+        </if>
+        <!-- iso2 可能为空（上游有个别脏行）：没有权威码的国家无法落库，直接不出现 -->
+        WHERE co.iso2 IS NOT NULL
+        ORDER BY co.name
+    </select>
+
+    <!-- 地址列表批量取国名：IN 命中 250 行里的几条，等价于逐条点查但只发一次 SQL -->
+    <select id="selectCountriesByCodes" resultType="org.jeecg.modules.shop.region.entity.vo.RegionCountryVO">
+        SELECT co.iso2                                                     AS code,
+        <choose>
+            <when test="language != null">COALESCE(t.translation, co.name, co.native)</when>
+            <otherwise>COALESCE(co.name, co.native)</otherwise>
+        </choose>                                                          AS name,
+               COALESCE(co.native, co.name)                                AS nameLocal,
+               co.phonecode                                                AS phoneCode,
+               co.currency                                                 AS currency,
+               co.postal_code_format                                       AS postalCodeFormat,
+               co.postal_code_regex                                        AS postalCodeRegex
+        FROM countries co
+        <if test="language != null">
+            LEFT JOIN translations t
+                   ON t.place_type = 'country' AND t.place_id = co.id AND t.language = #{language}
+        </if>
+        WHERE co.iso2 IN
+        <foreach collection="codes" item="code" open="(" separator="," close=")">#{code}</foreach>
+    </select>
+
+    <!-- 写地址时的国家校验 + 取落库快照名（native 优先，落库必须是当地文字） -->
+    <select id="selectCountryByCode" resultType="org.jeecg.modules.shop.region.entity.vo.RegionCountryVO">
+        SELECT co.iso2                              AS code,
+               COALESCE(co.name, co.native)         AS name,
+               COALESCE(co.native, co.name)         AS nameLocal,
+               co.phonecode                         AS phoneCode,
+               co.currency                          AS currency,
+               co.postal_code_format                AS postalCodeFormat,
+               co.postal_code_regex                 AS postalCodeRegex
+        FROM countries co
+        WHERE co.iso2 = #{country}
+        LIMIT 1
+    </select>
+
+    <!-- 一级行政区：单国最多几百行，join 只做主键点查 -->
+    <select id="selectStates" resultType="org.jeecg.modules.shop.region.entity.vo.RegionStateVO">
+        SELECT s.id                                                             AS id,
+               COALESCE(NULLIF(s.iso3166_2, ''), CONCAT('S', s.id))             AS code,
+        <choose>
+            <when test="language != null">COALESCE(t.translation, s.name, s.native)</when>
+            <otherwise>COALESCE(s.name, s.native)</otherwise>
+        </choose>                                                               AS name,
+               COALESCE(s.native, s.name)                                       AS nameLocal,
+               s.type                                                           AS type
+        FROM states s
+        <if test="language != null">
+            LEFT JOIN translations t
+                   ON t.place_type = 'state' AND t.place_id = s.id AND t.language = #{language}
+        </if>
+        WHERE s.country_code = #{country}
+        <!--
+          剔除"不是收货目的地"的层级（数据审计发现的真实问题，2026-10-29）：
+
+          1) `geographical unit` 只有印尼有（Jawa / Kalimantan / Sumatera…7 条），
+             是宏观地理区，下面一座城市都没有。留着它 = 用户选了以后城市下拉永远为空。
+             该 type 全球仅 ID 使用，按类型排除是安全的。
+
+          2) 菲律宾的 states 把**两个层级混在一起**：82 个省 + 18 个大区（region）。
+             大区里除 NCR（马尼拉大都会，没有省、14 个市直接挂在 region 下）之外，
+             其余都有下级省份 —— 选中它们只会看到一个残缺的城市列表。
+             这里只对 PH 隐藏"有下级省份的 region"，NCR 因为无下级会保留。
+             为什么不推广到所有国家：`region` 在 49 个国家是合法的一级行政区
+             （意大利/芬兰/坦桑尼亚…），全局隐藏会把这些国家的首级换成更细的层级，
+             影响面远大于收益。
+        -->
+        AND s.type &lt;&gt; 'geographical unit'
+        AND NOT (
+            s.country_code = 'PH' AND s.type = 'region'
+            AND EXISTS (SELECT 1 FROM states ch WHERE ch.parent_id = s.id)
+        )
+        ORDER BY s.name
+    </select>
+
+    <!-- 单个州：同时认 iso3166_2 与 "S"+id 两种编码（见 Mapper 接口注释） -->
+    <select id="selectStateByCode" resultType="org.jeecg.modules.shop.region.entity.vo.RegionStateVO">
+        SELECT s.id                                                             AS id,
+               COALESCE(NULLIF(s.iso3166_2, ''), CONCAT('S', s.id))             AS code,
+        <choose>
+            <when test="language != null">COALESCE(t.translation, s.name, s.native)</when>
+            <otherwise>COALESCE(s.name, s.native)</otherwise>
+        </choose>                                                               AS name,
+               COALESCE(s.native, s.name)                                       AS nameLocal,
+               s.type                                                           AS type
+        FROM states s
+        <if test="language != null">
+            LEFT JOIN translations t
+                   ON t.place_type = 'state' AND t.place_id = s.id AND t.language = #{language}
+        </if>
+        WHERE s.country_code = #{country}
+          AND (s.iso3166_2 = #{code} OR CONCAT('S', s.id) = #{code})
+        LIMIT 1
+    </select>
+
+    <!--
+      州编码 → states.id：城市查询用 id 过滤比 join 更容易吃到 cities 的索引。
+      注意别用 cities.state_code 直接比 provinceCode —— 那一列存的是 states.iso2（'10'），
+      不是 iso3166_2（'TH-10'），详见文件头的"踩过的坑"。
+    -->
+    <select id="selectStateIdByCode" resultType="java.lang.Integer">
+        SELECT s.id
+        FROM states s
+        WHERE s.country_code = #{country}
+          AND (s.iso3166_2 = #{code} OR CONCAT('S', s.id) = #{code})
+        LIMIT 1
+    </select>
+
+    <!-- 地址列表批量取州名：code 传 iso3166_2，ids 传 "S"+id 里解析出来的 id -->
+    <select id="selectStatesByCodes" resultType="org.jeecg.modules.shop.region.entity.vo.RegionStateVO">
+        SELECT s.id                                                             AS id,
+               COALESCE(NULLIF(s.iso3166_2, ''), CONCAT('S', s.id))             AS code,
+        <choose>
+            <when test="language != null">COALESCE(t.translation, s.name, s.native)</when>
+            <otherwise>COALESCE(s.name, s.native)</otherwise>
+        </choose>                                                               AS name,
+               COALESCE(s.native, s.name)                                       AS nameLocal,
+               s.type                                                           AS type
+        FROM states s
+        <if test="language != null">
+            LEFT JOIN translations t
+                   ON t.place_type = 'state' AND t.place_id = s.id AND t.language = #{language}
+        </if>
+        WHERE
+        <choose>
+            <when test="codes != null and codes.size() > 0 and ids != null and ids.size() > 0">
+                (s.iso3166_2 IN
+                <foreach collection="codes" item="code" open="(" separator="," close=")">#{code}</foreach>
+                OR s.id IN
+                <foreach collection="ids" item="sid" open="(" separator="," close=")">#{sid}</foreach>
+                )
+            </when>
+            <when test="codes != null and codes.size() > 0">
+                s.iso3166_2 IN
+                <foreach collection="codes" item="code" open="(" separator="," close=")">#{code}</foreach>
+            </when>
+            <otherwise>
+                s.id IN
+                <foreach collection="ids" item="sid" open="(" separator="," close=")">#{sid}</foreach>
+            </otherwise>
+        </choose>
+    </select>
+
+    <!--
+      城市（常规 / 关键词第一步）：只匹配 name 与 native。
+      必须带 type 过滤 —— 这张表混了 adm1/village/section，漏掉就会出现"省份出现在城市下拉里"。
+    -->
+    <!--
+      ============================================================================
+      城市层的 type 过滤：**按国家分叉**，不能只用一套白名单。
+      ============================================================================
+
+      这张表把各国不同层级的记录混在同一个 `type` 维度里，一套白名单不可能对所有国家都对：
+
+        · 绝大多数国家：`city / municipality / town / adm2` 就是"城市"这一档，
+          town 在欧美/东南亚是真实的居民点（小镇），该出现；
+        · **中国**是特例（`prefecture` 这个 type 全球只有 CN 与 GN 有）：
+            - 地级市 = `prefecture`（石家庄/唐山/保定…），旧的通用白名单把它整个排除了，
+              于是"城市"里只剩县级市和乡镇，用户反馈"少了很多市"；
+            - `town` 在中国是**乡镇**（杨柳青/北仓/赤土…），旧规则把它放进来了，
+              于是直辖市下面全是乡镇；
+            - 直辖市（state.type='municipality'）没有地级市，真正对应"城市"这一档的是
+              `section`（和平/南开/河西…16 个区），这也正是用户期望看到的；
+            - `banner`（旗）、`county`（县）、`district`（区）都是县级，不属于这一档；
+        · `level IS NOT NULL` 只为去掉上游的**同名重复记录**（"承德" 与 "承德地区"、
+          "中山" 与 level 为空的 "中山"）。实测只命中重复行：
+          CN province 279→273、autonomous region 56→55、municipality 70→70，不误伤。
+    -->
+    <sql id="cityTypeFilter">
+        AND (
+            CASE
+                WHEN c.country_code = 'CN' AND EXISTS (
+                    SELECT 1 FROM states st WHERE st.id = c.state_id AND st.type = 'municipality'
+                ) THEN c.type = 'section'
+                WHEN c.country_code = 'CN' THEN c.type = 'prefecture'
+                ELSE c.type IN ('city', 'municipality', 'town', 'adm2')
+            END
+        )
+        AND (c.country_code &lt;&gt; 'CN' OR c.level IS NOT NULL)
+    </sql>
+
+    <!--
+      同一州内的**完全重复记录**去重（保留 id 最小的一条）。
+      数据审计发现菲律宾 4 组、泰国 3 组同名同人口的城市各存了两份（上游重复导入），
+      下拉里会出现两个一模一样、选了却没区别的选项。
+      判定用 (state_id, name, type, population) 全等 —— 而不是只看 name：
+      同一个州里确实可能存在两个同名但不同的地方（人口不同），那种必须保留。
+    -->
+    <sql id="cityDedupeFilter">
+        AND NOT EXISTS (
+            SELECT 1 FROM cities d
+            WHERE d.state_id = c.state_id
+              AND d.name = c.name
+              AND d.type = c.type
+              AND COALESCE(d.population, -1) = COALESCE(c.population, -1)
+              AND d.id &lt; c.id
+        )
+    </sql>
+
+    <select id="selectCities" resultType="org.jeecg.modules.shop.region.entity.vo.RegionCityVO">
+        SELECT c.id                             AS id,
+               COALESCE(c.name, c.native)       AS name,
+               COALESCE(c.native, c.name)       AS nameLocal,
+               c.population                     AS population
+        FROM cities c
+        WHERE c.country_code = #{country}
+        <include refid="cityTypeFilter"/>
+        <include refid="cityDedupeFilter"/>
+        <if test="stateId != null">
+            AND c.state_id = #{stateId}
+        </if>
+        <if test="keyword != null">
+            AND (c.name LIKE CONCAT('%', #{keyword}, '%') OR c.native LIKE CONCAT('%', #{keyword}, '%'))
+        </if>
+        ORDER BY c.population DESC, c.name
+        LIMIT #{limit}
+    </select>
+
+    <!--
+      城市（关键词第二步）：译文前缀匹配。
+      译文列上没有可用索引做后缀匹配，所以这里只能用前缀（LIKE 'kw%'），
+      才能吃到 idx_tr_prefix(place_type, language, translation)。
+      结果由 Service 层与第一步按 id 去重合并后再统一排序截断。
+    -->
+    <select id="selectCitiesByTranslation" resultType="org.jeecg.modules.shop.region.entity.vo.RegionCityVO">
+        SELECT c.id                             AS id,
+               COALESCE(c.name, c.native)       AS name,
+               COALESCE(c.native, c.name)       AS nameLocal,
+               c.population                     AS population
+        FROM translations t
+                 INNER JOIN cities c ON c.id = t.place_id
+        WHERE t.place_type = 'city'
+          AND t.language = #{language}
+          AND t.translation LIKE CONCAT(#{keywordPrefix}, '%')
+          AND c.country_code = #{country}
+        <include refid="cityTypeFilter"/>
+        <include refid="cityDedupeFilter"/>
+        <if test="stateId != null">
+            AND c.state_id = #{stateId}
+        </if>
+        ORDER BY c.population DESC
+        LIMIT #{limit}
+    </select>
+
+    <!-- 批量取译文：只填 id 与 name(=译文)，主键点查 -->
+    <select id="selectCityTranslations" resultType="org.jeecg.modules.shop.region.entity.vo.RegionCityVO">
+        SELECT t.place_id   AS id,
+               t.translation AS name
+        FROM translations t
+        WHERE t.place_type = 'city'
+          AND t.language = #{language}
+          AND t.place_id IN
+        <foreach collection="ids" item="pid" open="(" separator="," close=")">#{pid}</foreach>
+    </select>
+
+    <!-- 地址列表批量取城市展示名 -->
+    <select id="selectCitiesByIds" resultType="org.jeecg.modules.shop.region.entity.vo.RegionCityVO">
+        SELECT c.id                             AS id,
+        <choose>
+            <when test="language != null">COALESCE(t.translation, c.name, c.native)</when>
+            <otherwise>COALESCE(c.name, c.native)</otherwise>
+        </choose>                               AS name,
+               COALESCE(c.native, c.name)       AS nameLocal,
+               c.population                     AS population
+        FROM cities c
+        <if test="language != null">
+            LEFT JOIN translations t
+                   ON t.place_type = 'city' AND t.place_id = c.id AND t.language = #{language}
+        </if>
+        WHERE c.id IN
+        <foreach collection="ids" item="cid" open="(" separator="," close=")">#{cid}</foreach>
+    </select>
+
+    <!--
+      写时校验：城市必须属于该国家（且若给了州就必须属于该州）。
+      type 过滤与列表共用同一套 cityTypeFilter：前端下拉只会给出这些类型，
+      能绕过前端直接塞 village/adm1 的都是脏数据，"手填兜底"才是它们的正确归宿。
+      ⚠️ 副作用：改造前存下的、城市 id 属于"被新规则排除的类型"的老地址，编辑时校验会失败。
+      CN 正好是这种情况（旧规则把乡镇 town 当城市，新规则改为 prefecture/section）；
+      本店不做国内生意、线上也无存量数据，故接受。真要兼容，可在编辑路径放宽为"只校验归属不校验类型"。
+    -->
+    <select id="selectCityForRegion" resultType="org.jeecg.modules.shop.region.entity.vo.RegionCityVO">
+        SELECT c.id                             AS id,
+               COALESCE(c.name, c.native)       AS name,
+               COALESCE(c.native, c.name)       AS nameLocal,
+               c.population                     AS population
+        FROM cities c
+        WHERE c.id = #{id}
+          AND c.country_code = #{country}
+        <include refid="cityTypeFilter"/>
+        <include refid="cityDedupeFilter"/>
+        <if test="stateId != null">
+            AND c.state_id = #{stateId}
+        </if>
+    </select>
+
+</mapper>

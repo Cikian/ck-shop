@@ -93,9 +93,14 @@
                 {{ address.addressTag }}
               </span>
             </span>
-            <!-- fullAddress 由后端拼好，前端不再各处拼一遍，格式才能全站一致 -->
+            <!--
+              整串地址由后端拼好，前端不再各处拼一遍，格式才能全站一致。
+              优先用 fullAddressLocalized（当前访客语言），老数据没有这个字段时回退 fullAddress
+              （当地语言原件）—— 回退顺序不能反：fullAddress 是给面单/物流看的当地文字，
+              中文界面下拿它当展示文案，用户会看到一串泰文/阿拉伯文。
+            -->
             <span class="mt-1 block text-[13px] leading-relaxed text-[var(--color-muted)]">
-              {{ address.fullAddress || [address.province, address.city, address.district, address.detailAddress].filter(Boolean).join(' ') }}
+              {{ address.fullAddressLocalized || address.fullAddress || [address.province, address.city, address.district, address.detailAddress].filter(Boolean).join(' ') }}
             </span>
           </span>
         </label>
@@ -135,7 +140,10 @@ interface AddressItem {
   detailAddress?: string | null
   addressTag?: string | null
   isDefault?: boolean | null
+  /** 当地语言 + 面单格式（老数据的唯一整串来源） */
   fullAddress?: string | null
+  /** 当前访客语言的整串（契约 §3.4 新增；老数据为空） */
+  fullAddressLocalized?: string | null
 }
 
 defineProps<{

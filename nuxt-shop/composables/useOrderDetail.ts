@@ -103,6 +103,18 @@ export interface OrderDetailVO {
   receiverCity?: string | null
   receiverDistrict?: string | null
   receiverAddress?: string | null
+  /**
+   * 后端下发的整串收货地址（含国家段、国际顺序、相邻同名去重）。
+   *
+   * 两个字段的分工与地址簿 `AddressVO.fullAddress` / `fullAddressLocalized` 完全一致：
+   *   · receiverFullAddress          = 当地语言整串（面单口径，给物流看）
+   *   · receiverFullAddressLocalized = 访客语言整串（屏幕展示口径）
+   * 拼接规则**只准由后端实现**（联调约定：前端不再自己拼、不再去重），
+   * 否则订单详情与地址簿两处规则必然漂移。
+   * 历史订单 / 后端尚未重启的中间态下这两个字段都是 null，所以前端保留旧拼法兜底。
+   */
+  receiverFullAddress?: string | null
+  receiverFullAddressLocalized?: string | null
   receiverPostalCode?: string | null
   receiverTag?: string | null
   buyerRemark?: string | null
@@ -164,10 +176,23 @@ export const useOrderDetail = () => {
     return hours > 0 ? `${pad(hours)}:${pad(minutes)}:${pad(seconds)}` : `${pad(minutes)}:${pad(seconds)}`
   })
 
-  /** 完整收货地址：后端把省市区与详细地址分开给，这里只做拼接展示 */
+  /**
+   * 收货地址整串（对外语义不变：永远是字符串，没有订单时为 ''）。
+   *
+   * 来源按三级回退，规则与地址簿一致 —— **能拿后端下发的就绝不自己拼**：
+   *   1) receiverFullAddressLocalized —— 访客语言整串，屏幕展示的正解；
+   *   2) receiverFullAddress          —— 当地语言整串（面单口径）；
+   *   3) 旧拼法兜底：省 + 市 + 区 + 详细地址。
+   *
+   * 为什么兜底必须留着：历史订单没有新字段，且后端还没重启的中间态下两个新字段都是 null。
+   * 但兜底那一段**刻意保持原样**（不含国家段）—— 它只为"不显示空白"服务；
+   * 想补国家就得在前端复刻后端的国际顺序与去重规则，那正是本约定要避免的事。
+   */
   const receiverAddressText = computed(() => {
     const source = detail.value
     if (!source) return ''
+    const fromBackend = source.receiverFullAddressLocalized || source.receiverFullAddress
+    if (fromBackend && fromBackend.trim()) return fromBackend
     const region = [source.receiverProvince, source.receiverCity, source.receiverDistrict].filter(Boolean).join(' ')
     return [region, source.receiverAddress].filter(Boolean).join(' ')
   })

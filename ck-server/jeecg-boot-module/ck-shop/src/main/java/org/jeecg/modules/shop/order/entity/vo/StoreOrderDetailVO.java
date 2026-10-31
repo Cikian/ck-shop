@@ -39,6 +39,27 @@ public class StoreOrderDetailVO extends StoreOrderListVO implements Serializable
     @Schema(description = "市")
     private String receiverCity;
 
+    /**
+     * 地区快照（权威码 + 当地语言国名）。
+     *
+     * <p>下发给买家的意义：他看到的 {@code receiverProvince/receiverCity} 是当地文字
+     * （寄件用的写法），而这两个码能让他/客服确认"这单到底寄到哪个国家的哪个城市"，
+     * 也是售后核对运费分区的唯一依据。
+     *
+     * <p>{@code receiverCountryCode} 为空 = 改造前的历史订单，前端按老格式渲染。
+     */
+    @Schema(description = "国家码(ISO alpha-2, 快照; 老订单为空)")
+    private String receiverCountryCode;
+
+    @Schema(description = "国名(当地语言快照)")
+    private String receiverCountry;
+
+    @Schema(description = "省/州编码(ISO 3166-2, 快照)")
+    private String receiverProvinceCode;
+
+    @Schema(description = "城市ID(cities.id, 快照; 手填时为空)")
+    private Integer receiverCityId;
+
     @Schema(description = "区/县")
     private String receiverDistrict;
 
@@ -50,6 +71,31 @@ public class StoreOrderDetailVO extends StoreOrderListVO implements Serializable
 
     @Schema(description = "地址标签")
     private String receiverTag;
+
+    /**
+     * 收货地址整串（当地语言，面单用）。
+     *
+     * <p><b>只读派生字段</b>：由订单快照列拼出来，不落库、也不回查地址簿——
+     * 用户后来改了地址簿不能影响历史订单，这是订单快照的底线。
+     * 拼接规则与地址簿 {@code AddressVO.fullAddress} 是<b>同一份实现</b>
+     * （{@code ShopAddressTextUtils}）：有国家信息走国际顺序 + 逗号分隔 + 相邻同名去重，
+     * 没有国家信息（老订单）走原来的连写格式。
+     */
+    @Schema(description = "收货地址整串(当地语言, 面单用)")
+    private String receiverFullAddress;
+
+    /**
+     * 收货地址整串（访客语言，屏幕展示用）。
+     *
+     * <p>快照里只有当地文字（面单要用的写法），译名是拿
+     * {@code receiverCountryCode / receiverProvinceCode / receiverCityId}
+     * 反查 {@code translations} <b>现算</b>的；查不到就回退快照原文，绝不给 null。
+     *
+     * <p>老订单（没有国家信息）时它等于 {@link #receiverFullAddress}，
+     * 与改造前的展示串完全一致。
+     */
+    @Schema(description = "收货地址整串(访客语言, 展示用)")
+    private String receiverFullAddressLocalized;
 
     @Schema(description = "商品原价合计")
     private BigDecimal totalAmount;

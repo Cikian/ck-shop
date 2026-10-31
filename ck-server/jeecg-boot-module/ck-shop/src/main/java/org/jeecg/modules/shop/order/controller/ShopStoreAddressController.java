@@ -9,6 +9,7 @@ import org.jeecg.common.system.vo.LoginUser;
 import org.jeecg.modules.shop.order.entity.dto.AddressDTO;
 import org.jeecg.modules.shop.order.entity.vo.AddressVO;
 import org.jeecg.modules.shop.order.service.IShopUserAddressService;
+import org.jeecg.modules.shop.region.RegionLangResolver;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -30,6 +31,11 @@ import java.util.List;
  * <p><b>手机号不做脱敏</b>：这是买家自己的地址簿，号码是他自己填的，
  * 脱敏只会让他无法核对收货信息。后台侧的脱敏由后台接口负责。
  *
+ * <p><b>语言为什么要一路传到 Service</b>：库里存的是当地语言文字（面单写法），
+ * 出参里的 {@code countryDisplay/provinceDisplay/cityDisplay/fullAddressLocalized}
+ * 是按访客语言现算的译名。语言只在请求里，所以由这里解析一次再显式传下去，
+ * Service 层不读请求上下文（便于单测与复用）。
+ *
  * @author Cikian
  * @version 1.0
  * @since 2026-10-14
@@ -50,28 +56,30 @@ public class ShopStoreAddressController {
     @GetMapping(value = "/list")
     public Result<List<AddressVO>> list(HttpServletRequest req) {
         LoginUser user = contextResolver.currentUser();
-        return Result.OK(addressService.listMine(user.getId(), false));
+        return Result.OK(addressService.listMine(user.getId(), false, RegionLangResolver.resolveLocale(req)));
     }
 
     @Operation(summary = "店铺端-地址详情")
     @GetMapping(value = "/detail")
     public Result<AddressVO> detail(String id, HttpServletRequest req) {
         LoginUser user = contextResolver.currentUser();
-        return Result.OK(addressService.detail(user.getId(), id, false));
+        return Result.OK(addressService.detail(user.getId(), id, false, RegionLangResolver.resolveLocale(req)));
     }
 
     @Operation(summary = "店铺端-新增地址")
     @PostMapping(value = "/add")
     public Result<AddressVO> add(@RequestBody AddressDTO dto, HttpServletRequest req) {
         LoginUser user = contextResolver.currentUser();
-        return Result.OK("地址已保存", addressService.create(user.getId(), user.getUsername(), dto));
+        return Result.OK("地址已保存", addressService.create(user.getId(), user.getUsername(), dto,
+                RegionLangResolver.resolveLocale(req)));
     }
 
     @Operation(summary = "店铺端-编辑地址")
     @PostMapping(value = "/edit")
     public Result<AddressVO> edit(@RequestBody AddressDTO dto, HttpServletRequest req) {
         LoginUser user = contextResolver.currentUser();
-        return Result.OK("地址已更新", addressService.update(user.getId(), user.getUsername(), dto));
+        return Result.OK("地址已更新", addressService.update(user.getId(), user.getUsername(), dto,
+                RegionLangResolver.resolveLocale(req)));
     }
 
     @Operation(summary = "店铺端-删除地址(软删除)")

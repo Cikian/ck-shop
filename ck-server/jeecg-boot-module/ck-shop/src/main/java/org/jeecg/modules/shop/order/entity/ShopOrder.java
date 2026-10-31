@@ -214,6 +214,28 @@ public class ShopOrder implements Serializable {
     @Schema(description = "收货人手机号(快照)")
     private String receiverPhone;
 
+    /**
+     * 国家码（ISO 3166-1 alpha-2，快照）。
+     *
+     * <p>订单里存的必须是<b>快照而不是外键</b>：{@code countries} 表是上游整表重灌的
+     * 参考数据，没有外键（也不允许建，见 db 脚本注释），而且国家改名/改码的历史事实
+     * 不该被"现在表里是什么"覆盖。物流对账按这一列分区，所以它能空（老订单）但不能猜。
+     */
+    @Schema(description = "国家码(ISO alpha-2, 快照; 老订单为空)")
+    private String receiverCountryCode;
+
+    /** 国名快照（当地语言）：面单/报关单要印的是这个，不是界面译名 */
+    @Schema(description = "国名(当地语言快照)")
+    private String receiverCountry;
+
+    /** 省/州编码快照（ISO 3166-2，或服务端回退的 "S"+id） */
+    @Schema(description = "省/州编码(ISO 3166-2, 快照)")
+    private String receiverProvinceCode;
+
+    /** 城市 id 快照（{@code cities.id}）；手填城市时为空 */
+    @Schema(description = "城市ID(cities.id, 快照; 手填时为空)")
+    private Integer receiverCityId;
+
     @Schema(description = "省(快照)")
     private String receiverProvince;
 

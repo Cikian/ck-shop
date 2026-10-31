@@ -63,8 +63,14 @@ public interface IShopOrderService extends IService<ShopOrder> {
     /** 我的订单列表 */
     Page<StoreOrderListVO> storePage(OrderContext context, OrderQuery query);
 
-    /** 我的订单详情（含地址、支付单、退款单与买家可见时间线） */
-    StoreOrderDetailVO storeDetail(OrderContext context, String orderNo);
+    /**
+     * 我的订单详情（含地址、支付单、退款单与买家可见时间线）。
+     *
+     * @param locale 访客 locale（zh/en/fr/zh-TW…），用于把地址快照里的当地文字
+     *               现算成访客语言的整串（{@code receiverFullAddressLocalized}）。
+     *               服务层刻意不读请求上下文：单测与后台脚本都要能复用，语言只能由调用方显式给。
+     */
+    StoreOrderDetailVO storeDetail(OrderContext context, String orderNo, String locale);
 
     /**
      * 买家取消订单（仅待支付可取消）。

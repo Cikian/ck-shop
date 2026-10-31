@@ -55,9 +55,49 @@ public class OrderSubmitDTO implements Serializable {
     @Schema(description = "内联收货手机号")
     private String receiverPhone;
 
+    /**
+     * 内联地址的国家码 / 省州码 / 城市 id。
+     *
+     * <p>为什么内联地址也要这三个码：订单快照只写 "{@code receiverCity} 文字"的话，
+     * 物流对接拿不到 {@code cities.id}、运费也按不了国家分区，事后只能靠人工看文字补数据。
+     * 这里与地址簿走<b>同一套服务端校验</b>，保证两条路径落出来的订单长得一样。
+     *
+     * <p>三者都可空（老客户端仍可只传文字），但一旦传了就必须与国/州/市对得上。
+     */
+    @Schema(description = "内联国家码(ISO alpha-2)")
+    private String receiverCountryCode;
+
+    @Schema(description = "内联省/州编码(ISO 3166-2)")
+    private String receiverProvinceCode;
+
+    @Schema(description = "内联城市ID(cities.id, 手填时为空)")
+    private Integer receiverCityId;
+
+    /**
+     * 内联<b>手填国名</b>（可空，最长 100）。
+     *
+     * <p>与地址簿 {@code AddressDTO.countryName} 是同一套规则、同一个理由：
+     * 级联组件每一级都有"找不到？手动填写"的兜底（自贸区、工业园、军事基地这类地址
+     * 任何数据集都没有），用户手填国家时前端给不出 ISO 码，只传这个字段。
+     * BFF 的"直接下单不改地址簿"入口确实能走到这里（{@code order/submit.post.ts} 支持内联地址），
+     * 所以不接住它，这类订单在后台/面单上就没有国家。
+     *
+     * <h3>优先级（服务端强制，见 ShopOrderServiceImpl.applyAddressSnapshot）</h3>
+     * <ol>
+     *   <li>{@code receiverCountryCode} 有值 → <b>永远</b>用 region 表解析出的当地语言国名，
+     *       忽略这里传的值（否则可伪造：码写 TH、名写"美国"，面单与统计各读一列，谁也说不清）；</li>
+     *   <li>无码、本字段有值 → 存用户手填的国名（{@code receiver_country} 落库）；</li>
+     *   <li>两者都空 → {@code receiver_country} 为 NULL，即老订单形态。</li>
+     * </ol>
+     */
+    @Schema(description = "内联手填国名(receiverCountryCode 为空时才会被采信)")
+    private String receiverCountryName;
+
+    /** 省文字：给了 receiverProvinceCode 时会被服务端用当地语言标准名覆盖 */
     @Schema(description = "内联省")
     private String receiverProvince;
 
+    /** 市文字：给了 receiverCityId 时会被覆盖；手填场景才采信 */
     @Schema(description = "内联市")
     private String receiverCity;
 

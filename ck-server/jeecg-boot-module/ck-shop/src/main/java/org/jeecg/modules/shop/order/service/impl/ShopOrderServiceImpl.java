@@ -58,9 +58,12 @@ import org.jeecg.modules.shop.order.util.MoneyUtils;
 import org.jeecg.modules.shop.order.util.OrderNoGenerator;
 import org.jeecg.modules.shop.order.util.OrderTimeRange;
 import org.jeecg.modules.shop.order.util.PriceTokenUtils;
+import org.jeecg.modules.shop.order.util.ShopAddressTextUtils;
 import org.jeecg.modules.shop.order.util.ShopMaskUtils;
 import org.jeecg.modules.shop.promotion.entity.ShopPromotion;
 import org.jeecg.modules.shop.promotion.mapper.ShopPromotionMapper;
+import org.jeecg.modules.shop.region.entity.RegionResolution;
+import org.jeecg.modules.shop.region.service.IShopRegionService;
 import org.jeecg.modules.shop.store.ShopOrgScopeResolver;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
@@ -133,6 +136,13 @@ public class ShopOrderServiceImpl
 
     @Autowired
     private IShopUserAddressService addressService;
+
+    /**
+     * 详情页要把地址快照里的当地文字现算成访客语言的整串（只读，不落库）。
+     * 直接依赖 region 服务而不是回查地址簿：订单是快照，地址簿可能已经被改成别的样子了。
+     */
+    @Autowired
+    private IShopRegionService regionService;
 
     @Autowired
     private IShopPaymentService paymentService;
@@ -510,6 +520,9 @@ public class ShopOrderServiceImpl
         requireMaxLength("收货人姓名", dto.getReceiverName(), 50);
         requireMaxLength("收货人手机号", dto.getReceiverPhone(), 30);
         requireMaxLength("收货详细地址", dto.getReceiverAddress(), 255);
+        // 手填国名落 receiver_country（varchar(100)）：与地址簿 AddressDTO.countryName 同一套口径，
+        // 超长显式拒绝，不静默截断（截断后的国名在面单上是错的）
+        requireMaxLength("手填国家/地区名称", dto.getReceiverCountryName(), 100);
     }
 
     private void requireMaxLength(String label, String value, int maxLength) {
@@ -528,6 +541,11 @@ public class ShopOrderServiceImpl
              */
             order.setReceiverName(StringUtils.left(address.getReceiverName(), 50))
                     .setReceiverPhone(StringUtils.left(address.getReceiverPhone(), 30))
+                    // 地区码与国名整份拷贝：订单是快照，用户后来把地址簿改成别的国家也不影响这一单
+                    .setReceiverCountryCode(address.getCountryCode())
+                    .setReceiverCountry(StringUtils.left(address.getCountryName(), 100))
+                    .setReceiverProvinceCode(address.getProvinceCode())
+                    .setReceiverCityId(address.getCityId())
                     .setReceiverProvince(address.getProvince())
                     .setReceiverCity(address.getCity())
                     .setReceiverDistrict(address.getDistrict())
@@ -538,6 +556,10 @@ public class ShopOrderServiceImpl
             snapshot.put("addressId", address.getId());
             snapshot.put("receiverName", address.getReceiverName());
             snapshot.put("receiverPhone", address.getReceiverPhone());
+            snapshot.put("countryCode", address.getCountryCode());
+            snapshot.put("countryName", address.getCountryName());
+            snapshot.put("provinceCode", address.getProvinceCode());
+            snapshot.put("cityId", address.getCityId());
             snapshot.put("province", address.getProvince());
             snapshot.put("city", address.getCity());
             snapshot.put("district", address.getDistrict());
@@ -545,10 +567,34 @@ public class ShopOrderServiceImpl
             snapshot.put("postalCode", address.getPostalCode());
             snapshot.put("addressTag", address.getAddressTag());
         } else {
+            /*
+             * 内联地址（不改地址簿）：走与地址簿**完全同一套**级联校验与取名规则。
+             * 如果这里另写一套，同一份输入在"存地址簿再下单"和"直接下单"两种路径下
+             * 会落到不同的 province 文字/码上，对账时根本看不出哪个是对的。
+             */
+            RegionResolution region = addressService.resolveRegionForOrder(
+                    dto.getReceiverCountryCode(), dto.getReceiverProvinceCode(), dto.getReceiverCityId());
+            String province = region != null && StringUtils.isNotBlank(region.getProvinceName())
+                    ? region.getProvinceName() : StringUtils.trimToNull(dto.getReceiverProvince());
+            String city = region != null && StringUtils.isNotBlank(region.getCityName())
+                    ? region.getCityName() : StringUtils.trimToNull(dto.getReceiverCity());
+            /*
+             * 国名与地址簿同一套优先级：有码 → 只认 region 解析出的当地语言国名（忽略前端传的，
+             * 否则"码=TH、名=美国"这种自相矛盾的面单能被前端造出来）；
+             * 无码但有手填名 → 存手填名（手填国家时前端给不出 ISO 码，这是唯一来源）；
+             * 都空 → NULL（老形态）。
+             */
+            String countryName = region != null && StringUtils.isNotBlank(region.getCountryName())
+                    ? region.getCountryName()
+                    : StringUtils.left(StringUtils.trimToNull(dto.getReceiverCountryName()), 100);
             order.setReceiverName(StringUtils.trim(dto.getReceiverName()))
                     .setReceiverPhone(StringUtils.trim(dto.getReceiverPhone()))
-                    .setReceiverProvince(StringUtils.trimToNull(dto.getReceiverProvince()))
-                    .setReceiverCity(StringUtils.trimToNull(dto.getReceiverCity()))
+                    .setReceiverCountryCode(region == null ? null : region.getCountryCode())
+                    .setReceiverCountry(countryName)
+                    .setReceiverProvinceCode(region == null ? null : region.getProvinceCode())
+                    .setReceiverCityId(region == null ? null : region.getCityId())
+                    .setReceiverProvince(province)
+                    .setReceiverCity(city)
                     .setReceiverDistrict(StringUtils.trimToNull(dto.getReceiverDistrict()))
                     .setReceiverAddress(StringUtils.trim(dto.getReceiverAddress()))
                     .setReceiverPostalCode(StringUtils.trimToNull(dto.getReceiverPostalCode()))
@@ -556,8 +602,13 @@ public class ShopOrderServiceImpl
             snapshot.put("source", "inline");
             snapshot.put("receiverName", dto.getReceiverName());
             snapshot.put("receiverPhone", dto.getReceiverPhone());
-            snapshot.put("province", dto.getReceiverProvince());
-            snapshot.put("city", dto.getReceiverCity());
+            snapshot.put("countryCode", region == null ? null : region.getCountryCode());
+            // 写解析后的最终国名（含手填），不写前端原始入参：快照要能回答"面单上到底印了什么"
+            snapshot.put("countryName", countryName);
+            snapshot.put("provinceCode", region == null ? null : region.getProvinceCode());
+            snapshot.put("cityId", region == null ? null : region.getCityId());
+            snapshot.put("province", province);
+            snapshot.put("city", city);
             snapshot.put("district", dto.getReceiverDistrict());
             snapshot.put("detailAddress", dto.getReceiverAddress());
             snapshot.put("postalCode", dto.getReceiverPostalCode());
@@ -894,13 +945,17 @@ public class ShopOrderServiceImpl
     }
 
     @Override
-    public StoreOrderDetailVO storeDetail(OrderContext context, String orderNo) {
+    public StoreOrderDetailVO storeDetail(OrderContext context, String orderNo, String locale) {
         ShopOrder order = requireOwnedOrder(context, orderNo);
         StoreOrderDetailVO vo = new StoreOrderDetailVO();
         StoreOrderListVO base = toStoreListVO(order,
                 orderItemMapper.selectByOrderIds(java.util.Collections.singletonList(order.getId())));
         copyInto(vo, base);
-        vo.setReceiverProvince(order.getReceiverProvince())
+        vo.setReceiverCountryCode(order.getReceiverCountryCode())
+                .setReceiverCountry(order.getReceiverCountry())
+                .setReceiverProvinceCode(order.getReceiverProvinceCode())
+                .setReceiverCityId(order.getReceiverCityId())
+                .setReceiverProvince(order.getReceiverProvince())
                 .setReceiverCity(order.getReceiverCity())
                 .setReceiverDistrict(order.getReceiverDistrict())
                 .setReceiverAddress(order.getReceiverAddress())
@@ -912,6 +967,8 @@ public class ShopOrderServiceImpl
                 .setPayChannel(order.getPayChannel())
                 .setPayType(order.getPayType())
                 .setShipRemark(order.getShipRemark());
+        // 地址整串：拼装规则与地址簿共用一份实现，数据源只有订单快照列（不回查地址簿）
+        fillReceiverAddressText(vo, order, locale);
 
         vo.setPayments(toPaymentVOs(paymentService.listByOrderId(order.getId())));
         vo.setRefunds(toRefundVOs(refundMapper.selectList(new LambdaQueryWrapper<ShopOrderRefund>()
@@ -920,6 +977,75 @@ public class ShopOrderServiceImpl
         // 买家只看生命周期节点，不看后台内部操作
         vo.setEvents(toEventVOs(eventService.listBuyerVisible(order.getId())));
         return vo;
+    }
+
+    /**
+     * 补订单详情上的两串地址（当地语言面单串 + 访客语言展示串）。
+     *
+     * <h3>为什么只能取订单快照列</h3>
+     * 订单是快照：用户下单后把地址簿改成别的国家，这一单的面单文案也不能变。
+     * 所以这里一个字都不回查地址簿，只读 {@code receiver_*} 列。
+     *
+     * <h3>译名为什么是现算的</h3>
+     * 快照存的是当地文字（快递员要看的写法），访客语言要靠
+     * {@code receiverCountryCode / receiverProvinceCode / receiverCityId} 反查
+     * {@code translations} 现算；<b>查不到就回退快照原文</b>（宁可给当地文字，
+     * 也不能给 null 让前端显示空白——空白的地址等于没法核对）。
+     */
+    private void fillReceiverAddressText(StoreOrderDetailVO vo, ShopOrder order, String locale) {
+        boolean international = ShopAddressTextUtils.hasCountry(
+                order.getReceiverCountryCode(), order.getReceiverCountry());
+        vo.setReceiverFullAddress(international
+                ? ShopAddressTextUtils.joinInternational(order.getReceiverAddress(), order.getReceiverDistrict(),
+                        order.getReceiverCity(), order.getReceiverProvince(),
+                        order.getReceiverPostalCode(), order.getReceiverCountry())
+                : ShopAddressTextUtils.joinLegacy(order.getReceiverProvince(), order.getReceiverCity(),
+                        order.getReceiverDistrict(), order.getReceiverAddress()));
+        if (!international) {
+            // 老订单没有国家信息，也就没有码可反查译文：展示串就是面单串，与改造前完全一致
+            vo.setReceiverFullAddressLocalized(vo.getReceiverFullAddress());
+            return;
+        }
+        vo.setReceiverFullAddressLocalized(ShopAddressTextUtils.joinInternational(
+                order.getReceiverAddress(), order.getReceiverDistrict(),
+                resolveCityDisplay(order, locale), resolveProvinceDisplay(order, locale),
+                order.getReceiverPostalCode(), resolveCountryDisplay(order, locale)));
+    }
+
+    /** 国名展示：有码查译文，查不到（或没码，例如手填国名）就用快照原文 */
+    private String resolveCountryDisplay(ShopOrder order, String locale) {
+        String code = StringUtils.trimToNull(order.getReceiverCountryCode());
+        if (code == null || StringUtils.isBlank(locale)) {
+            return order.getReceiverCountry();
+        }
+        Map<String, String> names = regionService.countryDisplayNames(
+                java.util.Collections.singletonList(code), locale);
+        // 译文表的 key 是大写 ISO 码，快照列如果存过小写（历史脏数据）也能命中
+        String translated = names.get(code);
+        if (translated == null) {
+            translated = names.get(code.toUpperCase(java.util.Locale.ROOT));
+        }
+        return StringUtils.defaultIfBlank(translated, order.getReceiverCountry());
+    }
+
+    private String resolveProvinceDisplay(ShopOrder order, String locale) {
+        String code = StringUtils.trimToNull(order.getReceiverProvinceCode());
+        if (code == null || StringUtils.isBlank(locale)) {
+            return order.getReceiverProvince();
+        }
+        String translated = regionService.stateDisplayNames(
+                java.util.Collections.singletonList(code), locale).get(code);
+        return StringUtils.defaultIfBlank(translated, order.getReceiverProvince());
+    }
+
+    private String resolveCityDisplay(ShopOrder order, String locale) {
+        Integer cityId = order.getReceiverCityId();
+        if (cityId == null || StringUtils.isBlank(locale)) {
+            return order.getReceiverCity();
+        }
+        String translated = regionService.cityDisplayNames(
+                java.util.Collections.singletonList(cityId), locale).get(cityId);
+        return StringUtils.defaultIfBlank(translated, order.getReceiverCity());
     }
 
     /** 把列表 VO 的公共字段搬到详情 VO（手动复制而非继承反射，字段变动时编译期就能发现漏改） */
@@ -1126,6 +1252,12 @@ public class ShopOrderServiceImpl
                 .setTotalWeight(order.getTotalWeight())
                 .setReceiverName(order.getReceiverName())
                 .setReceiverPhone(order.getReceiverPhone())
+                // 地区快照：后台对账/物流对接要看的是"这单寄到哪个国家的哪个城市"，
+                // 只给省市区文字没法做国家维度统计
+                .setReceiverCountryCode(order.getReceiverCountryCode())
+                .setReceiverCountry(order.getReceiverCountry())
+                .setReceiverProvinceCode(order.getReceiverProvinceCode())
+                .setReceiverCityId(order.getReceiverCityId())
                 .setReceiverProvince(order.getReceiverProvince())
                 .setReceiverCity(order.getReceiverCity())
                 .setReceiverDistrict(order.getReceiverDistrict())

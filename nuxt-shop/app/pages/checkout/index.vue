@@ -418,6 +418,11 @@ interface AddressItem {
   addressTag?: string | null
   isDefault?: boolean | null
   fullAddress?: string | null
+  /**
+   * 当前访客语言的整串地址（契约 §3.4 新增；老数据为空）。
+   * 结算页把它交给 CheckoutAddressPicker 展示，取不到时组件自己回退 fullAddress。
+   */
+  fullAddressLocalized?: string | null
 }
 
 const { t, locale } = useI18n()

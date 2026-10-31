@@ -90,9 +90,12 @@
                   {{ address.addressTag }}
                 </span>
               </p>
-              <!-- fullAddress 由后端拼好，前端不再各处拼一遍 -->
+              <!--
+                整串地址由后端拼好，前端不再各处拼一遍。
+                优先 fullAddressLocalized（访客语言），老数据没有这个字段时回退 fullAddress。
+              -->
               <p class="mt-1.5 text-[13px] leading-relaxed text-[var(--color-muted)]">
-                {{ address.fullAddress || '—' }}
+                {{ address.fullAddressLocalized || address.fullAddress || '—' }}
               </p>
               <!-- 使用次数：有真实数据才显示，没有就不显示（不写死 0 次的噪音） -->
               <p v-if="isPositive(address.useCount)" class="mt-1.5 text-[12px] tabular text-[var(--color-muted)]">
@@ -138,7 +141,10 @@
     <UModal
       v-model:open="formState.open"
       :title="formState.id ? t('address.editTitle') : t('address.addTitle')"
-      :ui="{ content: 'rounded-[var(--radius-card)]' }"
+      :ui="{
+        content: 'rounded-[var(--radius-card)] sm:max-w-2xl max-h-[calc(100dvh-1rem)] sm:max-h-[calc(100dvh-1.5rem)]',
+        body: 'no-scrollbar',
+      }"
       @update:open="onFormOpenChange"
     >
       <template #body>
@@ -171,40 +177,22 @@
             >
           </div>
 
-          <div class="grid grid-cols-3 gap-3 sm:col-span-2">
-            <input
-              v-model="form.province"
-              type="text"
-              :aria-label="t('address.provincePlaceholder')"
-              :placeholder="t('address.provincePlaceholder')"
-              class="h-11 w-full rounded-[var(--radius-input)] border border-[var(--color-line)] bg-white px-3 text-sm text-[var(--color-ink)] focus:border-[var(--color-brand-400)] focus:outline-none focus:ring-2 focus:ring-[var(--color-brand-100)]"
-            >
-            <input
-              v-model="form.city"
-              type="text"
-              :aria-label="t('address.cityPlaceholder')"
-              :placeholder="t('address.cityPlaceholder')"
-              class="h-11 w-full rounded-[var(--radius-input)] border border-[var(--color-line)] bg-white px-3 text-sm text-[var(--color-ink)] focus:border-[var(--color-brand-400)] focus:outline-none focus:ring-2 focus:ring-[var(--color-brand-100)]"
-            >
-            <input
-              v-model="form.district"
-              type="text"
-              :aria-label="t('address.districtPlaceholder')"
-              :placeholder="t('address.districtPlaceholder')"
-              class="h-11 w-full rounded-[var(--radius-input)] border border-[var(--color-line)] bg-white px-3 text-sm text-[var(--color-ink)] focus:border-[var(--color-brand-400)] focus:outline-none focus:ring-2 focus:ring-[var(--color-brand-100)]"
-            >
-          </div>
+          <!--
+            国家 → 州省 → 城市：与个人中心面板同一套级联（契约 §5.3）。
+            这个页面与 AddressesPanel 是**两份独立表单**（历史原因，见下），
+            但地区字段的口径、兜底入口、邮编预校验必须完全一致，否则同一份地址在两个入口能存出两种结果。
+          -->
+          <AddressRegionCascader v-model="region" class="sm:col-span-2" :disabled="formState.pending" />
 
-          <div class="sm:col-span-2">
-            <label for="address-detail" class="mb-1.5 block text-[13px] font-bold text-[var(--color-ink-soft)]">
-              {{ t('address.detailAddress') }}
+          <div>
+            <label for="address-district" class="mb-1.5 block text-[13px] font-bold text-[var(--color-ink-soft)]">
+              {{ t('address.districtPlaceholder') }}
             </label>
             <input
-              id="address-detail"
-              v-model="form.detailAddress"
+              id="address-district"
+              v-model="form.district"
               type="text"
-              autocomplete="street-address"
-              :placeholder="t('address.detailPlaceholder')"
+              :placeholder="t('address.districtPlaceholder')"
               class="h-11 w-full rounded-[var(--radius-input)] border border-[var(--color-line)] bg-white px-4 text-sm text-[var(--color-ink)] focus:border-[var(--color-brand-400)] focus:outline-none focus:ring-2 focus:ring-[var(--color-brand-100)]"
             >
           </div>
@@ -219,6 +207,25 @@
               type="text"
               autocomplete="postal-code"
               :placeholder="t('address.postalPlaceholder')"
+              class="h-11 w-full rounded-[var(--radius-input)] border border-[var(--color-line)] bg-white px-4 text-sm text-[var(--color-ink)] focus:border-[var(--color-brand-400)] focus:outline-none focus:ring-2 focus:ring-[var(--color-brand-100)]"
+            >
+            <!-- 邮编按国家 postal_code_regex 预校验：只提示、不阻断（后端才是权威） -->
+            <p v-if="postalCodeWarning" class="mt-1.5 flex items-start gap-1.5 text-[12px] text-[var(--color-warning-600)]">
+              <UIcon name="lucide:circle-alert" class="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+              {{ t('address.postalCodeInvalid') }}
+            </p>
+          </div>
+
+          <div class="sm:col-span-2">
+            <label for="address-detail" class="mb-1.5 block text-[13px] font-bold text-[var(--color-ink-soft)]">
+              {{ t('address.detailAddress') }}
+            </label>
+            <input
+              id="address-detail"
+              v-model="form.detailAddress"
+              type="text"
+              autocomplete="street-address"
+              :placeholder="t('address.detailPlaceholder')"
               class="h-11 w-full rounded-[var(--radius-input)] border border-[var(--color-line)] bg-white px-4 text-sm text-[var(--color-ink)] focus:border-[var(--color-brand-400)] focus:outline-none focus:ring-2 focus:ring-[var(--color-brand-100)]"
             >
           </div>
@@ -299,9 +306,13 @@
 /** 地址簿是私有页面，未登录 / 登录过期由 auth 中间件重定向到登录页并回跳 */
 definePageMeta({ middleware: 'auth' })
 
+import type { AddressVO } from '~~/types/shop-address'
+import type { AddressRegionSelection } from '~~/types/shop-region'
+import { createEmptyRegionSelection } from '~~/types/shop-region'
 import { isPositive, isUnauthorizedError, readErrorMessage } from '~~/composables/useApiError'
 import { useLoginLink } from '~~/composables/useLoginLink'
 import { useSessionExpiry } from '~~/composables/useSessionExpiry'
+import { useRegionOptions } from '~~/composables/useRegionOptions'
 
 /**
  * 收货地址簿。
@@ -314,29 +325,19 @@ import { useSessionExpiry } from '~~/composables/useSessionExpiry'
  * isDefault 的三态（后端 AddressDTO 的注释）：null = 不改动当前默认状态，
  * true = 设为默认。所以提交时"没勾选"要传 null 而不是 false ——
  * 否则编辑一条非默认地址会把用户真正想保留的默认地址顺手取消掉。
+ *
+ * 关于"这份表单为什么没有复用 profile 的 AddressesPanel"：
+ * 历史上两边各写了一份（连 AddressVO 都各有一份），本次只把**类型**收敛到
+ * types/shop-address.ts、地区字段换成同一套级联组件；表单结构仍是两份，
+ * 因为这一页的取数/登录引导/骨架屏与面板的四态渲染是两套（面板要嵌在 tab 里）。
  */
-
-/** 收货地址（后端 AddressVO） */
-interface AddressVO {
-  id: string
-  receiverName?: string | null
-  receiverPhone?: string | null
-  province?: string | null
-  city?: string | null
-  district?: string | null
-  detailAddress?: string | null
-  postalCode?: string | null
-  addressTag?: string | null
-  isDefault?: boolean | null
-  masked?: boolean | null
-  useCount?: number | null
-  fullAddress?: string | null
-}
 
 const { t, locale } = useI18n()
 const toast = useToast()
 /** SSR 期也要带上 httpOnly cookie 的 fetch（loader 在 setup 阶段执行） */
 const requestFetch = useRequestFetch()
+/** 邮编预校验要用国家的 postal_code_regex；国家列表由级联组件取好，这里只读缓存 */
+const { checkPostalCode } = useRegionOptions()
 
 const loading = ref(false)
 const mutating = ref(false)
@@ -367,14 +368,22 @@ const deleteState = reactive({ open: false, pending: false, id: '' })
 const form = reactive({
   receiverName: '',
   receiverPhone: '',
-  province: '',
-  city: '',
   district: '',
   detailAddress: '',
   postalCode: '',
   addressTag: '',
   isDefault: false,
 })
+
+/**
+ * 国家 / 州省 / 城市（级联组件只认这一个 v-model）。
+ * 与 form 分开：换国家时级联组件会整体替换这个对象，省/市编码与文字必须一起清空，
+ * 混进 form 里容易出现"清了一半"的中间态。
+ */
+const region = ref<AddressRegionSelection>(createEmptyRegionSelection())
+
+/** 邮编与国家正则不符：只提示不阻断（契约 §5.2）；国家未选/无正则时为 false */
+const postalCodeWarning = computed(() => checkPostalCode(region.value.countryCode, form.postalCode) === 'invalid')
 
 const loginLink = useLoginLink()
 
@@ -411,13 +420,12 @@ async function loadAddresses() {
 function resetForm() {
   form.receiverName = ''
   form.receiverPhone = ''
-  form.province = ''
-  form.city = ''
   form.district = ''
   form.detailAddress = ''
   form.postalCode = ''
   form.addressTag = ''
   form.isDefault = false
+  region.value = createEmptyRegionSelection()
 }
 
 function openCreate() {
@@ -431,8 +439,6 @@ function openCreate() {
 function fillForm(address: AddressVO) {
   form.receiverName = address.receiverName ?? ''
   form.receiverPhone = address.receiverPhone ?? ''
-  form.province = address.province ?? ''
-  form.city = address.city ?? ''
   form.district = address.district ?? ''
   form.detailAddress = address.detailAddress ?? ''
   form.postalCode = address.postalCode ?? ''
@@ -440,6 +446,19 @@ function fillForm(address: AddressVO) {
   // 已经是默认地址时勾上，避免用户以为"编辑一下默认就没了"
   form.isDefault = address.isDefault === true
   formState.id = address.id
+
+  // 编辑回显：**编码是权威**（cityId / provinceCode），文字只作为列表加载完之前的占位 ——
+  // 城市可能不在"人口前 200"里，用文字反查编码会查不到，反过来才对。
+  region.value = {
+    countryCode: address.countryCode ?? '',
+    provinceCode: address.provinceCode ?? '',
+    cityId: address.cityId ?? null,
+    // 老数据（country_code IS NULL）三个编码全空 → 保持原文字回填、提交时也不带编码，
+    // 与改造前的行为完全一致（验收标准 §6.6）
+    province: address.province ?? '',
+    city: address.city ?? '',
+    countryText: address.countryDisplay ?? address.countryName ?? '',
+  }
 }
 
 /**
@@ -491,8 +510,9 @@ async function submitForm() {
     const payload = {
       receiverName: form.receiverName.trim(),
       receiverPhone: form.receiverPhone.trim(),
-      province: form.province.trim(),
-      city: form.city.trim(),
+      // 省/市文字来自级联：选中时是选项显示名，手填时是用户输入
+      province: region.value.province.trim(),
+      city: region.value.city.trim(),
       district: form.district.trim(),
       detailAddress: form.detailAddress.trim(),
       postalCode: form.postalCode.trim(),
@@ -500,6 +520,12 @@ async function submitForm() {
       // 勾选 -> true（设为默认）；未勾选 -> null（不改动默认状态，而不是"取消默认"）
       isDefault: form.isDefault ? true : null,
       lang: locale.value,
+      // 国家/地区级联（契约 §3.4）：编码为空 = 用户手动填写，后端走老逻辑并采信上面的文字
+      countryCode: region.value.countryCode,
+      provinceCode: region.value.provinceCode,
+      cityId: region.value.cityId,
+      // 手填国家时的国名（契约没有这个字段，后端会忽略；见 types/shop-address.ts）
+      countryName: region.value.countryCode ? '' : region.value.countryText.trim(),
     }
 
     if (formState.id) {
