@@ -55,3 +55,12 @@ design-references/
 # 本地后端运行日志（由开发机手动启动时生成）
 ck-server/backend-*.log
 ck-server/backend-*.log.err
+
+# 第三方原始数据：国家/地区级联（docs/countries-states-cities-database）
+# 来源 dr5hn/countries-states-cities-database v5.0.0-export.1，29 个文件共约 157 MB
+# （translations.tsv 单文件 82 MB）。可随时从上游重新导出，入库会让仓库永久变大，
+# 因此只在本地保留；导入与维护流程见 docs/国家地区级联数据-导入与维护-2026-10-28.md。
+docs/countries-states-cities-database/
+
+# 本地临时排查产物（截图/日志/一次性脚本输出）
+.kimi-tmp/

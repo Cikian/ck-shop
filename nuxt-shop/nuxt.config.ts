@@ -389,6 +389,15 @@ export default defineNuxtConfig({
        * 页面上的货币符号来自 i18n（¥/$/€ 只是展示符号），这里必须给真实代码。
        */
       storeCurrency: process.env.STORE_CURRENCY || 'CNY',
+
+      /**
+       * Google Analytics 4 测量 ID（普通接入，不接 Consent Mode）。
+       *
+       * 优先读 NUXT_PUBLIC_GA4_ID（Nuxt 会把 NUXT_PUBLIC_* 自动暴露给客户端）；
+       * 同时兼容 NUXT_GA4_ID 兜底（此处直接读 process.env 注入 public）。
+       * 未配置时 app/plugins/ga4.ts 静默跳过，不加载 gtag.js。
+       */
+      ga4Id: process.env.NUXT_PUBLIC_GA4_ID || process.env.NUXT_GA4_ID || '',
     },
   },
 

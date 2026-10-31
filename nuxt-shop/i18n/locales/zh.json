@@ -658,5 +658,11 @@
     "closeTitle": "关闭验证码",
     "refreshTitle": "刷新验证码",
     "overlayLabel": "安全验证"
+  },
+  "cookieConsent": {
+    "title": "Cookie 偏好",
+    "message": "我们使用 Cookie 来记住您的偏好并分析站点访问情况。您可以在下方选择接受或拒绝。",
+    "accept": "接受",
+    "decline": "拒绝"
   }
 }

@@ -658,5 +658,11 @@
     "closeTitle": "Close captcha",
     "refreshTitle": "Refresh captcha",
     "overlayLabel": "Security verification"
+  },
+  "cookieConsent": {
+    "title": "Cookie preferences",
+    "message": "We use cookies to remember your preferences and analyze site traffic. You can accept or decline below.",
+    "accept": "Accept",
+    "decline": "Decline"
   }
 }

@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="org.jeecg.modules.shop.analytics.mapper.TrackEventMapper">
+
+    <!--
+      批量插入：单条 INSERT 多 VALUES。
+      明细表是 append-only 账本，不提供 update/delete。
+      props 已由 Service 序列化为合法 JSON 字符串（空时置 NULL）。
+    -->
+    <insert id="batchInsert">
+        INSERT INTO ck_shop_track_event
+        (id, event_time, event_name, session_id, visitor_id, user_id, org_code, store_id,
+         product_id, page_url, page_path, referrer, utm_source, utm_medium, utm_campaign,
+         device_type, os, browser, screen, lang, country_code, country_name, province_name,
+         city_name, province_code, ip, duration_ms, props)
+        VALUES
+        <foreach collection="list" item="e" separator=",">
+            (#{e.id}, #{e.eventTime}, #{e.eventName}, #{e.sessionId}, #{e.visitorId}, #{e.userId},
+             #{e.orgCode}, #{e.storeId}, #{e.productId}, #{e.pageUrl}, #{e.pagePath}, #{e.referrer},
+             #{e.utmSource}, #{e.utmMedium}, #{e.utmCampaign}, #{e.deviceType}, #{e.os}, #{e.browser},
+             #{e.screen}, #{e.lang}, #{e.countryCode}, #{e.countryName}, #{e.provinceName},
+             #{e.cityName}, #{e.provinceCode}, #{e.ip}, #{e.durationMs}, #{e.props})
+        </foreach>
+    </insert>
+
+</mapper>

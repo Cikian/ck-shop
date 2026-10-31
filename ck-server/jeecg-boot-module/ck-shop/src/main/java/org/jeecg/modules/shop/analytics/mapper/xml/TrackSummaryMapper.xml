@@ -1,0 +1,213 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="org.jeecg.modules.shop.analytics.mapper.TrackSummaryMapper">
+
+    <!--
+      聚合与回填统一用 INSERT ... ON DUPLICATE KEY UPDATE（按 uk_summary 覆盖，不累加），
+      保证聚合任务**幂等**：同一个时间桶重复聚合结果一致。
+
+      orgExpr/productExpr/dimValueExpr/bucketExpr 是 Service 内部白名单生成的 SQL 片段
+      （非用户输入），用 ${} 拼接；granularity/dimType/pvEvent 是受控字面量，用 #{} 绑定。
+    -->
+
+    <!-- 行为明细 → 汇总（pv/uv/ip/会话/跳出/停留/曝光/点击） -->
+    <insert id="aggregateTrack">
+        INSERT INTO ck_shop_track_summary
+        (id, stat_time, granularity, org_code, product_id, dim_type, dim_value,
+         pv, uv, ip_count, visit_count, bounce_count, total_duration_ms, expose_count, click_count)
+        SELECT REPLACE(UUID(), '-', ''),
+               ${bucketExpr},
+               #{granularity},
+               ${orgExpr},
+               ${productExpr},
+               #{dimType},
+               ${dimValueExpr},
+               SUM(CASE WHEN e.event_name IN (#{pvEvent}, 'product_view') THEN 1 ELSE 0 END),
+               COUNT(DISTINCT NULLIF(e.visitor_id, '')),
+               COUNT(DISTINCT NULLIF(e.ip, '')),
+               COUNT(DISTINCT NULLIF(e.session_id, '')),
+               COUNT(DISTINCT CASE WHEN b.session_id IS NOT NULL THEN e.session_id END),
+               COALESCE(SUM(e.duration_ms), 0),
+               SUM(CASE WHEN e.event_name = 'product_expose' THEN 1 ELSE 0 END),
+               SUM(CASE WHEN e.event_name = 'product_click' THEN 1 ELSE 0 END)
+        FROM ck_shop_track_event e
+                 LEFT JOIN (
+            SELECT session_id
+            FROM ck_shop_track_event
+            WHERE event_name IN ('page_view', 'product_view')
+              AND event_time &gt;= #{start}
+              AND event_time &lt; #{end}
+            GROUP BY session_id
+            HAVING COUNT(1) = 1
+        ) b ON b.session_id = e.session_id
+        WHERE e.event_time &gt;= #{start}
+          AND e.event_time &lt; #{end}
+        <if test="dimType == 'product'">
+          AND e.product_id IS NOT NULL AND e.product_id &lt;&gt; ''
+        </if>
+        GROUP BY ${bucketExpr}, ${orgExpr}, ${productExpr}, ${dimValueExpr}
+        ON DUPLICATE KEY UPDATE
+            pv               = VALUES(pv),
+            uv               = VALUES(uv),
+            ip_count         = VALUES(ip_count),
+            visit_count      = VALUES(visit_count),
+            bounce_count     = VALUES(bounce_count),
+            total_duration_ms = VALUES(total_duration_ms),
+            expose_count     = VALUES(expose_count),
+            click_count      = VALUES(click_count)
+    </insert>
+
+    <!-- 加购回填：来自 ck_shop_cart_event（ADD/INCR），global/product 共用 -->
+    <insert id="backfillAddCart">
+        INSERT INTO ck_shop_track_summary
+        (id, stat_time, granularity, org_code, product_id, dim_type, dim_value, add_cart_count)
+        SELECT REPLACE(UUID(), '-', ''),
+               ${bucketExpr},
+               #{granularity},
+               ${orgExpr},
+               ${productExpr},
+               #{dimType},
+               ${dimValueExpr},
+               COUNT(1)
+        FROM ck_shop_cart_event ce
+        WHERE ce.del_flag = 0
+          AND ce.event_type IN ('ADD', 'INCR')
+          AND ce.create_time &gt;= #{start}
+          AND ce.create_time &lt; #{end}
+        GROUP BY ${bucketExpr}, ${orgExpr}, ${productExpr}, ${dimValueExpr}
+        ON DUPLICATE KEY UPDATE add_cart_count = VALUES(add_cart_count)
+    </insert>
+
+    <!-- 下单回填（global）：ck_shop_order 按下单时间；下单量 + 下单额 -->
+    <insert id="backfillOrderGlobal">
+        INSERT INTO ck_shop_track_summary
+        (id, stat_time, granularity, org_code, product_id, dim_type, dim_value, order_count, order_amount)
+        SELECT REPLACE(UUID(), '-', ''),
+               ${bucketExpr},
+               #{granularity},
+               ${orgExpr},
+               'ALL',
+               'global',
+               'global',
+               COUNT(1),
+               COALESCE(SUM(o.pay_amount), 0)
+        FROM ck_shop_order o
+        WHERE o.create_time &gt;= #{start}
+          AND o.create_time &lt; #{end}
+        GROUP BY ${bucketExpr}, ${orgExpr}
+        ON DUPLICATE KEY UPDATE
+            order_count  = VALUES(order_count),
+            order_amount = VALUES(order_amount)
+    </insert>
+
+    <!-- 支付回填（global）：ck_shop_order 按支付时间；支付量 + 实收额（与订单统计口径一致） -->
+    <insert id="backfillPaidGlobal">
+        INSERT INTO ck_shop_track_summary
+        (id, stat_time, granularity, org_code, product_id, dim_type, dim_value, paid_count, paid_amount)
+        SELECT REPLACE(UUID(), '-', ''),
+               ${bucketExpr},
+               #{granularity},
+               ${orgExpr},
+               'ALL',
+               'global',
+               'global',
+               COUNT(1),
+               COALESCE(SUM(o.paid_amount), 0)
+        FROM ck_shop_order o
+        WHERE o.pay_status &lt;&gt; 'UNPAID'
+          AND o.pay_time IS NOT NULL
+          AND o.pay_time &gt;= #{start}
+          AND o.pay_time &lt; #{end}
+        GROUP BY ${bucketExpr}, ${orgExpr}
+        ON DUPLICATE KEY UPDATE
+            paid_count  = VALUES(paid_count),
+            paid_amount = VALUES(paid_amount)
+    </insert>
+
+    <!-- 下单回填（product）：订单明细按下单时间；下单量（去重订单）+ 下单额（本行成交额） -->
+    <insert id="backfillOrderProduct">
+        INSERT INTO ck_shop_track_summary
+        (id, stat_time, granularity, org_code, product_id, dim_type, dim_value, order_count, order_amount)
+        SELECT REPLACE(UUID(), '-', ''),
+               ${bucketExpr},
+               #{granularity},
+               ${orgExpr},
+               COALESCE(NULLIF(i.product_id, ''), 'unknown'),
+               'product',
+               COALESCE(NULLIF(i.product_id, ''), 'unknown'),
+               COUNT(DISTINCT i.order_id),
+               COALESCE(SUM(i.actual_amount), 0)
+        FROM ck_shop_order_item i
+                 INNER JOIN ck_shop_order o ON o.id = i.order_id
+        WHERE i.del_flag = 0
+          AND o.create_time &gt;= #{start}
+          AND o.create_time &lt; #{end}
+        GROUP BY ${bucketExpr}, ${orgExpr}, i.product_id
+        ON DUPLICATE KEY UPDATE
+            order_count  = VALUES(order_count),
+            order_amount = VALUES(order_amount)
+    </insert>
+
+    <!-- 支付回填（product）：订单明细按支付时间；支付量（去重订单）+ 实收额（本行成交额） -->
+    <insert id="backfillPaidProduct">
+        INSERT INTO ck_shop_track_summary
+        (id, stat_time, granularity, org_code, product_id, dim_type, dim_value, paid_count, paid_amount)
+        SELECT REPLACE(UUID(), '-', ''),
+               ${bucketExpr},
+               #{granularity},
+               ${orgExpr},
+               COALESCE(NULLIF(i.product_id, ''), 'unknown'),
+               'product',
+               COALESCE(NULLIF(i.product_id, ''), 'unknown'),
+               COUNT(DISTINCT i.order_id),
+               COALESCE(SUM(i.actual_amount), 0)
+        FROM ck_shop_order_item i
+                 INNER JOIN ck_shop_order o ON o.id = i.order_id
+        WHERE o.pay_status &lt;&gt; 'UNPAID'
+          AND i.del_flag = 0
+          AND o.pay_time IS NOT NULL
+          AND o.pay_time &gt;= #{start}
+          AND o.pay_time &lt; #{end}
+        GROUP BY ${bucketExpr}, ${orgExpr}, i.product_id
+        ON DUPLICATE KEY UPDATE
+            paid_count  = VALUES(paid_count),
+            paid_amount = VALUES(paid_amount)
+    </insert>
+
+    <!-- 汇总查询的可见域：allRows=true 看 org_code='ALL' 全局行；否则按部门前缀看 per-org 行 -->
+    <sql id="summaryScope">
+        <choose>
+            <when test="allRows">
+                AND org_code = 'ALL'
+            </when>
+            <otherwise>
+                <if test="scope != null">
+                    <choose>
+                        <when test="scope.size() == 0">AND 1 = 0</when>
+                        <otherwise>
+                            AND (
+                            <foreach collection="scope" item="code" separator=" OR ">
+                                org_code LIKE CONCAT(#{code}, '%')
+                            </foreach>
+                            )
+                        </otherwise>
+                    </choose>
+                </if>
+            </otherwise>
+        </choose>
+    </sql>
+
+    <!-- 按维度读回原始汇总行（分组/解析/比率在 Service 收口） -->
+    <select id="selectByDim" resultType="org.jeecg.modules.shop.analytics.entity.TrackSummary">
+        SELECT *
+        FROM ck_shop_track_summary
+        WHERE dim_type = #{dimType}
+        <if test="granularity != null and granularity != ''">AND granularity = #{granularity}</if>
+        <if test="start != null">AND stat_time &gt;= #{start}</if>
+        <if test="end != null">AND stat_time &lt; #{end}</if>
+        <if test="dimValuePrefix != null and dimValuePrefix != ''">AND dim_value LIKE CONCAT(#{dimValuePrefix}, '%')</if>
+        <include refid="summaryScope"/>
+        ORDER BY stat_time ASC
+    </select>
+
+</mapper>
