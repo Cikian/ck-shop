@@ -1,0 +1,24 @@
+[Unit]
+Description=ck-shop backend (JeecgBoot / ck-server)
+After=network.target mysql.service redis-server.service mongod.service
+
+[Service]
+Type=simple
+User=ckshop
+Group=ckshop
+# ★ 工作目录决定 Spring 能否找到 ./.env 与 ./config/application-prod.yml，不要改
+WorkingDirectory=/opt/ck-shop/ck-server
+Environment="JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64"
+Environment="TZ=Asia/Shanghai"
+ExecStart=/usr/bin/java -server -Xms1g -Xmx2g -XX:+UseG1GC -XX:MaxMetaspaceSize=512m \
+          -Duser.timezone=Asia/Shanghai -Dfile.encoding=UTF-8 \
+          -jar /opt/ck-shop/ck-server/jeecg-system-start-3.9.5.jar
+SuccessExitStatus=143
+Restart=on-failure
+RestartSec=10
+LimitNOFILE=65536
+StandardOutput=append:/opt/ck-shop/logs/ck-server.log
+StandardError=append:/opt/ck-shop/logs/ck-server.err.log
+
+[Install]
+WantedBy=multi-user.target

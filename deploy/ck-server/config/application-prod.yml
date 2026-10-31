@@ -1,0 +1,86 @@
+# =============================================================================
+# 后端生产覆盖配置（放到 /opt/ck-shop/ck-server/config/application-prod.yml）
+#
+# 为什么需要它：jar 内的 application-prod.yml 是从上游 JeecgBoot 继承的模板 ——
+#   · 数据库/Redis 口令写死（127.0.0.1:3306/ck-server，root/root）
+#   · 完全没有 mongo-plus 段（首页轮播/店铺装修走 MongoDB，prod 会连不上）
+#   · 缺 ck.shop.mail.from、jeecg.jmreport.signatureSecret 等 dev 里有的配置
+#
+# Spring Boot 会自动加载「工作目录下 ./config/application-prod.yml」，
+# 其优先级高于 jar 内的同名 profile 文件，所以打好的 jar 不用改、仓库文件也不用动。
+# 口令/密钥仍然只放 /opt/ck-shop/ck-server/.env（由 application.yml 的
+# spring.config.import 读入，properties 语法）。
+# =============================================================================
+
+server:
+  port: 9951                    # 与 nuxt-shop/.env 的 API_BASE_URL 对齐（jar 内默认 8080）
+  servlet:
+    context-path: /api
+  address: 127.0.0.1            # 只监听本机，外部只能经 Nginx 访问
+
+spring:
+  datasource:
+    druid:
+      stat-view-servlet:
+        enabled: false          # Druid 监控台保持关闭
+    dynamic:
+      datasource:
+        master:
+          url: jdbc:mysql://${MYSQL_HOST}:${MYSQL_PORT}/${MYSQL_DATABASE}?characterEncoding=UTF-8&useUnicode=true&useSSL=false&tinyInt1isBit=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Shanghai
+          username: ${MYSQL_USERNAME}
+          password: ${MYSQL_PASSWORD}
+          driver-class-name: com.mysql.cj.jdbc.Driver
+  data:
+    redis:
+      host: ${REDIS_HOST}
+      port: ${REDIS_PORT}
+      password: ${REDIS_PASSWORD}
+      database: ${REDIS_DATABASE:0}
+  mail:
+    host: ${MAIL_HOST:}
+    port: ${MAIL_PORT:465}
+    username: ${MAIL_USERNAME:}
+    password: ${MAIL_PASSWORD:}
+    properties:
+      mail.smtp.ssl.enable: true
+      mail.smtp.ssl.trust: ${MAIL_HOST:}
+      mail.smtp.ssl.checkserveridentity: false
+
+# ★ prod 模板里完全缺失：首页轮播 / 店铺装修（mongoplus）
+mongo-plus:
+  data:
+    mongodb:
+      host: ${MONGO_HOST}
+      port: ${MONGO_PORT}
+      database: ${MONGO_DATABASE}
+      username: ${MONGO_USERNAME}
+      password: ${MONGO_PASSWORD}
+      authenticationDatabase: ck-saas    # 账号要建在 ck-saas 库里
+      connectTimeoutMS: 50000
+
+jeecg:
+  # 项目实际使用 cikoss（CommonConstant.UPLOAD_TYPE_CIKOSS）；prod 模板里是 alioss
+  uploadType: cikoss
+  domainUrl:
+    pc: https://admin.example.com      # 换成你的管理端域名
+    app: https://admin.example.com
+  path:
+    upload: /opt/ck-shop/upload
+    webapp: /opt/ck-shop/webapp
+  jmreport:
+    signatureSecret: ${JMREPORT_SIGNATURE_SECRET}
+
+ck:
+  oss:                                 # 商品图片 / 附件（又拍云）
+    enable: true
+    provider: upyun
+    endpoint: ${CK_OSS_ENDPOINT}
+    access-key: ${CK_OSS_ACCESS_KEY}
+    secret-key: ${CK_OSS_SECRET_KEY}
+    bucket: ${CK_OSS_BUCKET}
+    expire: 3600
+    object-dir-prefix: ${CK_OSS_OBJECT_DIR_PREFIX:ck-saas}
+    api-domain: TELECOM
+  shop:
+    mail:
+      from: ${MAIL_USERNAME:}          # 店铺端验证码邮件发件人（prod 模板缺这一项）

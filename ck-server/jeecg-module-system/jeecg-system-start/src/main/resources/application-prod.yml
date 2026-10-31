@@ -1,7 +1,56 @@
+# =============================================================================
+# prod 环境配置（生产）
+#
+# 三条原则：
+#   1. **本文件不放任何明文密钥**。密码 / 密钥 / 账号一律 ${VAR} 从 .env 读取
+#      （加载方式见同目录 application.yml 的 spring.config.import）；生产更推荐用
+#      systemd `Environment=` 或 SPRING_APPLICATION_JSON 直接注入，不落盘。
+#      缺失时启动直接报 "Could not resolve placeholder 'XXX'" —— 故意的：
+#      宁可启动失败，也不要静默跑在错误的库上。
+#   2. **键名与 application-dev.yml 一一对应**，方便逐行对比；差异集中在
+#      "安全默认值" 与 "容量参数"，每一处差异下面都有注释说明原因。
+#   3. 按机器变化的量（端口 / 监听地址 / 前端域名）走环境变量，不写死。
+#
+# 相对 dev，这份文件额外做了这些"生产化"处理（别凭直觉改回去）：
+#   - spring.main.lazy-initialization=false：启动即把配置错误暴露出来，
+#     而不是等到第一个用户点进某个功能才 500（dev 为了启动快才开懒加载）。
+#   - 连接池 / Tomcat 线程 / Quartz 线程按生产容量收敛（dev 的 maxActive=1000
+#     是上游模板值，真实 4C8G 机器上会直接把 MySQL 打满）。
+#   - Druid 监控台、Knife4j 接口文档、模拟支付、AI 流程高危节点、积木报表
+#     AI 自动建表全部关闭。
+#   - 上传走 cikoss（= ck.oss 又拍云），与仓储里的实际实现一致。
+#   - 补齐了 dev 有、prod 原先缺失的键（原文件会因此静默走默认值或直接报错）：
+#     mongo-plus.*、ck.shop.mail.from、ck.oss.*、jeecg.jmreport.signatureSecret、
+#     jeecg.jmreport.ai/firewall.*、jeecg.firewall.enableLoginCaptcha、
+#     jeecg.airag.*（注意是 **airag**，无连字符）、ck.shop.analytics.*、
+#     spring.mail.properties.mail.smtp.ssl.*、ck.shop.order.* 等。
+# =============================================================================
 server:
-  port: 8080
+  # 与 nuxt-shop/.env 的 API_BASE_URL、Nginx upstream 对齐（部署文档 §5.2）
+  port: ${SERVER_PORT:9951}
+  # 只监听本机/内网，公网入口一律交给 Nginx。
+  # ⚠️ 容器或"后端在另一台机器"的部署必须设 SERVER_ADDRESS=0.0.0.0，否则连不上。
+  address: ${SERVER_ADDRESS:127.0.0.1}
+  # 优雅停机：收到 SIGTERM 后先拒绝新请求、等在途请求（含支付回调）跑完再退出。
+  # 配合 spring.lifecycle.timeout-per-shutdown-phase 使用。
+  shutdown: graceful
+  error:
+    # 生产绝不把异常栈/内部类名返回给调用方（前端只需要 Result.message）。
+    include-stacktrace: never
+    include-message: never
+    include-binding-errors: never
   tomcat:
+    # 保留上游值：超限上传时"吞掉剩余请求体"而不直接断连，避免前端拿到 RST。
+    # 真正的入口限流/限大小在 Nginx（client_max_body_size），这里不设上限只是
+    # 为了不让大文件上传在 Tomcat 层就报错。
     max-swallow-size: -1
+    threads:
+      # 生产并发主要来自店铺端 BFF + 管理端；400 足够，且不会把下游连接池拖死
+      max: ${TOMCAT_MAX_THREADS:400}
+      min-spare: ${TOMCAT_MIN_SPARE:20}
+    max-connections: ${TOMCAT_MAX_CONNECTIONS:10000}
+    accept-count: ${TOMCAT_ACCEPT_COUNT:200}
+    connection-timeout: 20s
   servlet:
     context-path: /api
   compression:
@@ -13,38 +62,85 @@ management:
   endpoints:
     web:
       exposure:
-        include: metrics,httpexchanges,jeecghttptrace
+        # 这几个端点给管理端"系统监控"页用；/actuator/** 在 Shiro 里是
+        # jwt + roles[admin]，只有 /actuator/health 匿名可达，不要在这里放开更多。
+        include: health,metrics,httpexchanges,jeecghttptrace
+  endpoint:
+    health:
+      # 探活只需 200/503，不对外暴露数据库/Redis 的细节
+      show-details: never
+      probes:
+        enabled: true
 
 spring:
+  main:
+    # 生产关掉启动加速：配置缺失/Bean 装配错误要在发布时炸，而不是等用户踩到。
+    # 确有必须容忍的可选外部依赖时，可用环境变量覆盖：
+    #   SPRING_MAIN_LAZY_INITIALIZATION=true
+    lazy-initialization: false
+  lifecycle:
+    # 优雅停机等待上限：必须小于 systemd TimeoutStopSec / K8s terminationGracePeriod
+    timeout-per-shutdown-phase: 20s
   flyway:
-    # 是否启用flyway
-    enabled: false
+    # 【生产默认不自动迁移】发布流程由运维/DBA 单独执行迁移脚本，或发布时
+    # 用 FLYWAY_ENABLED=true 临时打开（多实例同时启动时 Flyway 有表锁，安全但会排队）。
+    # 改成 true 前请确认 clean-disabled 仍为 true，否则误执行 clean 会删库。
+    enabled: ${FLYWAY_ENABLED:false}
     # 是否关闭要清除已有库下的表功能,生产环境必须为true,否则会删库，非常重要！！！
     clean-disabled: true
     # 迁移sql脚本存放路径
     locations: classpath:flyway/sql/mysql
+    # 校验失败即中止（默认 true）：防止有人改历史脚本导致各环境 schema 悄悄漂移
+    validate-on-migrate: true
   servlet:
     multipart:
-      max-file-size: 10MB
-      max-request-size: 10MB
+      # 图片/附件上传上限；比 Nginx 的 client_max_body_size 略小，让 Java 先给出
+      # 明确的业务错误，而不是被 Nginx 413 截断
+      max-file-size: ${MULTIPART_MAX_FILE_SIZE:10MB}
+      max-request-size: ${MULTIPART_MAX_REQUEST_SIZE:10MB}
   mail:
     # 定时任务发送邮件
     timeJobSend: false
-    host: smtp.163.com
-    # 端口：465=SSL，587=STARTTLS。不写默认 25（明文）
+    # 店铺端邮箱验证码 / 定时任务发信共用这套 SMTP
+    host: ${MAIL_HOST:}
+    # ⚠️ 端口必须与下面的 TLS 开关匹配（dev 已验证各组合的表现）：
+    #    465 + ssl                        → 可用，但必须补 ssl.trust + checkserveridentity
+    #    25/587 + starttls                → Could not convert socket to TLS（若服务器未开）
+    #    587 + 明文                       → 530 Must issue a STARTTLS command first
+    #    组合写错的典型症状是 "Read timed out" / "Could not convert socket to TLS"，
+    #    很容易被误判成业务代码 bug。
     port: ${MAIL_PORT:465}
-    username: jeecgos@163.com
-    password: ??
+    username: ${MAIL_USERNAME:}
+    password: ${MAIL_PASSWORD:}
+    # 中文验证码邮件不要出现乱码
+    default-encoding: UTF-8
     properties:
+      # 单次 I/O 超时（毫秒）：读 15s、连接 5s、写 5s。
+      # 收紧后让后端尽量先于店铺端 BFF 的 30s 等待上限返回；
+      # 这些是分阶段超时，不是整封邮件的总耗时硬上限。
+      mail.smtp.timeout: 15000  # 读超时（毫秒）
+      mail.smtp.connectiontimeout: 5000  # 连接超时（毫秒）
+      mail.smtp.writetimeout: 5000  # 写入超时（毫秒）
       mail.smtp.auth: true
-      # 必须是全限定名 mail.smtp.ssl.enable，漏掉 mail. 前缀会被 JavaMail 静默忽略
+      # ⚠️ 必须是全限定名 mail.smtp.ssl.enable，写成 smtp.ssl.enable 会被
+      #    JavaMail 静默忽略（行为与预期不符且没有报错）。
       mail.smtp.ssl.enable: true
+      # 自签证书兜底：对方 465 端口用的是默认自签占位证书（无 CN 无 SAN），
+      # JDK cacerts 里没有签发者，只开 ssl.enable 会 PKIX path building failed。
+      # 下面两条**必须同时配**（少任何一条都仍然失败）：
+      #   只配 ssl.trust                 → No name matching xxx found
+      #   只配 checkserveridentity=false → 仍然 PKIX path building failed
+      # ⚠️ 这不是"修好了"：等于对该主机不做任何身份校验。
+      #    根治办法是换成 CA 签发的正式证书，然后把 MAIL_SSL_CHECK_SERVER_IDENTITY
+      #    改成 true 并删掉 ssl.trust。
+      mail.smtp.ssl.trust: ${MAIL_HOST:}
+      mail.smtp.ssl.checkserveridentity: ${MAIL_SSL_CHECK_SERVER_IDENTITY:false}
   ## quartz定时任务,采用数据库方式
   quartz:
     job-store-type: jdbc
     jdbc:
       initialize-schema: embedded
-    #定时任务开关，true-开  false-关
+    #定时任务启动开关，true-开  false-关
     auto-startup: true
     #延迟1秒启动定时任务
     startup-delay: 1s
@@ -60,12 +156,15 @@ spring:
             class: org.springframework.scheduling.quartz.LocalDataSourceJobStore
             driverDelegateClass: org.quartz.impl.jdbcjobstore.StdJDBCDelegate
             tablePrefix: QRTZ_
+            # 集群模式：多实例部署时同一任务只会被一个节点触发（订单超时关单依赖这个）
             isClustered: true
             misfireThreshold: 12000
             clusterCheckinInterval: 15000
           threadPool:
             class: org.quartz.simpl.SimpleThreadPool
-            threadCount: 10
+            # 平台任务 + 订单超时关单 / 支付补单 / 行为分析聚合，10 线程在高负载时
+            # 会互相排队；20 线程留出余量（线程是 Quartz 自己的池，不占 Tomcat）
+            threadCount: ${QUARTZ_THREAD_COUNT:20}
             threadPriority: 5
             threadsInheritContextClassLoaderOfInitializingThread: true
   #json 时间戳统一转换
@@ -84,51 +183,72 @@ spring:
     content-type: text/html
     # 设置页面编码格式
     charset: UTF-8
-    # 设置页面缓存
-    cache: false
+    # 设置页面缓存：模板都打在 jar 里、运行时不会被改，开启缓存省掉每次渲染的
+    # 模板重载开销。⚠️ 改了 .ftl 必须重启（dev 是 false，为了热改）。
+    cache: ${FREEMARKER_CACHE:true}
     prefer-file-system-access: false
     # 设置ftl文件路径
     template-loader-path:
       - classpath:/templates
-    template_update_delay: 0
+    # 缓存开启后模板检查间隔（秒），调小反而增加 IO。
+    # ⚠️ 必须写在 settings 下面：Boot 的属性是 spring.freemarker.settings.*，
+    #    直接写 spring.freemarker.template_update_delay 是**无效键**（会被静默忽略，
+    #    dev 里就是这么写的，实际一直没生效）。
+    settings:
+      template_update_delay: ${FREEMARKER_UPDATE_DELAY:3600}
   # 设置静态文件路径，js,css等
   mvc:
     static-path-pattern: /**
     #Spring Boot 2.6+后映射匹配的默认策略已从AntPathMatcher更改为PathPatternParser,需要手动指定为ant-path-matcher
     pathmatch:
       matching-strategy: ant_path_matcher
-  resource:
-    static-locations: classpath:/static/,classpath:/public/
+  # 静态资源位置（webjars / 上传的静态文件等）。
+  # ⚠️ 键是 spring.web.resources.static-locations（Boot 2.4+ 起）。
+  #    dev 里写的 spring.resource.static-locations 是**无效键**，会被静默忽略、
+  #    等价于没配；这里用正确键名，并且把 Boot 默认的 4 个位置**全部保留**
+  #    （漏掉 /META-INF/resources/ 会让 webjars、swagger-ui 的静态资源 404）。
+  web:
+    resources:
+      static-locations: classpath:/META-INF/resources/,classpath:/resources/,classpath:/static/,classpath:/public/
   autoconfigure:
     exclude:
       - org.springframework.boot.autoconfigure.flyway.FlywayAutoConfiguration
   datasource:
     druid:
       stat-view-servlet:
-        # 监控台关闭：Shiro 对 /druid/** 是 anon（框架默认），且历史上这里带明文弱口令（123456），
-        # 公网可达时等于把连接池监控面板连同数据库连接信息一起送出去。
-        # 排障需临时开启时，必须同时：改成强口令（或用 ${DRUID_STAT_USERNAME}/${DRUID_STAT_PASSWORD} 注入）、
-        # 通过 allow 限制来源 IP、并确认 Shiro 未对 /druid/** 放行。
+        # 监控台关闭：Shiro 对 /druid/** 是 anon（框架默认），公网可达时等于把
+        # 连接池监控面板连同数据库连接信息一起送出去。
+        # 排障需临时开启时，必须同时：改成强口令、通过 allow 限制来源 IP、
+        # 并确认 Shiro 未对 /druid/** 放行。对应用法（与 dev 一致的键位）：
+        #   loginUsername: ${DRUID_STAT_USERNAME:admin}
+        #   loginPassword: ${DRUID_STAT_PASSWORD}
+        #   allow: 127.0.0.1
         enabled: false
       web-stat-filter:
         enabled: true
     dynamic:
-      druid: # 全局druid参数，绝大部分值和默认保持一致。(现已支持的参数如下,不清楚含义不要乱设置)
+      druid:
         # 连接池的配置信息
         # 初始化大小，最小，最大
-        initial-size: 5
-        min-idle: 5
-        maxActive: 1000
-        # 配置获取连接等待超时的时间
-        maxWait: 60000
+        # ⚠️ 上游模板的 maxActive=1000 是"压测值"，真实生产会瞬间打满 MySQL
+        #    的 max_connections。按 2-4 核/8G 的机器：单实例 50 足够
+        #    （Tomcat 400 线程里有大量是等 Redis/OSS 的 IO 等待，不需要一人一连接）。
+        initial-size: ${DB_POOL_INITIAL_SIZE:10}
+        min-idle: ${DB_POOL_MIN_IDLE:10}
+        maxActive: ${DB_POOL_MAX_ACTIVE:50}
+        # 取连接等待上限：阻塞 60s 只会让线程堆积成雪崩，10s 快速失败更利于限流
+        maxWait: ${DB_POOL_MAX_WAIT:10000}
         # 配置间隔多久才进行一次检测，检测需要关闭的空闲连接，单位是毫秒
         timeBetweenEvictionRunsMillis: 60000
         # 配置一个连接在池中最小生存的时间，单位是毫秒
         minEvictableIdleTimeMillis: 300000
-        validationQuery: SELECT 1 FROM DUAL
+        validationQuery: SELECT 1
+        validationQueryTimeout: 5
         testWhileIdle: true
         testOnBorrow: false
         testOnReturn: false
+        # 空闲时保活，避免 MySQL 的 wait_timeout 把连接悄悄掐断后首个请求失败
+        keepAlive: true
         # 打开PSCache，并且指定每个连接上PSCache的大小
         poolPreparedStatements: true
         maxPoolPreparedStatementPerConnectionSize: 20
@@ -140,12 +260,12 @@ spring:
         # 打开mergeSql功能；慢SQL记录
         stat:
           merge-sql: true
-          slow-sql-millis: 5000
+          slow-sql-millis: ${DB_SLOW_SQL_MILLIS:2000}
       datasource:
         master:
-          url: jdbc:mysql://127.0.0.1:3306/ck-server?characterEncoding=UTF-8&useUnicode=true&useSSL=false&tinyInt1isBit=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Shanghai
-          username: root
-          password: root
+          url: jdbc:mysql://${MYSQL_HOST:127.0.0.1}:${MYSQL_PORT:3306}/${MYSQL_DATABASE:ck-shop}?characterEncoding=UTF-8&useUnicode=true&useSSL=false&tinyInt1isBit=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Shanghai&rewriteBatchedStatements=true&connectTimeout=10000
+          username: ${MYSQL_USERNAME:root}
+          password: ${MYSQL_PASSWORD:}
           driver-class-name: com.mysql.cj.jdbc.Driver
           # 多数据源配置
           #multi-datasource1:
@@ -156,10 +276,13 @@ spring:
   #redis 配置
   data:
     redis:
-      database: 0
-      host: 127.0.0.1
-      port: 6379
-      password:
+      database: ${REDIS_DATABASE:0}
+      host: ${REDIS_HOST:127.0.0.1}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+      # 命令超时：Redis 卡住时快速失败，不要让 Tomcat 线程陪着一起挂
+      timeout: ${REDIS_TIMEOUT:3000ms}
+      connect-timeout: ${REDIS_CONNECT_TIMEOUT:3000ms}
 #mybatis plus 设置
 mybatis-plus:
   mapper-locations: classpath*:org/jeecg/**/xml/*Mapper.xml
@@ -172,7 +295,7 @@ mybatis-plus:
       # 默认数据库表下划线命名
       table-underline: true
   configuration:
-    # 这个配置会将执行的sql打印出来，在开发或测试的时候可以用
+    # 生产**不要**打开 SQL 打印：会把每条 SQL + 参数写进日志（含手机号/地址等敏感信息）
     #log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
     # 返回类型为Map,显示null对应的字段
     call-setters-on-nulls: true
@@ -180,16 +303,18 @@ mybatis-plus:
 minidao:
   base-package: org.jeecg.modules.jmreport.*,org.jeecg.modules.drag.*,org.jeecg.modules.chat2bi.*
 jeecg:
-  # AI集成
+  # 自定义资源请求前缀（js、css等解决nginx转发问题）；留空 = 不加前缀
+  custom-resource-prefix-path:
+  # AI集成（未配置 Key 时相关接口返回"未配置"，不影响启动与主流程）
   ai-chat:
     enabled: true
     model: deepseek-v4-pro
-    apiKey: ??
-    apiHost: https://api.deepseek.com
+    apiKey: ${AI_CHAT_API_KEY:}
+    apiHost: https://api.deepseek.com/v1
     timeout: 60
     skills-dir:
     skills-shell-dir:
-    # AI聊天助手访问限流配置
+    # AI聊天助手访问限流配置（生产保持开启：AI 调用按 token 计费，被刷即成本）
     rate-limit:
       # 单 session 每分钟上限
       send-per-session-per-minute: 10
@@ -202,7 +327,7 @@ jeecg:
       # 提供商 OPENAI/ZHIPU/QWEN
       provider: QWEN
       model: wan2.2-t2i-flash
-      apiKey: sk-??
+      apiKey: ${AI_DRAW_API_KEY:}
       apiHost: https://dashscope.aliyuncs.com/api/v1/
       timeout: 60
     # AI图生图绘画
@@ -211,26 +336,26 @@ jeecg:
       provider: QWEN
       # 目前只支持 wan2.5-i2i-preview和wanx2.1-imageedit模型
       model: wan2.5-i2i-preview
-      apiKey: sk-??
+      apiKey: ${AI_PIC_DRAW_API_KEY:}
       apiHost: https://dashscope.aliyuncs.com/api/v1/
       timeout: 60
-    # AI语音
+    # AI语音 目前只支持智普 glm-tts
     ai-model-voice:
       provider: ZHIPU
       model: glm-tts
-      apiKey: ??
+      apiKey: ${AI_VOICE_API_KEY:}
       apiHost: https://open.bigmodel.cn/api/paas/v4
       timeout: 60
       # tongtong、chuichui、xiaochen、jam、kazi、douji、luodo
       voice: tongtong
       speed: 1.0
       volume: 0.0
-    # AI视频
+    # AI视频目前只支持智普 支持模型 cogvideox-3（支持自动生成语音）;viduq1-text、vidu2-reference(不支持自动生成语音，还贵)
     ai-model-video:
       provider: ZHIPU
-      model: ??
-      apiKey: sk-??
-      apiHost: https://api.deepseek.com/v1
+      model: cogvideox-3
+      apiKey: ${AI_VIDEO_API_KEY:}
+      apiHost: https://open.bigmodel.cn/api/paas/v4
       timeout: 60
       ffmpeg-path:
       edge-tts-path:
@@ -238,26 +363,35 @@ jeecg:
     ai-model-embed:
       provider: QWEN
       model: text-embedding-v1
-      apiKey: sk-??
+      apiKey: ${AI_EMBED_API_KEY:}
       apiHost: https://dashscope.aliyuncs.com/api/v1/services/
       timeout: 60
-  # AIRag向量库
-  ai-rag:
-    # AI流程敏感节点(stdio=命令行节点, sql=SQL节点, code=代码节点/脚本执行,高危存在RCE风险默认禁用)
-    allow-sensitive-nodes: sql,stdio,code
+  # ⚠️⚠️ 前缀是 **airag（无连字符）**：代码里 AiRagConfigBean / EmbedStoreConfigBean /
+  #      KnowConfigBean 的 @ConfigurationProperties 全部是 jeecg.airag.*，
+  #      Spring 的宽松绑定不做 ai-rag ↔ airag 的等价转换。
+  #      也就是说 dev 里写的 jeecg.ai-rag.* **一直没生效**（一路走默认值：pgvector
+  #      指向 127.0.0.1:5432/postgres/postgres）。生产必须写在 jeecg.airag 下面，
+  #      否则向量库地址/账号会静默指向本机默认库。建议同步修正 dev。
+  airag:
+    # AI流程敏感节点(stdio=命令行节点, sql=SQL节点, code=代码节点/脚本执行)
+    # 【生产置空 = 全部禁用】：stdio/code 等于把命令行与任意脚本执行能力暴露给
+    # AI 流程编排，属 RCE 面；确需 SQL 节点时改成 sql（只放开 SQL）。
+    allow-sensitive-nodes: ${AI_RAG_ALLOW_SENSITIVE_NODES:}
     embed-store:
-      host: 127.0.0.1
-      port: 5432
-      database: postgres
-      user: postgres
-      password: postgres
+      host: ${PGVECTOR_HOST:127.0.0.1}
+      port: ${PGVECTOR_PORT:5432}
+      database: ${PGVECTOR_DATABASE:postgres}
+      user: ${PGVECTOR_USER:postgres}
+      password: ${PGVECTOR_PASSWORD:}
       table: embeddings
-    # Brave Search 联网检索（AI Agent 工具）
+    # Brave Search 联网检索（AI Agent 工具；apiKey 为空即不启用）
     brave-search:
-      api-key: ??
+      api-key: ${BRAVE_SEARCH_API_KEY:}
       endpoint: https://api.search.brave.com/res/v1/web/search
       count: 10
       timeout: 15
+      # 相同查询 60 分钟内直接走缓存：Brave 按次计费，且 Agent 会重复问同样的问题
+      cache-expire-minutes: 60
   #  Unipush配置 云函数调用 URL 化地址
   unicloud:
     pushUrl:
@@ -267,84 +401,121 @@ jeecg:
     dataSourceSafe: true
     # 低代码模式（dev:开发模式，prod:发布模式——关闭所有在线开发配置能力）
     lowCodeMode: prod
-    # 是否允许同一账号多地同时登录 （为 true 时允许一起登录, 为 false 时新登录挤掉旧登录）
+    # 是否允许同一账号多地同时登录
+    # 商城是对 C 端的：运营/买家多设备同时在线是正常需求，保持 true。
+    # （改成 false 会"新登录挤掉旧登录"，C 端用户会莫名掉线）
     is-concurrent: true
-    # 是否开启三级等保强密码校验（true 开启强密码模式，false 使用简单密码规则）
-    enableStrongPwd: false
-  # 签名密钥串(前后端要一致，正式发布请自行修改)
+    # 登录是否启用验证码（prod 原文件缺这一项：显式写出来，避免默认值被上游改动带跑）
+    enableLoginCaptcha: true
+    # 三级等保强密码校验（管理端新增/改密走强口令；C 端买家注册规则在 ck-shop 里单独实现，
+    # 不受此项影响）。确需放开用 JEECG_ENABLE_STRONG_PWD=false。
+    enableStrongPwd: ${JEECG_ENABLE_STRONG_PWD:true}
+  # 签名密钥串(前后端要一致，正式发布请自行修改；真实值在 .env)
+  # ⚠️ 必须与店铺端 nuxt-shop 的 SIGN_SECRET、管理端源码常量一致，否则所有签名接口 401
   signatureSecret: ${JEECG_SIGNATURE_SECRET}
   #签名拦截接口
   signUrls: /sys/dict/getDictItems/*,/sys/dict/loadDict/*,/sys/dict/loadDictOrderByValue/*,/sys/dict/loadDictItem/*,/sys/dict/loadTreeData,/sys/api/queryTableDictItemsByCode,/sys/api/queryFilterTableDictInfo,/sys/api/queryTableDictByKeys,/sys/api/translateDictFromTable,/sys/api/translateDictFromTableByKeys,/sys/sendChangePwdSms,/sys/user/sendChangePhoneSms,/sys/sms,/desform/api/sendVerifyCode
-  # 上传类型：local（本地存储）| minio（MinIO对象存储）| alioss（阿里云OSS）
-  uploadType: alioss
-  # 前端访问地址
+  # 上传类型：local（本地存储）| minio（MinIO对象存储）| alioss（阿里云OSS）| cikoss（Cikian OSS/又拍云）
+  # 【与 dev 一致用 cikoss】：商城图片/头像走的正是 ck.oss.*（又拍云），
+  # 上游模板里的 alioss 在本项目没有配置任何阿里云 bucket。
+  uploadType: cikoss
+  # 前端访问地址（用于第三方登录回调白名单、OpenAPI 自代理等）
+  # 留空时自动降级为"按当前请求的 Host 推导"；有独立域名时建议显式配置。
   domainUrl:
-    pc: http://localhost:3100
-    app: http://localhost:8051
+    pc: ${JEECG_DOMAIN_PC:}
+    app: ${JEECG_DOMAIN_APP:}
   path:
-    #文件上传根目录 设置
-    upload: /opt/jeecg-boot/upload
+    #文件上传根目录 设置（uploadType=local 时才用；需保证运行用户有写权限）
+    upload: ${JEECG_UPLOAD_PATH:/opt/ck-shop/upload}
     #webapp文件路径
-    webapp: /opt/jeecg-boot/webapp
+    webapp: ${JEECG_WEBAPP_PATH:/opt/ck-shop/webapp}
   shiro:
-    excludeUrls: /bigscreen/category/**,/bigscreen/visual/**,/bigscreen/map/**,/jmreport/bigscreen2/**,/api/getUserInfo,/shop/account/email/send-code,/shop/account/register,/shop/account/login/**,/shop/account/google/**,/shop/account/password/reset,/captcha/challenge,/captcha/verify
+    # 匿名白名单。prod 原文件里的 /api/getUserInfo 已删除：
+    #   - 带 context-path 前缀写在这里不生效（实际匹配的是 /api/api/getUserInfo）；
+    #   - 且 getLoginUserInfo 属于需要登录态的接口，不该进匿名名单。
+    excludeUrls: /bigscreen/category/**,/bigscreen/visual/**,/bigscreen/map/**,/jmreport/bigscreen2/**,/shop/account/email/send-code,/shop/account/register,/shop/account/login/**,/shop/account/google/**,/shop/account/password/reset,/captcha/challenge,/captcha/verify
   # 短信发送方式 aliyun阿里云短信 tencent腾讯云短信
   smsSendType: aliyun
   #阿里云oss存储和大鱼短信秘钥配置
   oss:
-    accessKey: ??
-    secretKey: ??
-    endpoint: oss-cn-beijing.aliyuncs.com
-    bucketName: jeecgdev
-    staticDomain: https://static.jeecg.com
+    accessKey: ${ALIYUN_OSS_ACCESS_KEY:}
+    secretKey: ${ALIYUN_OSS_SECRET_KEY:}
+    endpoint: ${ALIYUN_OSS_ENDPOINT:}
+    bucketName: ${ALIYUN_OSS_BUCKET:}
+    # 对外静态资源域名（CDN）。留空则使用 SDK 拼出的默认域名。
+    staticDomain: ${ALIYUN_OSS_STATIC_DOMAIN:}
     # 短信模板
     sms-template:
       # 签名
-      signature:
+      signature: ${ALIYUN_SMS_SIGNATURE:}
       # 模板code
       templateCode:
         # 登录短信、忘记密码模板编码
-        SMS_175435174:
+        SMS_175435174: ${ALIYUN_SMS_TPL_LOGIN:}
         # 修改密码短信模板编码
-        SMS_465391221:
+        SMS_465391221: ${ALIYUN_SMS_TPL_CHANGE_PWD:}
         # 注册账号短信模板编码
-        SMS_175430166:
-        SMS_461885023:
-  #腾讯短信秘钥配置
+        SMS_175430166: ${ALIYUN_SMS_TPL_REGISTER:}
+  #腾讯短信秘钥配置（当前 smsSendType=aliyun，未接入；接入时补真实值即可）
   tencent:
     # 接入域名
     endpoint: sms.tencentcloudapi.com
-    secretId: ??
-    secretKey: ??
+    secretId: ${TENCENT_SMS_SECRET_ID:}
+    secretKey: ${TENCENT_SMS_SECRET_KEY:}
     # 应用ID
-    sdkAppId: ??
+    sdkAppId: ${TENCENT_SMS_SDK_APP_ID:}
     # 地域信息
     region: ap-beijing
-  # 在线预览文件服务器地址配置
-  file-view-domain: http://fileview.jeecg.com
+  # 在线预览文件服务器地址配置（Office/PDF 在线预览服务）
+  # 留空 = 不启用外部预览服务（避免把内部附件外发到第三方演示服务）
+  file-view-domain: ${JEECG_FILE_VIEW_DOMAIN:}
   # minio文件上传
   minio:
-    minio_url: http://minio.jeecg.com
-    minio_name: ??
-    minio_pass: ??
-    bucketName: otatest
+    minio_url: ${MINIO_URL:}
+    minio_name: ${MINIO_NAME:}
+    minio_pass: ${MINIO_PASS:}
+    bucketName: ${MINIO_BUCKET:}
   #大屏报表参数设置
   jmreport:
-    #多租户模式，默认值为空(created:按照创建人隔离、tenant:按照租户隔离) (v1.6.2+ 新增)
+    #多租户模式，默认值为空(created:按照创建人隔离、tenant:按照租户隔离)
     saasMode:
-    # 平台上线安全配置(v1.6.2+ 新增)
+    # 签名密钥串(前后端要一致)。prod 原文件缺这一项 → 积木报表的签名校验
+    # 一直用库内默认值，与大屏/报表嵌入门户的签名对不上。
+    signatureSecret: ${JMREPORT_SIGNATURE_SECRET}
+    ai:
+      # OpenAI 兼容 base 地址（必填）
+      base-url: https://api.deepseek.com
+      # API Key（必填，留空则 AI 不可用）
+      api-key: ${JMREPORT_AI_API_KEY:}
+      # 模型名
+      model: deepseek-v4-pro
+      #确定性输出，默认temperature=0
+      temperature: 0
+      # 单次生成最大 token 数(传给大模型的 max_tokens)，DeepSeek 合法范围[1,393216]
+      max-tokens: 393216
+      # AI自动建表（会直接对生产库执行 DDL/DML：【生产必须 false】）
+      autoTableEnabled: false
+    # 平台上线安全配置
     firewall:
       # 数据源安全 (开启后，不允许使用平台数据源、SQL解析加签并且不允许查询数据库)
       dataSourceSafe: true
-      # 低代码开发模式（dev:开发模式，prod:发布模式—关闭在线报表设计功能，分配角色admin、lowdeveloper可以放开限制）
+      # SQL解析安全 false: 数据库解析(默认,稳定性好) true: jsqlparser解析(不走数据库,安全级别高)
+      sqlParseSafe: true
+      # 低代码开发模式（dev:开发模式，prod:发布模式—关闭在线报表设计功能，分配角色admin、lowdeveloper可放开限制）
       lowCodeMode: prod
-    # 高德地图Api配置(v2.1.3+ BI新增高德地图)
+      # sql注入检查级别（strict:严格, basic:简单校验, none:不校验）
+      # 默认与 dev 一致用 basic：strict 会拒掉一部分复杂报表 SQL（误报），
+      # 要升级前请先把线上所有报表/大屏在预发环境跑一遍。
+      sqlInjectionLevel: ${JMREPORT_SQL_INJECTION_LEVEL:basic}
+      # 数据源重试连接的次数，默认10，空或者0不限制次数
+      numberOfRetries: 10
+    # 高德地图Api配置（BI 地图组件需要，未接入时保持占位）
     gao-de-api:
       # 应用key
-      api-key: ??
+      api-key: ${GAODE_API_KEY:??}
       # 应用秘钥
-      secret-key: ??
-  #xxl-job配置
+      secret-key: ${GAODE_SECRET_KEY:??}
+  #xxl-job配置（本仓库未引入 xxl-job 依赖，保留占位以免上游模块启用时缺项）
   xxljob:
     enabled: false
     adminAddresses: http://127.0.0.1:9080/xxl-job-admin
@@ -355,123 +526,243 @@ jeecg:
     port: 30007
     logPath: logs/jeecg/job/jobhandler/
     logRetentionDays: 30
-  #分布式锁配置
+  #分布式锁配置（当前代码未读取此段，分布式锁走 Redis/RedisUtil；保留占位）
   redisson:
-    address: 127.0.0.1:6379
-    password:
+    address: ${REDIS_HOST:127.0.0.1}:${REDIS_PORT:6379}
+    password: ${REDIS_PASSWORD:}
     type: STANDALONE
     enabled: true
-  # 百度开放API配置
+  # 百度开放API配置（未接入，占位）
   baidu-api:
-    app-id: ??
-    api-key: ??
-    secret-key: ??
+    app-id: ${BAIDU_APP_ID:??}
+    api-key: ${BAIDU_API_KEY:??}
+    secret-key: ${BAIDU_SECRET_KEY:??}
+
+
 #cas单点登录
 cas:
-  prefixUrl: http://cas.example.org:8443/cas
-#Mybatis输出sql日志
+  prefixUrl: ${CAS_PREFIX_URL:http://cas.example.org:8443/cas}
+#日志
 logging:
   level:
+    root: info
     org.springframework.context.support.PostProcessorRegistrationDelegate: error
-    org.flywaydb: debug
+    # 生产不逐条打印 SQL（含用户隐私）；慢 SQL 交给 Druid stat + Nginx/应用日志
     org.jeecg.modules.system.mapper: info
+    # prod 不自动迁移，Flyway 的 debug 只会刷屏
+    org.flywaydb: info
+  # 默认只写 stdout，由 systemd（StandardOutput=append:）或 journald 收集，
+  # 落盘轮转交给 logrotate。若要改用 Boot 自带滚动日志，取消下面注释：
+  #file:
+  #  name: ${LOG_PATH:logs}/ck-server.log
+  #logback:
+  #  rollingpolicy:
+  #    max-file-size: 100MB
+  #    max-history: 30
 #swagger
 knife4j:
   #开启增强配置
   enable: true
-  #开启生产环境屏蔽
+  #开启生产环境屏蔽：线上不暴露 /doc.html 与 OpenAPI 描述（含全部接口与参数结构）
   production: true
   basic:
-    enable: true
-    username: jeecg
-    password: jeecg1314
-#第三方登录
+    # 文档已被 production 屏蔽，basic 认证无需再开；开启则必须配强口令
+    enable: false
+    username: ${KNIFE4J_USERNAME:}
+    password: ${KNIFE4J_PASSWORD:}
+#第三方登录（JeecgBoot 平台原生第三方登录）
+#  与文件末尾的 google.* 是两套独立实现：这里是管理端/平台登录，
+#  google.* 服务店铺端 C 端买家。本项目实际登录靠 账号密码 + 邮箱验证码，
+#  未接入的渠道留空即可（接口会返回"未配置"，不影响启动与其它登录方式）。
 justauth:
   enabled: true
   type:
     GITHUB:
-      client-id: ??
-      client-secret: ??
-      redirect-uri: http://sso.test.com:8080/jeecg-boot/sys/thirdLogin/github/callback
+      client-id: ${GITHUB_CLIENT_ID:}
+      client-secret: ${GITHUB_CLIENT_SECRET:}
+      # 回调地址必须与 GitHub OAuth App 里登记的**逐字一致**（含 /api 前缀）
+      redirect-uri: ${GITHUB_REDIRECT_URI:}
     WECHAT_ENTERPRISE:
-      client-id: ??
-      client-secret: ??
-      redirect-uri: http://sso.test.com:8080/jeecg-boot/sys/thirdLogin/wechat_enterprise/callback
-      agent-id: ??
+      client-id: ${WECHAT_ENTERPRISE_CLIENT_ID:??}
+      client-secret: ${WECHAT_ENTERPRISE_CLIENT_SECRET:??}
+      redirect-uri: ${WECHAT_ENTERPRISE_REDIRECT_URI:??}
+      agent-id: ${WECHAT_ENTERPRISE_AGENT_ID:??}
     DINGTALK:
-      client-id: ??
-      client-secret: ??
-      redirect-uri: http://sso.test.com:8080/jeecg-boot/sys/thirdLogin/dingtalk/callback
+      client-id: ${DINGTALK_CLIENT_ID:??}
+      client-secret: ${DINGTALK_CLIENT_SECRET:??}
+      redirect-uri: ${DINGTALK_REDIRECT_URI:??}
     WECHAT_OPEN:
-      client-id: ??
-      client-secret: ??
-      redirect-uri: http://sso.test.com:8080/jeecg-boot/sys/thirdLogin/wechat_open/callback
+      client-id: ${WECHAT_OPEN_CLIENT_ID:??}
+      client-secret: ${WECHAT_OPEN_CLIENT_SECRET:??}
+      redirect-uri: ${WECHAT_OPEN_REDIRECT_URI:??}
+    FEISHU:
+      client-id: ${FEISHU_CLIENT_ID:??}
+      client-secret: ${FEISHU_CLIENT_SECRET:??}
+      redirect-uri: ${FEISHU_REDIRECT_URI:??}
   cache:
     type: default
-    prefix: 'demo::'
+    # 不要用上游的 'demo::'：多套环境共用 Redis 时会互相覆盖校验 state
+    prefix: 'ck-shop::prod::'
     timeout: 1h
+#MongoDB（ck-saas：首页轮播图、店铺装修等文档数据）
+#  ⚠️ prod 原文件完全缺这一段 → 首页轮播/装修会连不上或连到默认 localhost，
+#     表现是"首页空白/轮播图消失"。这里与 dev 对齐并全部走环境变量。
+mongo-plus:
+  data:
+    mongodb:
+      host: ${MONGO_HOST:127.0.0.1}   #ip
+      port: ${MONGO_PORT:27017}   #端口
+      database: ${MONGO_DATABASE:ck-saas}    #数据库名
+      username: ${MONGO_USERNAME:}    #用户名，没有可不填（若账号中出现@,!等等符号，不需要再进行转码！！！）
+      password: ${MONGO_PASSWORD:}    #密码，同上（若密码中出现@,!等等符号，不需要再进行转码！！！）
+      authenticationDatabase: ${MONGO_AUTH_DATABASE:ck-saas}     #验证数据库
+      connectTimeoutMS: ${MONGO_CONNECT_TIMEOUT_MS:10000}   #在超时之前等待连接打开的最长时间（以毫秒为单位）
+
 ck:
-  # ===== 多店铺与结算令牌（ck-shop 模块）=====
+  # ===== 多店铺（ck-shop）=====
   shop:
     # 兜底店铺编码：仅当 allow-default-store-fallback 为 true 时才会用到
     default-store-code: ${CK_DEFAULT_STORE_CODE:default}
     # 【必须保持 false】解析不到店铺就报错，绝不静默回退到默认店铺。
     # 回退会让漏配 STORE_CODE 的前台站点展示默认店铺的商品（A 店卖 B 店的货，页面毫无报错）。
     allow-default-store-fallback: false
-    # 支付渠道（ck-shop）：模拟支付一律关闭；生产必须显式配置真实渠道。
+    # 支付渠道（ck-shop）
     pay:
-      # 默认渠道：留空时发起支付直接报错，绝不回退到 MOCK。
+      # 默认渠道：留空时发起支付直接报错（ShopPaymentServiceImpl 会明确提示），
+      # 绝不回退到 MOCK。填 WECHAT / ALIPAY 前请确认对应渠道网关已实现。
       default-channel: ${CK_PAY_DEFAULT_CHANNEL:}
+      # 回调入口的自保护（/shop/pay/notify/{channel}，匿名可达，只能靠验签兜底）
+      notify:
+        # 单条回调报文上限（字节）：渠道回调都是几百字节，异常大报文在验签前挡掉
+        max-body-bytes: ${CK_PAY_NOTIFY_MAX_BODY_BYTES:262144}
+        # 单 IP 每分钟回调上限（0=不限制）；多实例时每实例各算一份，权威限流放 Nginx
+        rate-limit-per-minute: ${CK_PAY_NOTIFY_RATE_LIMIT:300}
+        # 回调流水长时间停在 RECEIVED 多久算"卡住"（补单任务据此重查），单位秒
+        stale-received-seconds: ${CK_PAY_NOTIFY_STALE_RECEIVED_SECONDS:120}
+      # 模拟支付：生产**必须**关闭。MockPaymentGateway 只有 @Profile("dev")，
+      # 这里显式 false 是为了让"开没开"在配置文件里可审计。
+      # 若哪天真的打开（仅限演练环境），还必须提供 CK_MOCK_PAY_SECRET（≥32 位），否则启动失败。
       mock:
-        # 显式写 false：模拟网关另有 @Profile("dev") 兜底，这里保证"开没开"在配置文件里可审计。
         enabled: false
+        # 下面几项只在 mock.enabled=true 时才加载，生产不需要，故以注释形式保留
+        # 与 dev 的键位对照（照抄 dev 那几行即可，secret 必须来自 CK_MOCK_PAY_SECRET）：
+        #   secret: ${CK_MOCK_PAY_SECRET:}
+        #   fail-rate: ${CK_MOCK_PAY_FAIL_RATE:0}
+        #   delay-seconds: ${CK_MOCK_PAY_DELAY_SECONDS:0}
+        #   notify-tolerance-seconds: ${CK_MOCK_PAY_NOTIFY_TOLERANCE_SECONDS:300}
+        #   query-not-found: ${CK_MOCK_PAY_QUERY_NOT_FOUND:true}
+    # 结算价格令牌（防价格篡改/挂旧价）
     order:
-      # 结算价格令牌签名密钥：非 dev 环境必须配置，否则 PriceTokenUtils 启动即失败；
+      # 签名密钥：非 dev 必须配置，否则 PriceTokenUtils 启动即失败；
       # 多实例部署必须各实例一致，否则 A 实例签发的令牌在 B 实例验签失败，用户无法下单。
       price-token-secret: ${CK_PRICE_TOKEN_SECRET:}
       price-token-ttl-seconds: ${CK_PRICE_TOKEN_TTL_SECONDS:900}
+      # 下单后多少分钟未支付算超时（超时关单任务的判定基准）
+      pay-timeout-minutes: ${CK_ORDER_PAY_TIMEOUT_MINUTES:30}
+      # 运费兜底（0=包邮）。分店/地区运费规则请配在库里，不要靠这一项。
+      default-freight: ${CK_ORDER_DEFAULT_FREIGHT:0}
+      # 超时关单
+      timeout-close:
+        # 关单前先向渠道主动查一次支付状态（true）。宁可多查一次，也不要把已付订单关掉。
+        require-query: ${CK_ORDER_TIMEOUT_CLOSE_REQUIRE_QUERY:true}
+      # 支付补单
+      compensate:
+        # 只补"创建超过 N 分钟"的订单，避免和正常回调抢同一笔刚下的单
+        min-age-minutes: ${CK_ORDER_COMPENSATE_MIN_AGE_MINUTES:2}
+      # 订单统计默认时间跨度（天）
+      stats:
+        default-days: ${CK_ORDER_STATS_DEFAULT_DAYS:30}
+      # 订单定时任务（编程式注册，见 ShopOrderQuartzConfig）
+      job:
+        enabled: ${CK_ORDER_JOB_ENABLED:true}
+        # 超时关单：默认每分钟扫一次
+        timeout-close-cron: "${CK_ORDER_TIMEOUT_CLOSE_CRON:0 * * * * ?}"
+        # 支付补单：默认每分钟扫一次（错开 30 秒，避免和关单抢同一批订单行）
+        compensate-cron: "${CK_ORDER_COMPENSATE_CRON:30 * * * * ?}"
+    # 用户行为分析（ck_shop_track_event 等）
+    analytics:
+      # 采集采样率（0-100，100=全量）。行为数据量上来后先降这里，别急着加机器。
+      sample-rate: ${CK_ANALYTICS_SAMPLE_RATE:100}
+      # 明细保留天数（清理任务按此归档）
+      retention-days: ${CK_ANALYTICS_RETENTION_DAYS:30}
+      # 异步批量写入批次大小 / 内存队列容量：队列满则**静默丢弃**行为数据，
+      # 绝不阻塞业务请求（这是设计取舍，不是 bug）
+      batch-size: ${CK_ANALYTICS_BATCH_SIZE:500}
+      queue-capacity: ${CK_ANALYTICS_QUEUE_CAPACITY:10000}
+      # 批量 flush 间隔（毫秒）
+      flush-interval-ms: ${CK_ANALYTICS_FLUSH_INTERVAL_MS:2000}
+      # 在线人数判定阈值（秒）
+      online-ttl-seconds: ${CK_ANALYTICS_ONLINE_TTL_SECONDS:60}
+      # 单 IP 每分钟采集上限（0=不限制）。dev 不限，生产给个宽松上限挡住失控循环。
+      track-rate-limit-per-minute: ${CK_ANALYTICS_TRACK_RATE_LIMIT:6000}
+      # GeoLite2-City.mmdb 路径：留空则地域解析降级为 null（不报错）
+      geo-mmdb-path: ${CK_ANALYTICS_GEO_MMDB_PATH:}
+      # 采集签名密钥：留空时复用上面的 jeecg.signatureSecret（推荐留空，少一处密钥要轮换）
+      signature-secret: ${CK_ANALYTICS_SIGNATURE_SECRET:}
+      # 行为分析聚合任务（编程式注册，见 ShopAnalyticsQuartzConfig）
+      job:
+        enabled: ${CK_ANALYTICS_JOB_ENABLED:true}
+        # 聚合 cron：默认每分钟一次（把明细汇总到分钟级宽表）
+        aggregation-cron: "${CK_ANALYTICS_AGGREGATION_CRON:0 * * * * ?}"
+    # 店铺端验证码邮件发件人兜底。留空时回退 spring.mail.username。
+    # 邮箱服务商通常要求 From 与登录账号一致，所以默认跟着 spring.mail.username 走，
+    # 只有需要"代发"（如 noreply@ 与登录账号不同）时才显式配置。
+    mail:
+      from: ${MAIL_USERNAME:}
+  # 对象存储（商品图 / 头像 / 附件走 cik-oss = 又拍云）
   oss:
     enable: true
     provider: upyun
-    endpoint: https://oss.example.cn/
-    access-key: xxx
-    secret-key: 2i-xxxxx
-    bucket: your-bucket
-    expire: 3600
-    object-dir-prefix: dir
-    api-domain: TELECOM
+    endpoint: ${CK_OSS_ENDPOINT:}
+    access-key: ${CK_OSS_ACCESS_KEY:}
+    secret-key: ${CK_OSS_SECRET_KEY:}
+    bucket: ${CK_OSS_BUCKET:}
+    # 预签名 URL 有效期（秒）
+    expire: ${CK_OSS_EXPIRE:3600}
+    object-dir-prefix: ${CK_OSS_OBJECT_DIR_PREFIX:ck-saas}
+    api-domain: ${CK_OSS_API_DOMAIN:TELECOM}
   # ===== CikVerify 验证码服务（后端 SDK 代理接口；前端不直连）=====
   captcha:
     enabled: true
+    # 验证码服务端地址（https，服务端校验签名）
     service-url: https://cap.cikian.cn
-    app-id: ck-shop
-    # ⚠️ 只允许来自部署环境变量（CK_SHOP_CAPTCHA_SECRET），禁止硬编码/提交到 Git。
+    # 应用 ID：必须与 CikVerify 平台分配的**应用**以及下面的 app-secret 成对匹配
+    # （dev 用的是 lautira；若生产单独开了应用，改成对应的 app-id）
+    app-id: ${CK_SHOP_CAPTCHA_APP_ID:lautira}
+    # ⚠️ 只允许放后端 .env / 部署环境变量；禁止写进前端、Git、日志。
+    #    缺失或长度 <32 时 SDK 启动即失败（fail-fast，防止误配成"没验证也能发信"）。
     app-secret: ${CK_SHOP_CAPTCHA_SECRET}
     timeout-millis: 3000
     allow-insecure-http: false
     endpoints:
-      # 相对于 server.servlet.context-path（/api）：对外路径 /api/captcha/challenge|verify
+      # server.servlet.context-path=/api，所以这里写 **context 相对路径**，
+      # 最终对外路径是 /api/captcha/challenge 与 /api/captcha/verify。
+      # 若写成 /api/captcha/... 会变成 /api/api/captcha/...（404）。
       challenge-path: /captcha/challenge
       verify-path: /captcha/verify
+    # ticket 存 Redis：多实例共享，且消费是原子的（一次性）
     ticket-store: redis
     ticket-ttl-seconds: 120
+    # ticket 绑定 UA + IP，防止"别人过码、我用 ticket"
     ticket-bind-ua: true
+    # BFF 已把真实客户端 IP 覆盖进 X-Forwarded-For，开启后 ticket 才绑定到真实用户 IP
     trust-forwarded-for: true
   crydis:
-    # 【必须为 false】见 dev 注释：全局 lazy-initialization 下 crydis 自动装配的
-    # crydisInit 不会被创建，enable=true 会让 SDK 误以为 crydis 已由宿主初始化，
-    # 结果 ticket 存储抛 "Crydis 未初始化"（verify 5000）。
-    # false 时由 SDK 的 CrydisSupport 自行初始化。
+    # 保持 false：让 crydis SDK 自己按下面的 host/port/password 调 Crydis.init(...)，
+    # 初始化责任只有一处，行为可预期。
+    # （dev 的注释解释了另一个坑：全局 lazy-initialization=true 时 crydis 自动装配的
+    #  crydisInit 不会被创建，enable=true 会让 SDK 误以为已由宿主初始化，verify 时抛
+    #  "Crydis 未初始化" 5000。本文件已把 lazy-initialization 关掉，但 false 仍然更稳。）
     enable: false
-    host: ${REDIS_HOST:127.0.0.1}
-    port: ${REDIS_PORT:6379}
-    password: ${REDIS_PASSWORD:}
-    database: ${REDIS_DATABASE:0}
-    timeout: 2000
-    max-active: 16
-    max-idle: 8
-    min-idle: 0
-    max-wait: 2000
+    host: ${REDIS_HOST:127.0.0.1}   # Redis 服务器地址
+    port: ${REDIS_PORT:6379}        # Redis 端口，默认 6379
+    password: ${REDIS_PASSWORD:}    # Redis 密码，没有则留空
+    database: ${REDIS_DATABASE:0}   # 数据库索引，默认 0
+    timeout: 2000                   # 连接超时时间（毫秒）
+    max-active: ${CRYDIS_MAX_ACTIVE:32}   # 最大连接数（生产按实例数与并发留余量）
+    max-idle: ${CRYDIS_MAX_IDLE:16}       # 最大空闲连接
+    min-idle: 0                     # 最小空闲连接
+    max-wait: 2000                  # 最大等待时间（毫秒）
     allowed-packages:
       - cn.cikian.
       - java.util.ArrayList
@@ -485,4 +776,5 @@ ck:
 google:
   client-id: ${GOOGLE_CLIENT_ID:}
   client-secret: ${GOOGLE_CLIENT_SECRET:}
-  redirect-uri: ${GOOGLE_REDIRECT_URI:http://localhost:3000/auth/google/callback}
+  # 生产不设 localhost 兜底：留空即"未配置"，避免把本地回调地址带进线上
+  redirect-uri: ${GOOGLE_REDIRECT_URI:}

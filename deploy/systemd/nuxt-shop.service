@@ -1,0 +1,25 @@
+[Unit]
+Description=ck-shop storefront (Nuxt 4 SSR + Nitro BFF)
+After=network.target ck-server.service
+
+[Service]
+Type=simple
+User=ckshop
+Group=ckshop
+WorkingDirectory=/opt/ck-shop/nuxt-shop
+Environment=NODE_ENV=production
+Environment=TZ=Asia/Shanghai
+# 只监听回环：外部一律经 Nginx（BFF 只信任来自本机/内网的代理头）
+Environment=PORT=3001
+Environment=HOST=127.0.0.1
+# 进程环境变量优先于 --env-file（Node 不会用文件覆盖已存在的变量），所以 .env 里的 PORT 不会盖掉上面的
+# --env-file-if-exists 需要 Node ≥ 22.9，而 nuxt 4.4.8 本身要求 ≥ 22.12
+ExecStart=/usr/bin/node --env-file-if-exists=/opt/ck-shop/nuxt-shop/.env .output/server/index.mjs
+Restart=always
+RestartSec=5
+MemoryMax=2G
+StandardOutput=append:/opt/ck-shop/logs/nuxt-shop.log
+StandardError=append:/opt/ck-shop/logs/nuxt-shop.err.log
+
+[Install]
+WantedBy=multi-user.target
