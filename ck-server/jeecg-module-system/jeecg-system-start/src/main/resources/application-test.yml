@@ -36,9 +36,12 @@ spring:
     username: jeecgos@163.com
     password: ??
     properties:
-      mail.smtp.timeout: 10000  # 连接超时（毫秒）
-      mail.smtp.connectiontimeout: 10000  # 连接超时（毫秒）
-      mail.smtp.writetimeout: 10000  # 写入超时（毫秒）
+      # 单次 I/O 超时（毫秒）：读 15s、连接 5s、写 5s。
+      # 收紧后让后端尽量先于店铺端 BFF 的 30s 等待上限返回；
+      # 这些是分阶段超时，不是整封邮件的总耗时硬上限。
+      mail.smtp.timeout: 15000  # 读超时（毫秒）
+      mail.smtp.connectiontimeout: 5000  # 连接超时（毫秒）
+      mail.smtp.writetimeout: 5000  # 写入超时（毫秒）
       mail.smtp.auth: true
       # 必须是全限定名 mail.smtp.ssl.enable，漏掉 mail. 前缀会被 JavaMail 静默忽略
       mail.smtp.ssl.enable: true

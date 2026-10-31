@@ -54,9 +54,12 @@ spring:
     username: ${MAIL_USERNAME}
     password: ${MAIL_PASSWORD}
     properties:
-      mail.smtp.timeout: 20000  # 读超时（毫秒）
-      mail.smtp.connectiontimeout: 20000  # 连接超时（毫秒）
-      mail.smtp.writetimeout: 20000  # 写入超时（毫秒）
+      # 单次 I/O 超时（毫秒）：读 15s、连接 5s、写 5s。
+      # 收紧后让后端尽量先于店铺端 BFF 的 30s 等待上限返回；
+      # 这些是分阶段超时，不是整封邮件的总耗时硬上限。
+      mail.smtp.timeout: 15000  # 读超时（毫秒）
+      mail.smtp.connectiontimeout: 5000  # 连接超时（毫秒）
+      mail.smtp.writetimeout: 5000  # 写入超时（毫秒）
       mail.smtp.auth: true
       # ⚠️ 必须是全限定名 mail.smtp.ssl.enable；写成 smtp.ssl.enable（漏 mail. 前缀）
       #    会被 JavaMail **静默忽略**，连接行为与预期不符且没有报错。
@@ -540,7 +543,7 @@ ck:
     enabled: true
     # 验证码服务端地址（https，服务端校验签名）
     service-url: https://cap.cikian.cn
-    app-id: ck-shop
+    app-id: lautira
     # ⚠️ 只允许放后端 .env / 部署环境变量；禁止写进前端、Git、日志。
     #    缺失或长度 <32 时 SDK 启动即失败（fail-fast，防止误配成"没验证也能发信"）。
     app-secret: ${CK_SHOP_CAPTCHA_SECRET}

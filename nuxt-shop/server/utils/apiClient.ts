@@ -142,6 +142,11 @@ export function createApiClient(
      *   · GET（公开读：商品/分类/评价/轮播…）默认 3s —— 读不到就降级，不能让整页 SSR 白等；
      *   · 写操作（下单/支付/退款…）默认 10s —— 后端事务需要时间，过早掐断会造成"未知结果"。
      * 单接口仍可用 timeoutMs 覆盖（登录、OAuth 这类要访问第三方的接口会显式放宽）。
+     *
+     * ⚠️ 后端"同步做慢事"的接口必须显式放宽，并为后端超时预算留够余量，
+     *    否则会出现"BFF 已超时、后端却还在继续并最终成功"的假失败（2026-10-29
+     *    发码接口就踩过：BFF 10s vs SMTP 20s，邮件已发出但前端报超时）。
+     *    现有覆盖：发码 30s（SMTP 连接/读/写 5/15/5s）、Google 回调 30s、头像上传 20s。
      */
     timeout: Number(options.timeoutMs)
       || (String(options.method || 'GET').toUpperCase() === 'GET'
